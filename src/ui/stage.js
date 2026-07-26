@@ -85,9 +85,16 @@ export function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// ES-DE's per-component default z-index (GuiComponent subclasses set these in
-// their constructors). A theme that declares <zIndex> on one element and not
-// the rest is relying on exactly these numbers.
+// ES-DE's per-element default z-index, taken from its source rather than
+// inferred: setDefaultZIndex() calls in es-app/src/views/GamelistView.cpp and
+// SystemView.cpp (vendored under internal-romdeck/reference/es-de). A theme
+// that declares <zIndex> on one element and not the rest is relying on exactly
+// these numbers.
+//
+// clock, systemstatus and helpsystem are deliberately absent: ES-DE never
+// calls setDefaultZIndex for them because they are drawn outside the themed
+// element stack. They fall through to DEFAULT_Z_FALLBACK, which puts them on
+// top -- which is where they belong and what they looked like anyway.
 const DEFAULT_Z = {
   image: 30,
   video: 30,
@@ -95,15 +102,13 @@ const DEFAULT_Z = {
   badges: 35,
   text: 40,
   datetime: 40,
-  gamelistinfo: 40,
+  gamelistinfo: 45,
   rating: 45,
   textlist: 50,
   carousel: 50,
   grid: 50,
-  clock: 55,
-  systemstatus: 55,
-  helpsystem: 60,
 };
+const DEFAULT_Z_FALLBACK = 55;
 
 /**
  * The themed view.
@@ -207,21 +212,26 @@ export class Stage {
     const game = this.currentGame();
     if (!game) return null;
     switch (type) {
-      case 'cover':
-      case 'image':      // ES-DE's generic "the game's image"
-      case 'boxcover':
-      case 'box2d':
-      case 'box3d':      return game.art ?? null;
+      // "image" is ES-DE's GENERIC slot, and FileData::getImagePath is a
+      // fallback chain: miximage -> screenshot -> titlescreen -> cover. We
+      // scrape only covers, so the chain collapses to the cover -- but it is a
+      // chain, not a synonym, which is why this is the one non-cover type that
+      // may legitimately answer with one.
+      case 'image':
+      case 'cover':      return game.art ?? null;
       case 'video':      return game.video ?? null;
-      // Real media types we simply do not scrape. Returning the cover here is
-      // worse than returning nothing: it puts a box shot in a logo slot.
+      // Real, distinct media types (GamelistView.cpp's imageType dispatch).
+      // We do not scrape any of them, and answering with the cover would put
+      // a box shot in a marquee or screenshot slot -- which is exactly what
+      // made modern-es-de draw the same cover twice.
+      case 'miximage':
       case 'marquee':
       case 'screenshot':
       case 'titlescreen':
-      case 'fanart':
+      case '3dbox':
+      case 'backcover':
       case 'physicalmedia':
-      case 'miximage':
-      case 'backcover':  return null;
+      case 'fanart':     return null;
       default:           return null;
     }
   }
@@ -421,7 +431,7 @@ export class Stage {
     // with the game list, and ties fall back to document order, so the
     // background painted over it: a gamelist view with no games in it, while
     // "33 elements, renders fine" and every count-based assertion passed.
-    const z = (el) => el.props.zIndex ?? DEFAULT_Z[el.type] ?? 50;
+    const z = (el) => el.props.zIndex ?? DEFAULT_Z[el.type] ?? DEFAULT_Z_FALLBACK;
     const els = [...this.elements()].sort((a, b) => z(a) - z(b));
     for (const el of els) {
       if (el.props.visible === 'false') continue;
@@ -474,10 +484,11 @@ export class Stage {
    */
   drawHelp(ctx, el, b) {
     const p = el.props;
-    // scope="menu" is ES-DE's help for its own menu, not a view. scope="none"
-    // means DO NOT DISPLAY -- art-book-next declares one to switch the row off
-    // for a variant, and drawing it put a second prompt row in the top-left
-    // corner on top of the theme's real one.
+    // <scope> is shared | view | menu | none (HelpComponent.cpp:214). "menu"
+    // is ES-DE's help for its OWN menu, not a view, and "none" means do not
+    // display -- art-book-next declares one to switch the row off for a
+    // variant, and drawing it put a second prompt row in the top-left corner
+    // on top of the theme's real one. "shared" and "view" both render.
     if (p.scope === 'menu' || p.scope === 'none') return;
     const entries = this.view === 'gamelist'
       ? [['\u24B6', 'play'], ['\u24B7', 'back'], ['\u24CD', 'options'], ['\u24C2', 'menu']]
@@ -572,20 +583,31 @@ export class Stage {
   drawCarousel(ctx, el, b) {
     const p = el.props;
     if (!this.systems.length) return;
-    const gap = (p.itemSpacing ?? 0.02) * STAGE_W;
-    // maxItemCount decides the PITCH -- how many items span the carousel, and
-    // it is fractional on purpose (art-book-next asks for 5.5, so the outer
-    // two are half-clipped at the screen edges). itemSize is the item's own
-    // proportions, NOT its pitch: reading it as the width made one system fill
-    // the whole stage and pushed every neighbour off-screen.
-    const span = p.maxItemCount ?? 5;
-    const itemW = (b.w - gap * (span - 1)) / span;
-    // itemSize is in NORMALIZED STAGE UNITS, like every other size in the
-    // format -- not a ratio relative to the pitch. art-book-next's 1x1 means
-    // "as tall as the stage", and the narrower pitch is what makes the items
-    // overlap into slanted panels. Deriving height from itemW collapsed each
-    // one into a thin strip.
-    const itemH = p.itemSize?.[1] ? p.itemSize[1] * STAGE_H : b.h * 0.74;
+    // ES-DE's own geometry (CarouselComponent: mItemSize default is 25% of
+    // screen width, mMaxItemCount default 3):
+    //
+    //   itemSpacing = ((size.x - itemSize.x * maxItemCount) / maxItemCount)
+    //                 + itemSize.x
+    //
+    // itemSize is the ITEM'S OWN SIZE in normalized units; maxItemCount is how
+    // many fit across, and it is fractional on purpose -- art-book-next asks
+    // for 5.5, so the outer two are half-clipped at the screen edges. The two
+    // together give the pitch, and when itemSize is larger than the pitch the
+    // items OVERLAP, which is what makes that theme's slanted panels.
+    const span = p.maxItemCount ?? 3;
+    const declared = p.itemSize?.[0] ? p.itemSize[0] * STAGE_W : STAGE_W * 0.25;
+    const declaredH = p.itemSize?.[1] ? p.itemSize[1] * STAGE_H : b.h * 0.74;
+    const pitch = ((b.w - declared * span) / span) + declared;
+    // An item WIDER than its pitch is deliberate overlap -- art-book-next's
+    // 1x1 panels are stage-sized and slide over each other. Drawing them at
+    // full declared width also means cropping a 1920-wide box down to a
+    // 349-wide slot, which zooms the artwork past recognition, so the drawn
+    // width is the pitch while the SOURCE keeps its declared proportions.
+    // Only the WIDTH is clamped. Height is whatever the theme declared:
+    // art-book-next's panels are stage-tall and stay stage-tall, and scaling
+    // height by the same ratio collapsed them to a 196px band.
+    const itemW = Math.min(declared, pitch);
+    const itemH = declaredH;
     // ES-DE's default itemStacking is CENTERED (CarouselComponent.h): the
     // SELECTED item sits at the middle of the carousel and neighbours flank
     // it, rather than items filling slots left-to-right. Getting this wrong
@@ -594,7 +616,9 @@ export class Stage {
     // Draw out to the edges, not just the whole slots: a fractional span
     // means the outermost items are half off-screen and still visible, and
     // clamping the loop to the system count dropped them entirely.
-    const half = Math.ceil(span / 2);
+    // ES-DE loads ceil((maxItemCount + 1) / 2) either side, so the
+    // half-clipped outermost items still draw.
+    const half = Math.ceil((span + 1) / 2);
 
     for (let off = -half; off <= half; off++) {
       const idx = (this.sysIndex + off + this.systems.length * 2) % this.systems.length;
@@ -604,7 +628,7 @@ export class Stage {
       const scale = sel ? (p.itemScale ?? 1) : 1;
       const w = itemW * scale;
       const h = itemH * scale;
-      const cx = centerX + off * (itemW + gap) - w / 2;
+      const cx = centerX + off * pitch - w / 2;
       const cy = b.y + b.h / 2 - h / 2;
 
       // A plate only when the theme asks for one. "00000000" is transparent,

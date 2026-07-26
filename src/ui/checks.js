@@ -531,7 +531,7 @@ export async function shots({ romsDir, argAfter }) {
   // an imageType. modern-es-de's first match is its marquee slot, which is
   // correctly empty (no marquees are scraped), so grading that box reported a
   // blank cover on a theme that renders one perfectly.
-  const COVER_TYPES = new Set(['cover', 'image', 'boxcover', 'box2d', 'box3d']);
+  const COVER_TYPES = new Set(['cover', 'image']);
   const coverEl = app.stage.elements().find((e) => (e.type === 'image' || e.type === 'video')
     && (e.props.metadata === 'game.cover' || COVER_TYPES.has(e.props.imageType)));
   if (coverUrl && coverEl) {
