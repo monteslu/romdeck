@@ -155,6 +155,29 @@ function parsePair(str) {
   return [Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0];
 }
 
+/**
+ * The declared aspect ratio closest to the stage.
+ *
+ * Names are ES-DE's own ("16:9", "19.5:9", "5:3_vertical"). The stage is a
+ * fixed 1920x1080 design space, so the target is 16:9; anything else is a
+ * theme laying out for a screen shape we are not.
+ */
+export function pickAspectRatio(list, target = 16 / 9) {
+  if (!list?.length) return null;
+  let best = null;
+  let bestErr = Infinity;
+  for (const name of list) {
+    const m = String(name).match(/^(\d+(?:\.\d+)?)[:\-](\d+(?:\.\d+)?)/);
+    if (!m) continue;
+    let ratio = Number(m[1]) / Number(m[2]);
+    // A "_vertical" entry is the portrait form of the same numbers.
+    if (/vertical/i.test(name)) ratio = 1 / ratio;
+    const err = Math.abs(Math.log(ratio / target));
+    if (err < bestErr) { bestErr = err; best = name; }
+  }
+  return best ?? list[0];
+}
+
 export class ThemeStore {
   constructor(userDataDir) {
     this.userThemesDir = path.join(userDataDir, 'themes');
@@ -319,7 +342,12 @@ export class ThemeStore {
     const ctx = {
       variant: variant ?? theme.variants[0]?.name ?? null,
       colorScheme: colorScheme ?? theme.colorSchemes[0]?.name ?? null,
-      aspectRatio: aspectRatio ?? theme.aspectRatios[0] ?? null,
+      // Aspect ratio is the exception to "first declared wins": ES-DE picks
+      // the one that MATCHES THE SCREEN, and only falls back to the first if
+      // the theme offers nothing close. art-book-next declares 32:9 first, so
+      // first-wins rendered an ultrawide layout onto a 16:9 stage -- a theme
+      // that looked nothing like itself while every element still drew.
+      aspectRatio: aspectRatio ?? pickAspectRatio(theme.aspectRatios) ?? null,
       // Real themes gate their font-size variables on this; without a
       // selection those <variables> blocks never apply and every fontSize
       // resolves to a literal ${name}.

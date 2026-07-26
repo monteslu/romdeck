@@ -348,7 +348,21 @@ export async function shots({ romsDir, argAfter }) {
     }
   }
   await app.stage.preload();
-  console.log(`SHOTS theme: ${app.stage.theme?.displayName ?? '(none)'}`);
+  const sel = app.stage.theme?.selected ?? {};
+  console.log(`SHOTS theme: ${app.stage.theme?.displayName ?? '(none)'} `
+    + `[${sel.variant ?? '-'} / ${sel.aspectRatio ?? '-'} / ${sel.colorScheme ?? '-'}]`);
+  // The stage is a fixed 1920x1080 design space, so a theme offering several
+  // aspect ratios must be laid out for 16:9. Defaulting to "first declared"
+  // picked art-book-next's 32:9 block and rendered an ultrawide layout onto a
+  // 16:9 stage -- every element drew, every count was right, and the result
+  // looked nothing like the theme.
+  // The loaded model carries only `selected`; the declared list lives on the
+  // discovered theme entry, so ask the store rather than the model.
+  const declared = app.svc.themes.find(app.stage.theme?.name)?.aspectRatios ?? [];
+  if (declared.length > 1) {
+    r.check('theme laid out for the stage ratio', sel.aspectRatio === '16:9',
+      `${sel.aspectRatio ?? '(none)'} of ${declared.length} declared`);
+  }
 
   const shot = (label) => {
     // app.render() composites stage + menus + browser + keyboard + toasts,
