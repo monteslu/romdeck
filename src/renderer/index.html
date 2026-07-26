@@ -2,17 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: romdeck-media:" />
   <title>romdeck</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header id="topbar">
     <div id="logo">rom<span>deck</span></div>
+    <input id="search" type="search" placeholder="Search games…" spellcheck="false" />
     <div id="dirchip" title="ROMs folder">
       <span id="dirpath">no folder selected</span>
       <button id="choosedir">Change…</button>
       <button id="rescan" title="Rescan">⟳</button>
+      <button id="scrapeall" title="Fetch box art for all games">🎨 Art</button>
     </div>
     <div id="sessioncount" class="hidden">0 playing</div>
   </header>

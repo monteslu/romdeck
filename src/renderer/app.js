@@ -8,9 +8,10 @@ const state = {
   romsDir: null,
   roms: [],
   system: 'All',
+  query: '',
   filtered: [],
   selected: 0,
-  playing: new Map(), // sessionId -> romPath
+  playing: new Map(), // sessionId -> { romPath, paused, speed }
 };
 
 // Deterministic pleasant gradient per system for placeholder art (real box art
@@ -28,14 +29,26 @@ function artStyle(rom) {
 
 function systems() {
   const counts = new Map();
-  for (const r of state.roms) counts.set(r.system, (counts.get(r.system) ?? 0) + 1);
-  return [['All', state.roms.length], ...[...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))];
+  let favs = 0;
+  for (const r of state.roms) {
+    counts.set(r.system, (counts.get(r.system) ?? 0) + 1);
+    if (r.meta?.favorite) favs++;
+  }
+  const rail = [['All', state.roms.length]];
+  if (favs > 0) rail.push(['★ Favorites', favs]);
+  rail.push(...[...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  return rail;
 }
 
 function applyFilter() {
-  state.filtered = state.system === 'All'
-    ? state.roms
-    : state.roms.filter((r) => r.system === state.system);
+  let list = state.roms;
+  if (state.system === '★ Favorites') list = list.filter((r) => r.meta?.favorite);
+  else if (state.system !== 'All') list = list.filter((r) => r.system === state.system);
+  if (state.query) {
+    const q = state.query.toLowerCase();
+    list = list.filter((r) => r.name.toLowerCase().includes(q) || r.system.toLowerCase().includes(q));
+  }
+  state.filtered = list;
   state.selected = Math.min(state.selected, Math.max(0, state.filtered.length - 1));
 }
 
@@ -63,14 +76,28 @@ function render() {
   state.filtered.forEach((rom, i) => {
     const tile = document.createElement('div');
     tile.className = 'tile' + (i === state.selected ? ' selected' : '');
-    const initials = rom.name.split(/\s+/).slice(0, 2).map((w) => w[0] ?? '').join('').toUpperCase();
     tile.innerHTML = `
-      <div class="art" style="${artStyle(rom)}"></div>
+      <div class="art"></div>
       <div class="meta"><div class="name"></div><div class="sys"></div></div>`;
-    tile.querySelector('.art').textContent = initials;
+    const art = tile.querySelector('.art');
+    if (rom.art) {
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.src = rom.art;
+      art.appendChild(img);
+    } else {
+      art.style.cssText = artStyle(rom);
+      art.textContent = rom.name.split(/\s+/).slice(0, 2).map((w) => w[0] ?? '').join('').toUpperCase();
+    }
     tile.querySelector('.name').textContent = rom.name;
     tile.querySelector('.name').title = rom.file;
     tile.querySelector('.sys').textContent = rom.system;
+    if (rom.meta?.favorite) {
+      const fav = document.createElement('div');
+      fav.className = 'fav';
+      fav.textContent = '★';
+      tile.appendChild(fav);
+    }
     if (playingPaths.has(rom.path)) {
       const badge = document.createElement('div');
       badge.className = 'playing';
@@ -124,7 +151,14 @@ async function renderDetails() {
   }
   panel.classList.remove('hidden');
   $('dt-name').textContent = rom.name;
-  $('dt-system').textContent = rom.system;
+  const bits = [rom.system];
+  if (rom.meta?.playcount) bits.push(`played ${rom.meta.playcount}×`);
+  if (rom.meta?.lastplayed) {
+    const lp = rom.meta.lastplayed;
+    const d = new Date(`${lp.slice(0, 4)}-${lp.slice(4, 6)}-${lp.slice(6, 8)}T${lp.slice(9, 11)}:${lp.slice(11, 13)}:${lp.slice(13, 15)}`);
+    if (!Number.isNaN(d.getTime())) bits.push(`last ${d.toLocaleDateString()}`);
+  }
+  $('dt-system').textContent = bits.join(' · ');
 
   const live = sessionFor(rom);
   const actions = $('dt-actions');
@@ -138,9 +172,24 @@ async function renderDetails() {
     return b;
   };
 
+  const fav = rom.meta?.favorite;
+  btn(fav ? '★' : '☆', async () => {
+    await romdeck.setFavorite(rom.path, !fav);
+    await reloadLibrary();
+  }, fav ? 'active' : '');
+
   if (!live) {
     btn('▶ Play', () => launch(rom), 'primary');
     btn('Play from start', () => launch(rom, { resume: false }));
+    if (!rom.art) {
+      btn('🎨 Get art', async () => {
+        $('status').textContent = 'fetching box art…';
+        const r = await romdeck.scrape(rom.path);
+        if (r.status === 'ok') { toast('Box art found', rom.name); await reloadLibrary(); }
+        else toast('No art match', r.status === 'unsupported' ? 'No thumbnail repo for this system' : 'Name not found in libretro-thumbnails');
+        $('status').textContent = 'ready';
+      });
+    }
   } else {
     btn(live.paused ? '▶ Resume' : '⏸ Pause', async () => {
       const r = await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
@@ -331,9 +380,37 @@ async function loadLibrary(lib) {
   $('status').textContent = `${lib.roms.length} games in library`;
 }
 
+async function reloadLibrary() {
+  await loadLibrary(await romdeck.rescan());
+}
+
 $('choosedir').onclick = async () => loadLibrary(await romdeck.chooseRomsDir());
 $('choosedir2').onclick = async () => loadLibrary(await romdeck.chooseRomsDir());
-$('rescan').onclick = async () => loadLibrary(await romdeck.rescan());
+$('rescan').onclick = reloadLibrary;
+
+$('search').oninput = () => {
+  state.query = $('search').value.trim();
+  state.selected = 0;
+  applyFilter();
+  render();
+};
+// don't let grid nav steal keys while typing
+$('search').addEventListener('keydown', (ev) => ev.stopPropagation());
+
+$('scrapeall').onclick = async () => {
+  $('scrapeall').disabled = true;
+  $('status').textContent = 'fetching box art…';
+  const res = await romdeck.scrapeAll();
+  toast('Box art', `${res.ok} of ${res.total} covers found`);
+  $('scrapeall').disabled = false;
+  await reloadLibrary();
+};
+
+romdeck.on('library:changed', (ev) => {
+  if (ev.type === 'scrape-progress') {
+    $('status').textContent = `art: ${ev.done}/${ev.total} (${ev.ok} found) — ${ev.current}`;
+  }
+});
 
 (async () => {
   await loadLibrary(await romdeck.getLibrary());

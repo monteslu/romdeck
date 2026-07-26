@@ -2,7 +2,8 @@
 // Library, config, and ROM management live here + in the renderer.
 // Games NEVER run in this process or the renderer: every launch spawns an
 // isolated retroemu player process (see sessions.js).
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -10,6 +11,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { scanRoms } from './scanner.js';
 import { GameSessionManager } from './sessions.js';
 import { StateStore } from './statestore.js';
+import { GamelistStore } from './gamelist.js';
+import { ArtworkStore } from './artwork.js';
+import { shortnameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
 
@@ -24,6 +28,13 @@ let win = null;
 let prefs = null;
 let stateStore = null;
 let sessions = null;
+let gamelists = null;
+let artwork = null;
+
+// Custom scheme for artwork must be registered before app ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'romdeck-media', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 const padNav = new PadNav((ev) => {
   if (win && !win.isDestroyed() && win.isFocused()) {
     win.webContents.send('pad:nav', ev);
@@ -37,7 +48,18 @@ function romsDir() {
 function getLibrary() {
   const dir = romsDir();
   if (!dir || !existsSync(dir)) return { romsDir: dir, roms: [] };
-  return { romsDir: dir, roms: scanRoms(dir) };
+  const roms = scanRoms(dir);
+  for (const rom of roms) {
+    const short = shortnameOf(rom.system);
+    rom.short = short;
+    const meta = gamelists.metaFor(rom, short);
+    rom.meta = meta;
+    if (meta.displayName) rom.name = meta.displayName;
+    rom.art = artwork.hasCover(rom)
+      ? 'romdeck-media://art/' + short + '/' + encodeURIComponent(path.basename(artwork.coverPath(rom)))
+      : null;
+  }
+  return { romsDir: dir, roms };
 }
 
 function createWindow() {
@@ -86,7 +108,41 @@ function findRom(romPath) {
 ipcMain.handle('session:launch', (_ev, romPath, opts = {}) => {
   const rom = findRom(romPath);
   if (!rom) return { error: 'ROM not found in library' };
-  return sessions.launch(rom, opts);
+  const res = sessions.launch(rom, opts);
+  gamelists.recordPlay(rom, rom.short);
+  return res;
+});
+
+ipcMain.handle('library:setFavorite', (_ev, romPath, on) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  gamelists.update(rom, rom.short, { favorite: on ? 'true' : null });
+  return { ok: true };
+});
+
+ipcMain.handle('library:scrape', async (_ev, romPath) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  const status = await artwork.scrape(rom);
+  return { status };
+});
+
+ipcMain.handle('library:scrapeAll', async () => {
+  const { roms } = getLibrary();
+  const missing = roms.filter((r) => !r.art);
+  let ok = 0;
+  let done = 0;
+  for (const rom of missing) {
+    const status = await artwork.scrape(rom);
+    if (status === 'ok') ok++;
+    done++;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('library:changed', {
+        type: 'scrape-progress', done, total: missing.length, ok, current: rom.name,
+      });
+    }
+  }
+  return { total: missing.length, ok };
 });
 
 ipcMain.handle('session:stop', (_ev, id) => sessions.stop(id));
@@ -278,6 +334,21 @@ async function runAutoplayCheck() {
 app.whenReady().then(async () => {
   prefs = new Prefs(app.getPath('userData'));
   stateStore = new StateStore(app.getPath('userData'), app.getVersion());
+  gamelists = new GamelistStore(app.getPath('userData'));
+  artwork = new ArtworkStore(app.getPath('userData'));
+
+  // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
+  // (standard scheme: host = 'art', pathname = /<short>/<file>)
+  protocol.handle('romdeck-media', (req) => {
+    const url = new URL(req.url);
+    const parts = url.pathname.replace(/^\/+/, '').split('/');
+    if (url.host !== 'art' || parts.length < 2) return new Response('not found', { status: 404 });
+    const short = parts[0];
+    const file = decodeURIComponent(parts.slice(1).join('/'));
+    const target = path.normalize(path.join(artwork.root, short, 'covers', file));
+    if (!target.startsWith(artwork.root + path.sep)) return new Response('forbidden', { status: 403 });
+    return net.fetch(pathToFileURL(target).toString());
+  });
   const saveDir = path.join(app.getPath('userData'), 'saves');
   mkdirSync(saveDir, { recursive: true });
   sessions = new GameSessionManager({ stateStore, saveDir });

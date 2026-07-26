@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "electron": "^37.10.3",
+    "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
     "retroemu": "file:../retroemu"
   }

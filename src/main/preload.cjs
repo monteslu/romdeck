@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('romdeck', {
   screenshot: (id) => ipcRenderer.invoke('session:screenshot', id),
   statesList: (romPath) => ipcRenderer.invoke('states:list', romPath),
   statesDelete: (romPath, name) => ipcRenderer.invoke('states:delete', romPath, name),
+  setFavorite: (romPath, on) => ipcRenderer.invoke('library:setFavorite', romPath, on),
+  scrape: (romPath) => ipcRenderer.invoke('library:scrape', romPath),
+  scrapeAll: () => ipcRenderer.invoke('library:scrapeAll'),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;
