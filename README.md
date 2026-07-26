@@ -6,11 +6,13 @@ themes and a 10-foot mode — with **every game running in its own
 crash-isolated window**.
 
 ```bash
-git clone https://github.com/monteslu/romdeck && cd romdeck
-npm install && npm start -- ~/ROMs
+npx romdeck ~/ROMs
 ```
 
-Or build an installer: `npm run dist:linux` / `dist:mac` / `dist:win`.
+No installer, no bundled runtime, no browser. romdeck is a Node process that
+opens an SDL window and draws its UI with skia. Native code arrives as
+per-platform npm prebuilts or as WASM; **nothing is a binary romdeck built or
+carries**. See [docs/Packaging.md](docs/Packaging.md).
 
 Part of the [romdev](https://github.com/monteslu/romdev) family:
 **romdev** (build ROMs) · **retroemu** (play ROMs) · **retroterm** (terminal
@@ -125,17 +127,15 @@ npm install
 npm start -- ~/ROMs
 ```
 
-Build installers for yourself:
-
-```bash
-npm run dist:linux     # AppImage + .deb
-npm run dist:mac       # dmg + zip   (signing needs an Apple Developer ID)
-npm run dist:win       # NSIS + zip
-npm run pack           # unpacked directory, for testing
-```
-
 Requires Node ≥ 22. Cores, toolchains and the emulator all arrive as npm
 packages — **nothing is installed system-wide**.
+
+The h264 decoder used for video snaps is built from ffmpeg to WASM and is
+optional; without it, snaps fall back to the static image:
+
+```bash
+npm run build:video
+```
 
 ## Controls
 
@@ -196,19 +196,22 @@ The app can verify itself headlessly — used in development instead of
 clicking around:
 
 ```bash
-npx electron . --smoke      <roms>   # boots, renderer loads, IPC round-trips
-npx electron . --autoplay   <roms>   # full session surface incl. relaunch-resume
-npx electron . --devcheck   <roms>   # + memory read/write against a live game
-npx electron . --padonly    <roms>   # THE acceptance test: no pointer, anywhere
-npx electron . --viewcheck  <roms>   # launches into the themed view, windowed
-npx electron . --realtheme <name> <roms>  # renders a real ES-DE theme, checks pixels
-npx electron . --bigshot    <roms>   # renders both themed views, screenshots them
-npx electron . --themeshot  <roms>   # desktop under each color scheme
-npx electron . --uishot     <roms>   # settings and cheats panels
-npx electron . --joincheck <CODE> <roms>   # joins a live host through the UI
+romdeck --smoke      <roms>   # boots, services round-trip, stage paints, paths jailed
+romdeck --pathcheck  <roms>   # saves stay where they were; optional deps resolve
+romdeck --padonly    <roms>   # THE acceptance test: no pointer, anywhere
+romdeck --viewcheck  <roms>   # launch behaviour and view persistence
+romdeck --autoplay   <roms>   # full session surface incl. relaunch-resume
+romdeck --devcheck   <roms>   # + memory read/write against a live game
+romdeck --cartcheck  <roms>   # ROM, wasmcart and jsgame all play
+romdeck --snapcheck           # video snaps decode (WASM h264)
+romdeck --realtheme <name> <roms>   # renders a real ES-DE theme, checks pixels
+romdeck --joincheck <CODE> <roms>   # joins a live host through the UI
 
 THEME_REPOS=1 node scripts/theme-conformance.mjs   # real themes, every combination
 ```
+
+None of these need a display: the stage paints to an offscreen canvas, so
+they run the same in CI as on a desk.
 
 ## Licensing
 
@@ -216,6 +219,8 @@ romdeck is **GPL-3.0**. The app is free and will stay free: several bundled
 cores (Snes9x, Genesis Plus GX, PicoDrive) are non-commercially licensed, and
 ScreenScraper's API terms require a free application. Data and assets keep
 their own licenses — libretro-database is CC-BY-SA, SDL_GameControllerDB is
-zlib, and community themes are individually licensed (only clearly-licensed
-ones are bundled). Every core's upstream lineage and license is listed in the
-app.
+zlib, the bundled UI fonts are DejaVu Sans (Bitstream Vera) and GNU FreeSans
+(GPL-3.0-or-later with the font exception, attributed in
+[fonts/CREDITS.md](themes/romdeck-default/fonts/CREDITS.md)), and community
+themes are individually licensed (only clearly-licensed ones are bundled).
+Every core's upstream lineage and license is listed in the app.

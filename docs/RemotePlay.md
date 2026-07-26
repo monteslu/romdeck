@@ -181,8 +181,8 @@ Deliberately asymmetric, because the person hosting is *playing a game*:
 | `retroemu/src/net/audio.js` | downmix/upmix, IMA ADPCM, packetizer |
 | `retroemu/bin/join.js` | the guest player (window, audio device, pad → host) |
 | `retroemu/src/control/ControlChannel.js` | `remoteHost` / `remoteStatus` / `remoteStop` |
-| `romdeck/src/main/sessions.js` | `joinRemote()` — guest sessions |
-| `romdeck/src/renderer/app.js` | invite toast, join dialog, connection chip |
+| `romdeck/src/services/sessions.js` | `joinRemote()` — guest sessions |
+| `romdeck/src/ui/app-menus.js` | invite toast, join dialog, connection chip |
 
 ## Known gaps
 

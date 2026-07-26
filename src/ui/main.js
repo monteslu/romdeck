@@ -33,11 +33,12 @@ romdeck — a retro game library
 
 Self-checks (no display required for the render ones):
   --smoke        boots, services round-trip
-  --pathcheck    userData continuity with the Electron build
+  --pathcheck    userData continuity + retroemu's optional deps
   --realtheme <name> [variant]   render a theme, assert on pixels
   --padonly      the unplugged test: every surface without a pointer
   --viewcheck    launch behaviour and view persistence
   --cartcheck    ROM, wasmcart and jsgame all play
+  --snapcheck    video snaps decode (WASM h264)
   --autoplay     full session surface against a real core
   --devcheck     memory read/write against a live game
   --joincheck <CODE>   join a live remote-play host

@@ -10,11 +10,14 @@
 // visual also gets written to /tmp for eyeballing, because five bugs in this
 // project were invisible to green assertions and obvious in a screenshot.
 import { existsSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { App } from './app.js';
 import { Services } from './services.js';
 import { userDataDir } from './paths.js';
 import { HeadlessPresenter } from './present.js';
+
+const req = createRequire(import.meta.url);
 
 export function makeReporter(label) {
   let failures = 0;
@@ -60,11 +63,68 @@ async function smoke({ romsDir }) {
   r.check('systems grouped', app.stage.systems.length > 0,
     app.stage.systems.map((s) => s.name).join(', '));
 
+  // --debug is a documented flag whose module is only imported on that path,
+  // so nothing else here would ever load it. It shipped broken (importing a
+  // module that did not exist) and every headless check still passed, because
+  // none of them take that branch. Assert that it loads AND that it actually
+  // marks the frame -- an overlay that silently no-ops is the failure mode
+  // this would otherwise miss.
+  const { attachOverlay } = await import('./overlay.js');
+  const before = app.render().toBuffer('image/png');
+  attachOverlay(app);
+  const after = app.render().toBuffer('image/png');
+  r.check('--debug overlay draws', Buffer.compare(before, after) !== 0);
+  app.onOverlay = null;
+
   // The services the Electron build reached through ~50 IPC handlers are now
   // just calls; spot-check the ones with real side effects.
   r.check('settings resolve', app.svc.settings.resolve('videoFilter', {}).source === 'default');
   r.check('bios checker runs', app.svc.bios.check(romsDir).length > 0);
   r.check('theme catalog', app.svc.themes.catalog().length > 0);
+
+  // Path jailing. This used to be enforced by the custom protocol handlers;
+  // it is now resolveUrl's job, and a theme is still untrusted input. The
+  // sandbox went away, so the one guard that DID carry over gets asserted
+  // rather than assumed. Traversal must return null, not a path outside root.
+  //
+  // Probe the RESOLVER layer, not just the URL layer: `new URL()` collapses
+  // `../` in a pathname itself, so a traversal written into a romdeck-theme://
+  // URL is already neutered before any of our code runs. Testing only that
+  // form passes even with the jail deleted -- it proves URL parsing works, not
+  // that we do. So the traversal is handed to resolveAsset directly, and the
+  // percent-encoded form (which survives URL parsing and IS decoded by
+  // resolveUrl) covers the path through the URL surface.
+  // The traversal must reach a file that REALLY EXISTS, with enough `../` to
+  // clear the root from wherever romdeck happens to be installed. Both
+  // resolvers end in existsSync, so a payload that merely points outside the
+  // jail at nothing returns null either way and the check passes without
+  // testing the jail at all. Depth is computed, never hardcoded.
+  const themeName = app.stage.theme?.name ?? 'romdeck-default';
+  const themeDir = app.svc.themes.find(themeName)?.dir ?? process.cwd();
+  const up = (dir) => '../'.repeat(dir.split(path.sep).filter(Boolean).length + 1);
+  const target = process.platform === 'win32' ? 'Windows/win.ini' : 'etc/passwd';
+
+  const leaked = [];
+  for (const rel of [`${up(themeDir)}${target}`, `a/${up(themeDir)}${target}`]) {
+    if (app.svc.themes.resolveAsset(themeName, rel) !== null) leaked.push(rel);
+  }
+  // Percent-encoded, so it survives `new URL()` (which would otherwise
+  // collapse the `../` itself) and is decoded by resolveUrl on our side.
+  const enc = encodeURIComponent(`${up(themeDir)}${target}`);
+  // The media resolver joins TWO extra segments (<system>/covers) under the
+  // root before the traversal applies, so it has to climb that much further.
+  const mediaEnc = encodeURIComponent(`../../${up(app.svc.artwork.root)}${target}`);
+  for (const url of [
+    `romdeck-theme://${themeName}/${enc}`,
+    `romdeck-media://art/nes/${mediaEnc}`,
+  ]) {
+    if (app.svc.resolveUrl(url) !== null) leaked.push(url);
+  }
+  r.check('asset paths are jailed', leaked.length === 0, leaked.join(' '));
+  // …and the guard is not vacuous: a legitimate asset must still resolve.
+  // Without this, resolveUrl could return null unconditionally and pass.
+  const real = app.svc.resolveUrl(`romdeck-theme://${themeName}/theme.xml`);
+  r.check('legitimate theme asset resolves', !!real, real ?? '');
 
   app.svc.shutdown();
   return r.done('shell boots, services round-trip, stage paints');
@@ -74,7 +134,8 @@ async function smoke({ romsDir }) {
 async function pathcheck() {
   const r = makeReporter('PATHCHECK');
   // Deliberately NOT honouring ROMDECK_USERDATA here: the point is the real
-  // per-platform path Electron used.
+  // per-platform path, which must still be the one the Electron build wrote
+  // to. Anyone upgrading has saves, states and themes sitting in it.
   const saved = process.env.ROMDECK_USERDATA;
   delete process.env.ROMDECK_USERDATA;
   const dir = userDataDir();
@@ -105,7 +166,29 @@ async function pathcheck() {
     }
     svc.shutdown();
   }
+
+  // retroemu's optional deps. Each one fails SILENTLY at the point of use --
+  // remote play just never connects, a .p8 cart just never loads -- so the
+  // only place this gets caught is a check that looks for them on purpose.
+  // The old packaged build surfaced it as a builder warning; without a
+  // package step, nothing else does. See docs/Packaging.md.
+  for (const [mod, breaks] of [
+    ['hsync', 'remote play signalling'],
+    ['node-datachannel', 'remote play transport'],
+    ['romdev-core-fake08', 'PICO-8 carts'],
+  ]) {
+    let found = true;
+    try { req.resolve(mod, { paths: [retroemuDir(), process.cwd()] }); }
+    catch { found = false; }
+    r.check(`${mod} resolvable (${breaks})`, found);
+  }
   return r.done(`userData is ${dir}`);
+}
+
+/** retroemu's own directory, where its optional deps are installed. */
+function retroemuDir() {
+  try { return path.dirname(req.resolve('retroemu/package.json')); }
+  catch { return process.cwd(); }
 }
 
 // ── realtheme: render a real theme, assert on PIXELS ──────────────────
@@ -223,7 +306,11 @@ function paintStats(app) {
 export async function snapcheck({ argAfter }) {
   const r = makeReporter('SNAPCHECK');
   const { SnapPlayer, decoderAvailable } = await import('./video/player.js');
-  const explicit = argAfter('snapcheck');
+  // Only take the next argument if it actually looks like a video: the ROMs
+  // folder is also a bare argument, and treating it as a file made the check
+  // "fail" on a directory it was never asked about.
+  const next = argAfter('snapcheck');
+  const explicit = next && /\.(mp4|m4v)$/i.test(next) ? next : null;
   const candidates = explicit ? [explicit] : [
     path.join(process.env.HOME ?? '', 'code/cliemu/node-sdl/examples/09-ffmpeg-video/assets/video.mp4'),
     path.join(process.env.HOME ?? '', 'code/cliemu/three.js/examples/textures/pano.mp4'),

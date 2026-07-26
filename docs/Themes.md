@@ -17,7 +17,7 @@ elements**. Rendering is checked separately, against pixels rather than
 counts:
 
 ```bash
-npx electron . --realtheme modern-es-de <roms>
+romdeck --realtheme modern-es-de <roms>
 ```
 
 which asserts no unresolved `${…}` bindings reach the screen, no images are

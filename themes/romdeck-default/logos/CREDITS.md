@@ -40,4 +40,4 @@ Console logos are trademarked artwork. The community themes romdeck can
 *download* (Art Book Next, Modern, Slate) carry 20–220 MB of that artwork under
 CC-BY-NC-SA, and none of it is romdeck's to bundle. A system's name set in a
 typeface is not a logo, so these are ours to ship — see `THEME_CATALOG` in
-`src/main/themes.js` for the wider fetch-don't-bundle reasoning.
+`src/services/themes.js` for the wider fetch-don't-bundle reasoning.

@@ -41,7 +41,12 @@ export async function autoplay({ romsDir, dev = false }) {
   let { id } = sessions.launch(rom, { resume: false });
   const ready = await waitFor(sessions, id, ['ready', 'crashed', 'error']);
   if (!ready || ready.type !== 'ready') {
-    r.check('session ready', false, ready ? `${ready.type}: ${ready.message ?? ready.code}` : 'timed out');
+    // The session already captured the player's last 8 lines; printing only
+    // the exit code turns a diagnosable failure ("core package has no wasm")
+    // into a bare "crashed: 1" that costs an hour to chase down.
+    const tail = ready?.logTail?.length ? `\n  ${ready.logTail.join('\n  ')}` : '';
+    r.check('session ready', false,
+      (ready ? `${ready.type}: ${ready.message ?? ready.code}` : 'timed out') + tail);
     app.svc.shutdown();
     return r.done('');
   }

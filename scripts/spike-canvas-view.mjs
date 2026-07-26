@@ -20,7 +20,7 @@ import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ThemeStore } from '../src/main/themes.js';
+import { ThemeStore } from '../src/services/themes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HEADLESS = process.argv.includes('--headless');

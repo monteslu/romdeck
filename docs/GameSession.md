@@ -1,15 +1,15 @@
 # GameSession — the player-process contract
 
-romdeck never runs a game in the Electron process. Every launch spawns an
+romdeck never runs a game inside its own process. Every launch spawns an
 isolated **player process** (`retroemu --control`, SDL window) and talks to it
 over Node IPC. A crashing or hung core costs one window; the library is
 unaffected. This document is the frozen contract.
 
 ```
-Electron main ──spawn(stdio:[ignore,pipe,pipe,'ipc'])──▶ retroemu --control
-      │  { id, method, params }  ─────────────────────▶  ControlChannel
-      │  ◀───────  { id, result } | { id, error }
-      │  ◀───────  { event, … }   (ready, autosave, remote)
+romdeck ──spawn(stdio:[ignore,pipe,pipe,'ipc'])──▶ retroemu --control
+   │  { id, method, params }  ────────────────────────▶  ControlChannel
+   │  ◀───────  { id, result } | { id, error }
+   │  ◀───────  { event, … }   (ready, autosave, remote)
 ```
 
 ---

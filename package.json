@@ -3,33 +3,41 @@
   "version": "0.1.0",
   "description": "A beautiful cross-platform retro game library. Every game runs in its own crash-isolated player window, powered by retroemu's libretro WASM cores.",
   "type": "module",
-  "main": "src/main/main.js",
+  "main": "src/ui/main.js",
   "bin": {
     "romdeck": "bin/romdeck.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "themes/",
+    "docs/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "start": "electron .",
-    "smoke": "electron . --smoke",
+    "start": "node src/ui/main.js",
+    "smoke": "node src/ui/main.js --smoke",
+    "check": "node src/ui/main.js --smoke && node src/ui/main.js --padonly && node src/ui/main.js --pathcheck",
     "logos": "node scripts/make-shelf-logos.mjs",
     "themes": "node scripts/theme-conformance.mjs",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:linux": "electron-builder --linux",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "bakeoff": "node scripts/present-bakeoff.mjs",
+    "build:video": "./scripts/build-video-decoder.sh"
   },
   "keywords": [
     "emulator",
     "retro",
     "libretro",
     "frontend",
-    "electron",
     "nes",
     "snes",
     "genesis",
     "gameboy",
     "romdev",
-    "retroemu"
+    "retroemu",
+    "sdl",
+    "canvas"
   ],
   "author": {
     "name": "monteslu",
@@ -49,72 +57,7 @@
     "@napi-rs/canvas": "^1.0.2",
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
-    "retroemu": "file:../retroemu",
+    "retroemu": "^0.5.0",
     "webgl-node": "^1.2.0"
-  },
-  "devDependencies": {
-    "electron": "^37.10.3",
-    "electron-builder": "^26.15.3"
-  },
-  "build": {
-    "appId": "dev.romdeck.app",
-    "productName": "romdeck",
-    "copyright": "Copyright © 2026 monteslu. GPL-3.0.",
-    "files": [
-      "src/**/*",
-      "bin/**/*",
-      "themes/**/*",
-      "feed/**/*",
-      "docs/**/*",
-      "README.md",
-      "!**/*.map",
-      "!**/node_modules/wasmcart/ports/**",
-      "!**/node_modules/retroemu/build/**",
-      "!**/node_modules/retroemu/saves/**",
-      "!**/node_modules/retroemu/test/**",
-      "!**/node_modules/*/{test,tests,__tests__,example,examples,docs,doc}/**",
-      "!**/node_modules/*/{.github,.vscode}/**",
-      "!**/node_modules/**/*.{markdown,map,ts,flow}",
-      "!**/*.{o,a,obj,pdb,lib,exp}"
-    ],
-    "extraMetadata": {
-      "main": "src/main/main.js"
-    },
-    "asar": true,
-    "npmRebuild": false,
-    "nodeGypRebuild": false,
-    "buildDependenciesFromSource": false,
-    "asarUnpack": [
-      "**/*.node",
-      "**/node_modules/gamepad-node/**",
-      "**/node_modules/@napi-rs/**",
-      "node_modules/**"
-    ],
-    "linux": {
-      "target": ["AppImage", "deb"],
-      "category": "Game",
-      "synopsis": "Retro game library with crash-isolated players",
-      "desktop": {
-        "entry": {
-          "Name": "romdeck",
-          "Categories": "Game;Emulator;"
-        }
-      }
-    },
-    "mac": {
-      "target": ["dmg", "zip"],
-      "category": "public.app-category.games",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
-    },
-    "win": {
-      "target": ["nsis", "zip"]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   }
 }

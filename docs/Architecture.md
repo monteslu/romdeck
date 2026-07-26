@@ -7,81 +7,88 @@ changing anything structural.
 
 ## The one decision everything else follows from
 
-**Games never run inside the app.** The Electron window is a library,
+**Games never run inside the app.** The romdeck window is a library,
 configuration and metadata tool. Every game session is a **separate OS
 process** with its own SDL window, its own audio device and its own input.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Electron MAIN process                                        │
-│   window + protocols + updater                               │
-│   GamepadService   (SDL via gamepad-node) → UI navigation    │
-│   SessionManager   (spawns/monitors player processes)        │
-│   Library services (scan, identify, artwork, gamelists,      │
-│                     settings, cheats, themes, feed, BIOS)    │
-└───────────┬───────────────────────────────┬──────────────────┘
-            │ contextBridge IPC             │ child_process.spawn
-┌───────────▼──────────────┐   ┌────────────▼─────────────────┐
-│ RENDERER (sandboxed)     │   │ PLAYER PROCESS  (1 per game) │
-│  library grid, panels    │   │   retroemu + WASM libretro   │
-│  modals, theme engine    │   │   SDL window / audio / input │
-│  big-screen stage        │   │   save states, rewind,       │
-│  no Node, no fs, no net  │   │   cheats, overlay, remote    │
-└──────────────────────────┘   └──────────────────────────────┘
-                                 JSON-RPC over Node IPC ↕
+│ romdeck  (one plain Node process)                            │
+│                                                              │
+│   src/ui/        SDL window, event loop, skia stage,         │
+│                  focus ring, menus, OSK, present seam        │
+│                             │ direct calls                   │
+│   src/services/  scan, identify, artwork, gamelists,         │
+│                  settings, cheats, themes, feed, BIOS,       │
+│                  gamepad (SDL via gamepad-node)              │
+│                  SessionManager ──┐                          │
+└───────────────────────────────────┼──────────────────────────┘
+                                    │ child_process.spawn
+                       ┌────────────▼─────────────────┐
+                       │ PLAYER PROCESS  (1 per game) │
+                       │   retroemu + WASM libretro   │
+                       │   SDL window / audio / input │
+                       │   save states, rewind,       │
+                       │   cheats, overlay, remote    │
+                       └──────────────────────────────┘
+                         JSON-RPC over Node IPC ↕
 ```
 
 **Why:** a segfaulting or hung emulator core costs exactly one window. The
 library, your other running games, and any in-flight scraping are untouched.
-OpenEmu proved the model (theirs used XPC helper processes); it also sidesteps
-the unproven business of creating SDL windows inside Electron's own process on
-macOS, and multiple concurrent games fall out for free.
+OpenEmu proved the model (theirs used XPC helper processes), and multiple
+concurrent games fall out for free.
 
 **The cost** we accept: an in-game overlay can't be HTML (it's drawn into the
 SDL framebuffer instead — see `retroemu/src/control/Overlay.js`), and the
 frontend talks to a game over a control channel rather than calling functions.
 
+Note what is *not* in that diagram: a second process for the UI, and an IPC
+hop to reach the services. The UI calls `svc.library.scan()` directly. There
+was an Electron main/renderer split here, and removing it deleted the
+allowlists, the preload bridge, and the serialization boundary along with it.
+
 ---
 
 ## Processes in detail
 
-### 1. Electron main (`src/main/main.js`)
+### 1. The romdeck process (`src/ui/` + `src/services/`)
 
-Owns everything privileged: filesystem, network, child processes, custom
-protocols. Never renders.
+One process. `src/services/` is UI-agnostic and knows nothing about how it is
+drawn; `src/ui/` owns the window and draws. The split is a dependency rule,
+not a process boundary: services never import from `ui/`.
 
-Two custom schemes are registered before app-ready, both path-jailed:
+**`src/ui/`**
 
-| Scheme | Serves |
-|---|---|
-| `romdeck-media://art/<system>/<file>` | box art from `<userData>/media` |
-| `romdeck-theme://<theme>/<path>` | theme assets from a theme folder |
-
-Self-check flags (`--smoke`, `--autoplay`, `--devcheck`, `--padonly`,
-`--viewcheck`, `--realtheme`, `--bigshot`, `--themeshot`, `--uishot`,
-`--joincheck`) run the app headlessly and assert behavior. They exist because
-clicking through a GUI is not a test.
-
-### 2. Renderer (`src/renderer/`)
-
-Sandboxed: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
-plus a CSP that only allows `self`, `data:` and `romdeck-media:` images. It
-reaches the main process solely through the `romdeck` object exposed by
-`preload.cjs`, which is an **explicit allowlist** — the renderer can't invoke
-an arbitrary IPC channel or an arbitrary session method.
-
-- `app.js` — library grid, system rail, details panel, modals, menus, theme
-  token application.
+- `main.js` — argument parsing, self-check dispatch, app start.
+- `app.js` — the SDL window, the event loop, and input dispatch. Repaint is
+  **event-driven**: there is no render loop, so an idle library costs no CPU.
+  This matters most on the handhelds this is meant to run on.
+- `present.js` — the present seam. `GlPresenter` (webgl-node) is the default,
+  `CpuPresenter` (SDL blit) the fallback, `HeadlessPresenter` the one every
+  self-check uses. The stage paint is identical for all three.
+- `stage.js` — theme model → skia canvas via `@napi-rs/canvas`. Fonts are
+  bundled, so text renders identically on a bare handheld and a dev machine.
 - `focus.js` — the **focus ring**: named groups on a stack, geometric
   navigation, one visible style. Pad, keyboard and mouse all drive it, and
   hover *sets* focus rather than bypassing it, so the pointer and the pad can
   never disagree about what is selected. Every interactive surface registers
   here; that is what makes the app usable without a pointer.
-- `menu.js` — in-view menus (the ES "one button opens everything" model).
-- `osk.js` — on-screen keyboard, three alphabets (text / hex / base24).
-- `bigscreen.js` — the ES-DE theme renderer. This is the primary view.
+- `widgets.js` / `menus.js` / `app-menus.js` — canvas widgets, the menu stack,
+  the on-screen keyboard (text / hex / base24), the file browser.
+- `services.js` — constructs the services once and exposes `resolveUrl()` for
+  `romdeck-theme://` and `romdeck-media://`. These were Electron custom
+  protocols; they are now path-jailed resolution to a real file, which is what
+  they always were underneath.
+- `video/` — snap playback: a pure-JS ISO-BMFF demuxer feeding an h264
+  decoder built from ffmpeg to WASM. See `scripts/build-video-decoder.sh`.
 
-### 3. Player processes (`retroemu`)
+Self-check flags (`--smoke`, `--pathcheck`, `--padonly`, `--viewcheck`,
+`--autoplay`, `--devcheck`, `--cartcheck`, `--snapcheck`, `--realtheme`,
+`--joincheck`) run the app headlessly and assert behavior. They exist because
+clicking through a GUI is not a test.
+
+### 2. Player processes (`retroemu`)
 
 Spawned per game. See [GameSession.md](GameSession.md) for the full contract.
 A player is launched with the settings cascade already resolved into flags:
@@ -97,11 +104,13 @@ ROM, no core, no control channel — it renders someone else's stream.
 
 ---
 
-## Module map (`src/main/`)
+## Module map (`src/services/`)
+
+Every module here is UI-agnostic: no window, no canvas, no drawing. That is
+what let the frontend be replaced without touching any of them.
 
 | Module | Responsibility |
 |---|---|
-| `main.js` | app lifecycle, IPC surface, protocols, self-checks |
 | `sessions.js` | **GameSessionManager** — spawn, monitor, RPC, crash reporting, remote join |
 | `scanner.js` | recursive ROM scan; folder-first system detection; Genesis header sniff |
 | `systems.js` | display name ↔ ES-DE shortname ↔ libretro system name |
@@ -125,16 +134,16 @@ ROM, no core, no control channel — it renders someone else's stream.
 
 ## Data flow: what happens when you launch a game
 
-1. Renderer calls `romdeck.launch(path, opts)`.
+1. The UI calls `svc.launch(path, opts)`.
 2. `launch()` refuses if that ROM already has a session (one window per game).
-3. Main resolves the ROM from the library, records a play in `gamelist.xml`.
+3. It resolves the ROM from the library, records a play in `gamelist.xml`.
 4. `GameSessionManager.launch()` resolves the **settings cascade** for
    `{platform, gameKey}` → picture filter, fullscreen, resume, ff speed.
 5. It gathers **active cheats** and the **controller map** for that context.
 6. It spawns `retroemu` with those as flags, `stdio: [ignore, pipe, pipe, ipc]`.
-7. The player emits `ready`; if resuming, main pushes the `auto` state back in
-   via `loadState`.
-8. On exit the player pushes an `autosave` event **before teardown**; main
+7. The player emits `ready`; if resuming, romdeck pushes the `auto` state back
+   in via `loadState`.
+8. On exit the player pushes an `autosave` event **before teardown**; romdeck
    persists it as the `auto` state for next launch.
 9. If the exit was abnormal, the session emits `crashed` with the last 8 lines
    of output, and the UI offers a relaunch.
@@ -189,12 +198,15 @@ by device GUID rather than port index.
 
 One theme drives two very different UIs:
 
-- **The themed view** (the primary interface) renders the theme's
-  `system`/`gamelist` views as DOM on a fixed-aspect stage scaled to the
-  window, so normalized 0–1 layouts are resolution-independent. It runs
-  windowed or fullscreen; fullscreen is a toggle, not a mode.
+- **The themed view** (the primary interface) paints the theme's
+  `system`/`gamelist` views onto a fixed-aspect skia canvas that is then
+  scaled to the window, so normalized 0–1 layouts are resolution-independent.
+  It runs windowed or fullscreen; fullscreen is a toggle, not a mode.
 - **The desktop UI** consumes *design tokens* extracted from the same theme
-  and applies them as CSS custom properties.
+  and paints its own widgets with them.
+
+Both are the same canvas and the same painter. ES-DE's normalized coordinate
+model is a rasteriser's model, so there is no layout engine in between.
 
 Parsing is a **recursive walk**: real themes nest their views inside
 `<variant>` / `<aspectRatio>` / `<fontSize>` / `<colorScheme>` wrappers and
@@ -212,12 +224,27 @@ declare `<view name="desktop">`. Details in [Themes.md](Themes.md).
 
 ## Security posture
 
-- Renderer is sandboxed with context isolation; no Node, no direct fs.
-- `preload.cjs` exposes a fixed API surface. Session RPC from the renderer is
-  filtered through an allowlist (`RENDERER_METHODS`), and developer-mode
-  memory access through another (`DEV_METHODS`) — the renderer cannot call
-  arbitrary player methods.
-- Both custom protocols normalize and jail paths inside their root.
+The threat model changed when the browser left, and it is worth being precise
+about it rather than porting the old claims across.
+
+**What the sandbox was for:** Electron's renderer ran a full browser engine,
+so the assets a theme supplies (HTML, CSS, images fetched over custom
+protocols) were executed by something with a remote-code-execution history.
+Context isolation and the allowlists existed to contain *that*.
+
+**What replaced it:** there is no engine and no script execution. A theme is
+XML that resolves to elements and images, and images are decoded by skia. A
+malicious theme's reach is what a parser and an image decoder give it, which
+is a far smaller surface than a browser, but is not zero — image decoders have
+their own CVE history. Themes remain untrusted input.
+
+- `resolveUrl()` normalizes and jails every `romdeck-theme://` and
+  `romdeck-media://` path inside its root, exactly as the protocol handlers
+  did. A theme cannot reference a file outside its own folder.
+- Path traversal is the live risk that survived the transition, so it is the
+  one covered by an assertion rather than by architecture.
+- Developer-mode memory access reaches the player over the same JSON-RPC
+  control channel as everything else; the player decides what it honours.
 - Remote play is P2P over DTLS (WebRTC's default). The share code is the
   credential: 24⁹ ≈ 2.6e12 combinations, ephemeral, existing only while
   hosting. No accounts, no tracking.

@@ -1,0 +1,9 @@
+# npm falls back to .gitignore when this file is absent, which would exclude
+# src/ui/video/wasm/ -- the built h264 decoder. That is a BUILD ARTIFACT (kept
+# out of git on purpose) but a SHIPPED ASSET: without it, an npm install has no
+# video snaps and degrades silently to the static image. So npm gets its own
+# list, and the wasm is deliberately not in it.
+node_modules/
+dist/
+*.log
+.DS_Store

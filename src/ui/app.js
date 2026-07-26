@@ -10,7 +10,7 @@
 import { Stage } from './stage.js';
 import { createPresenter, fitRect, STAGE_W, STAGE_H } from './present.js';
 import { Services } from './services.js';
-import { PadNav } from '../main/gamepad.js';
+import { PadNav } from '../services/gamepad.js';
 import { focus } from './focus.js';
 import { MenuStack, Keyboard, FileBrowser } from './menus.js';
 import { Toasts } from './widgets.js';

@@ -1,125 +1,166 @@
-# Packaging
+# Distribution
+
+romdeck is a Node package. There is no installer to build, no code-signing
+step, and no bundled runtime.
 
 ```bash
-npm run pack           # unpacked directory — fastest way to test a real build
-npm run dist:linux     # AppImage + .deb
-npm run dist:mac       # dmg + zip
-npm run dist:win       # NSIS installer + zip
+npx romdeck                 # run it
+npm i -g romdeck && romdeck # or install it
 ```
 
-Artifacts land in `dist/`. Verified on Linux: the AppImage boots, launches a
-real game and passes `--smoke`, `--autoplay`, `--cartcheck`, `--padonly` and
-`--realtheme` standalone.
+That is the whole distribution story. The rest of this document explains why
+it is allowed to be that short, and what the constraints are that keep it that
+way.
 
----
+## What actually ships
 
-## Four things that will bite you
+| Piece | Size | How it gets there |
+|---|---|---|
+| romdeck itself | 2.4 MB tarball, 5.0 MB unpacked | 92 files: JS, four bundled fonts, the default themes |
+| dependency tree | ~50 MB installed | npm, current platform only |
+| retroemu + cores | ~185 MB installed | npm, WASM, platform-independent |
 
-Each of these produced a build that *looked* fine and failed at runtime.
+Nothing above is an executable that romdeck built, signed, or carries. The
+native code in the tree is three N-API `.node` addons, and every one arrives
+as a prebuilt from its own publisher on npm.
 
-### 1. Electron must be a devDependency
+## The rule this is downstream of
 
-electron-builder refuses to package an app that lists `electron` in
-`dependencies` — it only bundles production deps, and Electron is the runtime,
-not app content.
+**No bundled executables.** Native code reaches a user's machine one of two
+ways: as WASM built from source, or as an N-API prebuilt published by the
+package that owns it. romdeck never ships a binary it compiled.
 
-That killed the old `npx romdeck` story, which needed it the other way round.
-`bin/romdeck.js` now resolves Electron at runtime and prints an explanation
-instead of `Cannot find module 'electron'` when it isn't there.
+That rule is why there is no installer. An installer exists to carry a runtime
+and a pile of platform binaries to a machine that has neither. npm already
+does that, per-platform, with a resolver, a lockfile, and a cache. Wrapping it
+in a second distribution mechanism adds a build matrix, three signing
+identities, an update feed, and roughly 160 MB of browser, in exchange for
+nothing romdeck needs.
 
-### 2. The player cannot run from inside app.asar
+## How per-platform binaries work without a build matrix
 
-romdeck's founding decision is that every game runs in a **separate Node
-process** (see [Architecture.md](Architecture.md)). Node has no idea what an
-asar archive is — only Electron's patched `fs` can read one. So a packaged
-build with retroemu inside `app.asar` boots perfectly and then fails on every
-launch with `MODULE_NOT_FOUND`.
+This is the mechanism the whole approach rests on, and it is npm's, not ours.
 
-`resolveRetroemuCli()` rewrites `app.asar/` → `app.asar.unpacked/` for exactly
-this reason, and `node_modules/**` is in `asarUnpack`.
-
-Unpacking everything sounds wasteful and isn't: romdeck's own code is under
-1 MB, and the ~400 MB of dependencies are almost entirely WASM cores and
-native addons that the Node child loads directly and that must be unpacked
-regardless.
-
-### 3. Do not let electron-builder rebuild the native modules
-
-`npmRebuild` and `nodeGypRebuild` are both `false`, deliberately.
-
-retroemu's native modules (`@kmamal/sdl`, `native-gles`, `webgl-node`,
-`node-datachannel`) load in the **player**, which is a plain Node process —
-never Electron. Rebuilding them against Electron's ABI is both unnecessary and
-impossible from here, since they resolve `node-addon-api` from their own tree.
-Left on, the build dies in `node-gyp`.
-
-`gamepad-node` is the one native module that *does* load in Electron main. It
-is N-API, so its prebuilt binary is ABI-stable and needs no rebuild either.
-
-### 4. Exclude build artifacts, not licences
-
-An unfiltered build is **3.2 GB**. Two dependencies ship their build trees:
-`wasmcart/ports` (2.1 GB of example games) and `retroemu/build` (632 MB of
-compilation output). Neither is needed at runtime. Excluding those plus the
-usual test/example directories gets it to **437 MB** unpacked, **162 MB** as an
-AppImage.
-
-Licence files are kept on purpose. romdeck is GPL-3.0 and ships MIT, zlib and
-CC-BY-SA dependencies; stripping their licences to save a few hundred KB would
-be a real violation, not an optimisation.
-
----
-
-## Signing and notarization
-
-**Not done — it needs credentials only the project owner has.**
-
-- **macOS** requires an Apple Developer ID certificate, and notarization needs
-  an Apple ID with an app-specific password (`APPLE_ID`,
-  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). The hardened-runtime
-  entitlements are already written — see `build/entitlements.mac.plist`, where
-  each exception is justified. WASM cores need `allow-jit`, and the spawned
-  player needs `disable-library-validation`; without those the signed build
-  runs and then fails to load a single core.
-- **Windows** needs an Authenticode certificate to avoid a SmartScreen warning.
-- **Linux** needs neither.
-
-Unsigned builds work; they just warn on first launch.
-
-## Auto-update
-
-Not wired. `electron-updater` needs a published release feed, so it should
-follow the first real release rather than precede it.
-
-## If the build warns about missing dependencies
-
-A build that prints
+A package like `@napi-rs/canvas` declares every platform build as an
+**optionalDependency**:
 
 ```
-cannot find path for dependency
-  hsync@undefined, node-datachannel@undefined, romdev-core-fake08@undefined
+@napi-rs/canvas-linux-x64-gnu, @napi-rs/canvas-darwin-arm64,
+@napi-rs/canvas-win32-x64-msvc, @napi-rs/canvas-linux-arm64-musl, …
 ```
 
-is telling the truth: those packages are declared in `retroemu/package.json`
-but not installed, so they would be **absent from the packaged app**. What
-that costs:
+Each of those packages sets `os` and `cpu` in its own manifest. npm installs
+the one that matches and silently skips the other ten. On this machine that
+is one 32 MB directory instead of eleven.
+
+The consequence worth internalising: **adding a platform is not a romdeck
+release.** When `@kmamal/sdl` or `@napi-rs/canvas` publishes a new prebuilt,
+users on that platform get it from `npm install`. A romdeck that shipped its
+own installers would need a CI runner, a build, and a release per platform to
+deliver the same thing.
+
+romdeck's three native dependencies all work this way:
+
+| Package | Role | Distribution |
+|---|---|---|
+| `@kmamal/sdl` | window, input, audio | prebuilt per platform |
+| `@napi-rs/canvas` | skia rasteriser for the UI | prebuilt per platform |
+| `gamepad-node` | controller hotplug | N-API prebuilt, ABI-stable |
+
+`webgl-node` (GL present) is optional at runtime: if the context cannot be
+acquired, the presenter falls back to the CPU blit and the app runs unchanged.
+See [Architecture.md](Architecture.md).
+
+## A packaged build, if one is ever wanted
+
+Some users will not want to think about Node. The answer is still not an
+Electron installer.
+
+- **A Node SEA** (single executable applications, stable since Node 22) can
+  produce one file per platform from the same source, with no runtime bundled
+  beyond Node itself.
+- **A per-platform npm package** with romdeck as a dependency and a launcher,
+  installed once, is closer to what a handheld image wants anyway.
+
+Both are additive. Neither changes the source layout, and neither is on the
+critical path, so neither has been built.
+
+## Blocker: retroemu must be published before romdeck can be
+
+`dependencies.retroemu` is `file:../retroemu`, which cannot ship. A `file:`
+spec resolves to a path that does not exist on a user's machine, so the
+tarball installs and then fails on every launch.
+
+It is still `file:` because **the published `retroemu@0.4.8` is stale**. The
+local tree carries the same version number with committed but unpublished
+work, and the flags romdeck's session manager passes are exactly what is
+missing:
+
+| Flag | In published 0.4.8 | Needed for |
+|---|---|---|
+| `--control` | **no** | the entire session IPC contract |
+| `--input-map` | **no** | controller remapping |
+| `--cheats` | **no** | per-game codes |
+| `--ff-speed`, `--no-rewind` | **no** | the settings cascade |
+
+Against 0.4.8 the player treats `--control` as unknown, reads the next
+argument as a ROM path, and exits 1. Every launch fails.
+
+**To unblock:** bump and publish retroemu (a version above 0.4.8, since 0.4.8
+is taken and its content differs), then change this dependency to that version
+and re-run the clean-install verification below. That is a retroemu release
+decision, so it is deliberately not made here.
+
+Until then, romdeck runs correctly from a checkout and is not publishable.
+
+## Verification
+
+There is no build to verify, so the release gate is the check matrix, run
+against the source tree that will be published:
+
+```bash
+node src/ui/main.js --smoke      --pathcheck   --padonly
+node src/ui/main.js --viewcheck  --autoplay    --devcheck
+node src/ui/main.js --cartcheck  --snapcheck
+node src/ui/main.js --realtheme <theme>
+node scripts/theme-conformance.mjs /tmp/es-themes
+npx romdeck --smoke              # the entry point users actually hit
+```
+
+Two gaps to know about:
+
+- **Remote play has no automated self-check.** `--joincheck` needs a live
+  host. Verify by hand before a release.
+- **`npm pack` is the real payload test.** `files` in package.json decides
+  what ships; `npm pack --dry-run --json` reports exactly what a user gets.
+  A file that only exists in your working tree will not be there.
+
+## Dependency gotcha that survives from the old build
+
+retroemu declares `hsync`, `node-datachannel` and `romdev-core-fake08` but
+they are easy to end up without. When they are missing:
 
 | Missing | Breaks |
 |---|---|
 | `hsync` + `node-datachannel` | **Remote play** — signalling and the WebRTC transport |
 | `romdev-core-fake08` | **PICO-8** carts (`.p8`, `.p8.png`) |
 
-This is HANDOFF gotcha #3 ("retroemu needs optional native deps installed or
-things fail in confusing ways") surfacing at package time. Fix it in retroemu,
-not romdeck:
+Both failures are silent until someone tries the feature. Fix it in retroemu:
 
 ```bash
 cd ../retroemu && npm install hsync node-datachannel romdev-core-fake08
 ```
 
-Then rebuild and confirm the warning is gone — the packaged tree should
-contain all three under
-`resources/app.asar.unpacked/node_modules/`.
+The old packaged build surfaced this as a `cannot find path for dependency`
+warning at package time. Without a package step, nothing surfaces it, so
+`--devcheck` asserts the three are resolvable.
 
-**Remote play still has no automated self-check** (`--joincheck` needs a live
-host), so verify it by hand before a release.
+## Signing and notarization
+
+Not applicable. There is no romdeck-built binary to sign. Prebuilt addons are
+signed, or not, by their publishers, and npm verifies package integrity
+against the lockfile.
+
+If a SEA is ever produced, macOS would need a Developer ID plus notarization
+and Windows an Authenticode certificate. That is a decision for whoever
+decides to produce one.

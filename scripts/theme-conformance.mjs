@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ThemeStore } from '../src/main/themes.js';
+import { ThemeStore } from '../src/services/themes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
