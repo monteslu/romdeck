@@ -77,12 +77,15 @@ cross-platform, on cores that update independently of the app.
 - Per-player port assignment, deadzone, profile import/export.
 - Unplugging a pad **pauses every running game** (the tripped-cable case).
 
-### Themes & big-screen mode
+### Themes & the ES view
 - **EmulationStation / ES-DE XML themes**, reimplemented in browser tech.
-- Themes drive **both** the windowed desktop UI *and* the 10-foot mode.
+- Themes drive **both** the windowed desktop UI *and* the themed ES view.
   Any ES-DE theme restyles the desktop with no romdeck-specific markup.
-- Big-screen mode (**F11**): system carousel → gamelist → launch, full pad
+- The themed view (**F11** today): system carousel → gamelist → launch, pad
   navigation. See [docs/Themes.md](docs/Themes.md).
+- *Currently* this view forces fullscreen when entered — an artefact of
+  building it as a "big-screen mode". It is resolution-independent and works
+  fine in a window; decoupling it is part of M7 (PLAN.md §16e).
 
 ### Remote play — "a very long couch"
 - Host a game, get a share code, a friend joins as **player 2** — they need
