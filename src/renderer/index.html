@@ -18,6 +18,8 @@
       <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
       <button id="bios" title="Check BIOS files">BIOS</button>
       <button id="pads" title="Controllers">🎮</button>
+      <button id="themebtn" title="Theme">🎨𝗧</button>
+      <button id="bigscreenbtn" title="Big-screen mode (F11)">📺</button>
     </div>
     <div id="sessioncount" class="hidden">0 playing</div>
   </header>
@@ -76,6 +78,24 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <div id="thememodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Theme</h2>
+        <button id="themeclose">✕</button>
+      </div>
+      <p class="dim">
+        Themes use the EmulationStation / ES-DE XML format. Drop theme folders in
+        <code id="themedir">userData/themes</code> and they appear here.
+      </p>
+      <div id="themelist"></div>
+    </div>
+  </div>
+
+  <div id="bigscreen" class="hidden">
+    <div id="bs-stage"></div>
+  </div>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>

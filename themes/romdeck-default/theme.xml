@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<!--
+  romdeck default theme.
+
+  Authored in the ES-DE theme format on purpose: romdeck's theme engine is a
+  reimplementation of EmulationStation/ES-DE in browser tech, and this theme
+  is the engine's own dogfood. Everything here is portable vocabulary —
+  normalized 0-1 positions, ${variables}, variants and colorSchemes.
+-->
+<theme>
+    <variables>
+        <bg>0d0f14</bg>
+        <panel>1a1f2b</panel>
+        <ink>e8ecf4</ink>
+        <dim>8b94a7</dim>
+        <accent>4fd1c5</accent>
+    </variables>
+
+    <variables colorScheme="amber">
+        <bg>140f08</bg>
+        <panel>241a0d</panel>
+        <ink>ffd79a</ink>
+        <dim>a4794a</dim>
+        <accent>f6ad55</accent>
+    </variables>
+
+    <!-- ── system view: the console carousel ─────────────────────────── -->
+    <view name="system">
+        <image name="background">
+            <pos>0 0</pos>
+            <size>1 1</size>
+            <color>${bg}</color>
+            <zIndex>0</zIndex>
+        </image>
+
+        <text name="wordmark">
+            <pos>0.5 0.12</pos>
+            <origin>0.5 0.5</origin>
+            <text>romdeck</text>
+            <color>${accent}</color>
+            <fontSize>0.075</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>10</zIndex>
+        </text>
+
+        <carousel name="systemCarousel">
+            <pos>0.5 0.5</pos>
+            <size>0.9 0.34</size>
+            <origin>0.5 0.5</origin>
+            <color>${panel}</color>
+            <selectedColor>${accent}</selectedColor>
+            <textColor>${ink}</textColor>
+            <itemScale>1.15</itemScale>
+            <itemSpacing>0.02</itemSpacing>
+            <maxItemCount>5</maxItemCount>
+            <zIndex>20</zIndex>
+        </carousel>
+
+        <text name="systemName">
+            <pos>0.5 0.74</pos>
+            <origin>0.5 0.5</origin>
+            <metadata>system.fullName</metadata>
+            <color>${ink}</color>
+            <fontSize>0.052</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+
+        <text name="gameCount">
+            <pos>0.5 0.80</pos>
+            <origin>0.5 0.5</origin>
+            <metadata>system.gameCount</metadata>
+            <color>${dim}</color>
+            <fontSize>0.03</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+
+        <text name="help">
+            <pos>0.5 0.93</pos>
+            <origin>0.5 0.5</origin>
+            <text>← → choose system      Ⓐ open      Ⓑ desktop mode</text>
+            <color>${dim}</color>
+            <fontSize>0.026</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+    </view>
+
+    <!-- ── gamelist view: list on the left, art + metadata right ─────── -->
+    <view name="gamelist">
+        <image name="background">
+            <pos>0 0</pos>
+            <size>1 1</size>
+            <color>${bg}</color>
+            <zIndex>0</zIndex>
+        </image>
+
+        <text name="systemHeader">
+            <pos>0.05 0.08</pos>
+            <origin>0 0.5</origin>
+            <metadata>system.fullName</metadata>
+            <color>${accent}</color>
+            <fontSize>0.05</fontSize>
+            <zIndex>10</zIndex>
+        </text>
+
+        <textlist name="gamelist">
+            <pos>0.05 0.16</pos>
+            <size>0.42 0.7</size>
+            <color>${dim}</color>
+            <selectedColor>${ink}</selectedColor>
+            <selectorColor>${panel}</selectorColor>
+            <fontSize>0.038</fontSize>
+            <lineSpacing>1.5</lineSpacing>
+            <zIndex>20</zIndex>
+        </textlist>
+
+        <image name="md_cover">
+            <pos>0.72 0.42</pos>
+            <size>0.34 0.42</size>
+            <origin>0.5 0.5</origin>
+            <metadata>game.cover</metadata>
+            <zIndex>20</zIndex>
+        </image>
+
+        <video name="md_video" variant="withVideo">
+            <pos>0.72 0.42</pos>
+            <size>0.34 0.42</size>
+            <origin>0.5 0.5</origin>
+            <metadata>game.video</metadata>
+            <zIndex>21</zIndex>
+        </video>
+
+        <text name="md_name">
+            <pos>0.72 0.70</pos>
+            <origin>0.5 0.5</origin>
+            <metadata>game.name</metadata>
+            <color>${ink}</color>
+            <fontSize>0.04</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+
+        <text name="md_detail">
+            <pos>0.72 0.77</pos>
+            <origin>0.5 0.5</origin>
+            <metadata>game.detail</metadata>
+            <color>${dim}</color>
+            <fontSize>0.027</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+
+        <text name="help">
+            <pos>0.5 0.93</pos>
+            <origin>0.5 0.5</origin>
+            <text>↑ ↓ browse      Ⓐ play      Ⓑ back      ★ favorite</text>
+            <color>${dim}</color>
+            <fontSize>0.026</fontSize>
+            <horizontalAlignment>center</horizontalAlignment>
+            <zIndex>25</zIndex>
+        </text>
+    </view>
+</theme>

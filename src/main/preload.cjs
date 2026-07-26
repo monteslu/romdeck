@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('romdeck', {
   padsAssignPort: (key, port) => ipcRenderer.invoke('pads:assignPort', key, port),
   padsExport: (key) => ipcRenderer.invoke('pads:exportProfile', key),
   padsImport: (key) => ipcRenderer.invoke('pads:importProfile', key),
+  themeList: () => ipcRenderer.invoke('theme:list'),
+  themePrefs: () => ipcRenderer.invoke('theme:prefs'),
+  themeSetPrefs: (p) => ipcRenderer.invoke('theme:setPrefs', p),
+  themeLoad: (name, opts) => ipcRenderer.invoke('theme:load', name, opts),
+  setFullscreen: (on) => ipcRenderer.invoke('window:fullscreen', on),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;

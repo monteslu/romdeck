@@ -54,9 +54,39 @@ function isRom(file, fullPath) {
   return ext in SYSTEM_BY_EXT;
 }
 
-function systemOf(file) {
+// ES-DE / RetroDECK / Batocera all organize ROMs as <roms>/<shortname>/…,
+// and most real collections are zipped — so the containing folder is the
+// authoritative system signal, with the extension as the fallback.
+const SYSTEM_BY_FOLDER = {
+  nes: 'NES', famicom: 'NES', fds: 'NES',
+  snes: 'SNES', sfc: 'SNES', superfamicom: 'SNES', satellaview: 'SNES',
+  gb: 'Game Boy', gbc: 'Game Boy Color', gba: 'Game Boy Advance',
+  n64: 'Nintendo 64',
+  genesis: 'Genesis', megadrive: 'Genesis', md: 'Genesis',
+  mastersystem: 'Master System', sms: 'Master System',
+  gamegear: 'Game Gear', gg: 'Game Gear', sg1000: 'SG-1000', 'sg-1000': 'SG-1000',
+  atari2600: 'Atari 2600', atari5200: 'Atari 5200', atari7800: 'Atari 7800',
+  atari800: 'Atari 800', atarilynx: 'Lynx', lynx: 'Lynx',
+  pcengine: 'PC Engine', tg16: 'PC Engine', turbografx16: 'PC Engine',
+  ngp: 'Neo Geo Pocket', ngpc: 'Neo Geo Pocket Color',
+  wonderswan: 'WonderSwan', wonderswancolor: 'WonderSwan Color',
+  colecovision: 'ColecoVision', vectrex: 'Vectrex',
+  zxspectrum: 'ZX Spectrum', msx: 'MSX', msx2: 'MSX',
+  psx: 'PlayStation', ps1: 'PlayStation', playstation: 'PlayStation',
+  c64: 'Commodore 64', commodore64: 'Commodore 64',
+  pico8: 'PICO-8', gametank: 'GameTank',
+};
+
+function systemOf(file, fullPath) {
   if (/\.p8\.png$/i.test(file)) return 'PICO-8';
-  return SYSTEM_BY_EXT[path.extname(file).toLowerCase()] ?? 'Unknown';
+  const byExt = SYSTEM_BY_EXT[path.extname(file).toLowerCase()];
+  // A zip (or an ambiguous extension) tells us nothing — ask the folder.
+  if (!byExt || byExt === 'Archive') {
+    const folder = path.basename(path.dirname(fullPath)).toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const byFolder = SYSTEM_BY_FOLDER[folder];
+    if (byFolder) return byFolder;
+  }
+  return byExt ?? 'Unknown';
 }
 
 function cleanName(file) {
@@ -96,7 +126,7 @@ export function scanRoms(romsDir, { maxDepth = 4, maxFiles = 5000 } = {}) {
           path: full,
           name: cleanName(entry),
           file: entry,
-          system: systemOf(entry),
+          system: systemOf(entry, full),
           size: st.size,
         });
       }

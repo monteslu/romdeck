@@ -2,6 +2,10 @@
 /* global romdeck */
 'use strict';
 
+import {
+  enterBigScreen, exitBigScreen, bigScreenNav, bigScreenActive, bigScreenRefresh,
+} from './bigscreen.js';
+
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -314,6 +318,10 @@ function columns() {
 }
 
 function nav(action) {
+  if (bigScreenActive()) {
+    bigScreenNav(action);
+    return;
+  }
   const cols = columns();
   const max = state.filtered.length - 1;
   if (max < 0) return;
@@ -338,12 +346,104 @@ function nav(action) {
 }
 
 document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'F11') { ev.preventDefault(); toggleBigScreen(); return; }
+  if (ev.key === 'Escape' && bigScreenActive()) { ev.preventDefault(); nav('back'); return; }
   const map = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
-    Enter: 'confirm', '[': 'prevSystem', ']': 'nextSystem',
+    Enter: 'confirm', Backspace: 'back', '[': 'prevSystem', ']': 'nextSystem',
   };
   if (map[ev.key]) { ev.preventDefault(); nav(map[ev.key]); }
 });
+
+// ── big-screen mode ──────────────────────────────────────────────────
+async function toggleBigScreen() {
+  if (bigScreenActive()) {
+    exitBigScreen();
+    await romdeck.setFullscreen(false);
+    return;
+  }
+  const prefs = await romdeck.themePrefs();
+  const res = await enterBigScreen({
+    roms: state.roms,
+    themeName: prefs.theme,
+    variant: prefs.variant,
+    colorScheme: prefs.colorScheme,
+    onLaunch: (rom) => launch(rom),
+    onExit: () => toggleBigScreen(),
+  });
+  if (res?.error) { toast('Big-screen mode', res.error, true); return; }
+  await romdeck.setFullscreen(true);
+}
+
+$('bigscreenbtn').onclick = toggleBigScreen;
+
+// ── theme picker ─────────────────────────────────────────────────────
+async function openThemes() {
+  const [list, prefs] = await Promise.all([romdeck.themeList(), romdeck.themePrefs()]);
+  const wrap = $('themelist');
+  wrap.replaceChildren();
+  for (const t of list) {
+    const card = document.createElement('div');
+    card.className = 'theme-card' + (t.name === prefs.theme ? ' sel' : '');
+    const nm = document.createElement('div');
+    nm.className = 'tname';
+    nm.textContent = t.displayName + (t.bundled ? '  (bundled)' : '');
+    const meta = document.createElement('div');
+    meta.className = 'tmeta';
+    meta.textContent = `${t.variants.length} variants · ${t.colorSchemes.length} color schemes · ${t.aspectRatios.join(', ') || 'any aspect'}`;
+    card.append(nm, meta);
+
+    const opts = document.createElement('div');
+    opts.className = 'opts';
+    const mkSel = (label, items, current, onPick) => {
+      if (!items.length) return;
+      const sel = document.createElement('select');
+      for (const it of items) {
+        const o = document.createElement('option');
+        o.value = it.name;
+        o.textContent = `${label}: ${it.label}`;
+        sel.appendChild(o);
+      }
+      sel.value = current ?? items[0].name;
+      sel.onchange = () => onPick(sel.value);
+      sel.onclick = (ev) => ev.stopPropagation();
+      opts.appendChild(sel);
+    };
+    mkSel('Variant', t.variants, prefs.variant, async (v) => {
+      await romdeck.themeSetPrefs({ theme: t.name, variant: v });
+      toast('Theme', `${t.displayName} · ${v}`);
+    });
+    mkSel('Colors', t.colorSchemes, prefs.colorScheme, async (c) => {
+      await romdeck.themeSetPrefs({ theme: t.name, colorScheme: c });
+      toast('Theme', `${t.displayName} · ${c}`);
+    });
+    card.appendChild(opts);
+
+    card.onclick = async () => {
+      await romdeck.themeSetPrefs({ theme: t.name });
+      toast('Theme selected', t.displayName);
+      openThemes();
+    };
+    wrap.appendChild(card);
+  }
+  $('thememodal').classList.remove('hidden');
+}
+
+$('themebtn').onclick = openThemes;
+$('themeclose').onclick = () => $('thememodal').classList.add('hidden');
+$('thememodal').onclick = (ev) => { if (ev.target.id === 'thememodal') $('thememodal').classList.add('hidden'); };
+
+// Hook for the main process's --bigshot self-check (headless verification of
+// the theme engine). Harmless in normal runs.
+window.__romdeckTest = {
+  enterBigScreen: () => toggleBigScreen(),
+  nav: (action) => nav(action),
+  state: () => ({
+    active: bigScreenActive(),
+    elements: document.getElementById('bs-stage').children.length,
+    text: [...document.querySelectorAll('#bs-stage .te-text')].map((n) => n.textContent).filter(Boolean),
+  }),
+};
 
 romdeck.on('pad:nav', (ev) => nav(ev.action));
 
@@ -385,6 +485,7 @@ async function loadLibrary(lib) {
   state.roms = lib.roms;
   applyFilter();
   render();
+  bigScreenRefresh(state.roms);
   $('status').textContent = `${lib.roms.length} games in library`;
 }
 

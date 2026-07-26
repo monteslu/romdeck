@@ -16,6 +16,7 @@ import { ArtworkStore } from './artwork.js';
 import { Identifier } from './identify.js';
 import { BiosChecker } from './bios.js';
 import { MappingStore, BUTTONS } from './inputmap.js';
+import { ThemeStore } from './themes.js';
 import { shortnameOf, libretroNameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
@@ -23,6 +24,7 @@ import { PadNav } from './gamepad.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes('--smoke');
 const AUTOPLAY = process.argv.includes('--autoplay');
+const BIGSHOT = process.argv.includes('--bigshot');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -36,10 +38,12 @@ let artwork = null;
 let identifier = null;
 let biosChecker = null;
 let mappings = null;
+let themes = null;
 
-// Custom scheme for artwork must be registered before app ready.
+// Custom schemes must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'romdeck-media', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'romdeck-theme', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -199,6 +203,35 @@ ipcMain.handle('library:identify', async () => {
 });
 
 ipcMain.handle('bios:check', () => biosChecker.check(romsDir()));
+
+// ── themes / big-screen ──────────────────────────────────────────────
+ipcMain.handle('theme:list', () => themes.list().map(({ dir, ...rest }) => rest));
+
+ipcMain.handle('theme:prefs', () => ({
+  theme: prefs.get('theme') ?? 'romdeck-default',
+  variant: prefs.get('themeVariant') ?? null,
+  colorScheme: prefs.get('themeColorScheme') ?? null,
+}));
+
+ipcMain.handle('theme:setPrefs', (_ev, p = {}) => {
+  if (p.theme !== undefined) prefs.set('theme', p.theme);
+  if (p.variant !== undefined) prefs.set('themeVariant', p.variant);
+  if (p.colorScheme !== undefined) prefs.set('themeColorScheme', p.colorScheme);
+  return { ok: true };
+});
+
+ipcMain.handle('theme:load', (_ev, name, opts = {}) => {
+  try {
+    return { theme: themes.load(name ?? 'romdeck-default', opts) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('window:fullscreen', (_ev, on) => {
+  if (win && !win.isDestroyed()) win.setFullScreen(!!on);
+  return { fullscreen: !!on };
+});
 
 // ── controllers ──────────────────────────────────────────────────────
 ipcMain.handle('pads:list', () => ({
@@ -365,6 +398,37 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (BIGSHOT) {
+    // --bigshot: enter big-screen mode, capture both views, quit. Proves the
+    // theme engine renders (and gives a screenshot to eyeball).
+    (async () => {
+      const shoot = async (label) => {
+        const img = await win.webContents.capturePage();
+        const file = path.join('/tmp', `romdeck-${label}.png`);
+        writeFileSync(file, img.toPNG());
+        console.log(`BIGSHOT ${label} → ${file}`);
+      };
+      await win.webContents.executeJavaScript('window.__romdeckTest.enterBigScreen()');
+      await new Promise((r) => setTimeout(r, 900));
+      await shoot('system-view');
+      await win.webContents.executeJavaScript('window.__romdeckTest.nav("confirm")');
+      await new Promise((r) => setTimeout(r, 400));
+      // step to a game that has box art so the shot proves image rendering
+      for (let i = 0; i < 2; i++) {
+        await win.webContents.executeJavaScript('window.__romdeckTest.nav("down")');
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      await shoot('gamelist-view');
+      const state = await win.webContents.executeJavaScript('window.__romdeckTest.state()');
+      console.log('BIGSHOT state:', JSON.stringify(state));
+      setTimeout(() => app.exit(state.active && state.elements > 0 ? 0 : 1), 300);
+    })().catch((err) => {
+      console.error('BIGSHOT FAIL:', err.message);
+      app.exit(1);
+    });
+    return;
+  }
   if (SMOKE) {
     console.log('SMOKE OK — renderer loaded, library IPC round-tripped');
     setTimeout(() => app.quit(), 1500);
@@ -480,6 +544,7 @@ app.whenReady().then(async () => {
   identifier = new Identifier(app.getPath('userData'));
   biosChecker = new BiosChecker(app.getPath('userData'));
   mappings = new MappingStore(app.getPath('userData'));
+  themes = new ThemeStore(app.getPath('userData'));
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)
@@ -491,6 +556,15 @@ app.whenReady().then(async () => {
     const file = decodeURIComponent(parts.slice(1).join('/'));
     const target = path.normalize(path.join(artwork.root, short, 'covers', file));
     if (!target.startsWith(artwork.root + path.sep)) return new Response('forbidden', { status: 403 });
+    return net.fetch(pathToFileURL(target).toString());
+  });
+
+  // romdeck-theme://<themeName>/<relpath> → that theme's asset (jailed)
+  protocol.handle('romdeck-theme', (req) => {
+    const url = new URL(req.url);
+    const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+    const target = themes.resolveAsset(url.host, rel);
+    if (!target) return new Response('not found', { status: 404 });
     return net.fetch(pathToFileURL(target).toString());
   });
   const saveDir = path.join(app.getPath('userData'), 'saves');
