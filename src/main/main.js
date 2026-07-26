@@ -37,6 +37,7 @@ const JOINCHECK = process.argv.includes('--joincheck');
 const PADONLY = process.argv.includes('--padonly');
 const VIEWCHECK = process.argv.includes('--viewcheck');
 const REALTHEME = process.argv.includes('--realtheme');
+const CARTCHECK = process.argv.includes('--cartcheck');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -504,7 +505,7 @@ ipcMain.handle('app:selfCheck', () =>
   // --viewcheck deliberately does NOT opt out: it exists to verify the
   // launch-into-themed-view behaviour a real user gets.
   SMOKE || AUTOPLAY || BIGSHOT || UISHOT || DEVCHECK || THEMESHOT || JOINCHECK
-  || PADONLY || REALTHEME);
+  || PADONLY || REALTHEME || CARTCHECK);
 
 // ── controllers ──────────────────────────────────────────────────────
 ipcMain.handle('pads:list', () => ({
@@ -671,6 +672,7 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (CARTCHECK) { runCartCheck(); return; }
   if (VIEWCHECK) { runViewCheck(); return; }
   if (PADONLY) { runPadOnlyCheck(); return; }
   if (JOINCHECK) {
@@ -851,6 +853,83 @@ ipcMain.on('ui:ready', () => {
   }
   if (AUTOPLAY) runAutoplayCheck();
 });
+
+// --cartcheck: romdeck plays THREE cart types, and this proves it.
+//
+// "ROM / wasmcart / jsgame from one library" was a claim with no test behind
+// it — roms-demo/ had gone missing, so nothing exercised the two non-ROM
+// paths. That is exactly the shape a surprise takes in this project.
+//
+// Point it at a folder with all three (roms-demo/) and it launches each,
+// asserts the session comes up, and checks the player reports honest
+// capabilities rather than offering controls that would throw.
+async function runCartCheck() {
+  let failures = 0;
+  const check = (name, cond, extra = '') => {
+    console.log(`${cond ? 'PASS' : 'FAIL'}: ${name} ${extra}`);
+    if (!cond) failures++;
+  };
+  try {
+    const { roms } = getLibrary();
+    const byKind = new Map();
+    for (const r of roms) {
+      if (!byKind.has(r.system)) byKind.set(r.system, r);
+    }
+    check('library has all three cart types',
+      byKind.has('WASM Cart') && byKind.has('JS Game')
+        && [...byKind.keys()].some((k) => !['WASM Cart', 'JS Game'].includes(k)),
+      [...byKind.keys()].join(', '));
+
+    for (const [system, rom] of byKind) {
+      const { id, error } = sessions.launch(rom, { resume: false });
+      if (error) { check(`${system}: launch`, false, error); continue; }
+
+      const ready = await new Promise((resolve) => {
+        const t = setTimeout(() => resolve(null), 30000);
+        const onUpdate = (ev) => {
+          if (ev.id !== id) return;
+          if (ev.type === 'ready') { clearTimeout(t); sessions.off('update', onUpdate); resolve(ev); }
+          if (ev.type === 'crashed' || ev.type === 'error') {
+            clearTimeout(t); sessions.off('update', onUpdate); resolve(null);
+          }
+        };
+        sessions.on('update', onUpdate);
+      });
+      check(`${system}: session ready`, !!ready, ready ? `core=${ready.core ?? 'n/a'}` : 'never became ready');
+      if (!ready) continue;
+
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const st = await sessions.rpc(id, 'getStatus');
+        check(`${system}: reports its kind`, !!st.kind, `kind=${st.kind}`);
+        const caps = st.capabilities ?? {};
+        check(`${system}: reports capabilities`, Object.keys(caps).length > 0,
+          `pause=${caps.pause} saveState=${caps.saveState} screenshot=${caps.screenshot}`);
+        // Presentation works for every cart type; that's the shared floor.
+        const shot = await sessions.rpc(id, 'screenshot', {});
+        check(`${system}: screenshot`, (shot.pngB64?.length ?? 0) > 500,
+          `${shot.width}x${shot.height}`);
+        // And an unsupported control must REFUSE rather than pretend.
+        if (caps.pause === false) {
+          let threw = false;
+          try { await sessions.rpc(id, 'pause'); } catch { threw = true; }
+          check(`${system}: unsupported controls refuse`, threw);
+        }
+      } catch (err) {
+        check(`${system}: session ops`, false, err.message);
+      }
+      await sessions.stop(id);
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    console.log(failures === 0
+      ? 'CARTCHECK OK — ROM, wasmcart and jsgame all play from one library'
+      : `CARTCHECK ${failures} FAILURES`);
+  } catch (err) {
+    console.error('CARTCHECK FAIL — driver error:', err.message);
+    failures++;
+  }
+  setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
+}
 
 // --viewcheck: the themed view is the PRODUCT (§16e Phase 3).
 //

@@ -17,6 +17,32 @@
       "size": 174848
     },
     {
+      "id": "snake-wasmcart",
+      "title": "Snake",
+      "kind": "wasmcart",
+      "system": "wasmcart",
+      "systemLabel": "WASM Cart",
+      "file": "snake.wasc",
+      "localPath": "feed/files/snake.wasc",
+      "author": "wasmcart examples",
+      "license": "MIT",
+      "description": "The classic, as a native WASM cartridge — any language, compiled once, runs at native speed.",
+      "size": 4223
+    },
+    {
+      "id": "jsgame-starter",
+      "title": "JS Game Starter",
+      "kind": "jsgame",
+      "system": "jsgame",
+      "systemLabel": "JS Game",
+      "file": "simple-jsgame-starter.jsgame",
+      "localPath": "feed/files/simple-jsgame-starter.jsgame",
+      "author": "monteslu",
+      "license": "MIT",
+      "description": "A sandboxed JavaScript game running in the same library as your ROMs — canvas, WebAudio and gamepad, no browser.",
+      "size": 13951
+    },
+    {
       "id": "pico8-celeste",
       "title": "Celeste Classic",
       "kind": "rom",

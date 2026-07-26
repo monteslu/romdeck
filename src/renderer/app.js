@@ -377,13 +377,20 @@ async function renderDetails() {
       });
     }
   } else {
-    btn(live.paused ? '▶ Resume' : '⏸ Pause', async () => {
-      const r = await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
-      if (r.error) toast('Session', r.error, true);
-      else state.playing.get(live.id).paused = !live.paused;
-      renderDetails();
-    });
-    btn('💾 Save', async () => {
+    // A cart session supports presentation (screenshot, fullscreen, remote
+    // play) but none of the libretro-shaped controls. `caps` is absent until
+    // getStatus lands, so default to showing everything and let it narrow.
+    const can = (k) => live.caps ? live.caps[k] !== false : true;
+
+    if (can('pause')) {
+      btn(live.paused ? '▶ Resume' : '⏸ Pause', async () => {
+        const r = await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
+        if (r.error) toast('Session', r.error, true);
+        else state.playing.get(live.id).paused = !live.paused;
+        renderDetails();
+      });
+    }
+    if (can('saveState')) btn('💾 Save', async () => {
       const name = `save-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
       const r = await romdeck.saveState(live.id, name);
       r.error ? toast('Save failed', r.error, true) : toast('State saved', name);
@@ -395,15 +402,18 @@ async function renderDetails() {
     });
     // Fast-forward uses the speed the settings cascade resolved, not a
     // hardcoded multiplier — the player reports it back on getStatus.
+    // Speed control is the host's, so a cart session has none.
     const ff = live.speed !== 1;
     const ffTarget = live.ffSpeed ?? 4;
-    btn(ff ? `⏩ ${live.speed}x` : '⏩', async () => {
-      const r = await romdeck.cmd(live.id, 'setSpeed', { x: ff ? 1 : ffTarget });
-      if (r.error) toast('Session', r.error, true);
-      else state.playing.get(live.id).speed = r.result.speed;
-      renderDetails();
-    }, ff ? 'active' : '');
-    if (live.rewindEnabled !== false) {
+    if (can('pause')) {
+      btn(ff ? `⏩ ${live.speed}x` : '⏩', async () => {
+        const r = await romdeck.cmd(live.id, 'setSpeed', { x: ff ? 1 : ffTarget });
+        if (r.error) toast('Session', r.error, true);
+        else state.playing.get(live.id).speed = r.result.speed;
+        renderDetails();
+      }, ff ? 'active' : '');
+    }
+    if (can('rewind') && live.rewindEnabled !== false) {
       btn('⏪', async () => {
         const r = await romdeck.cmd(live.id, 'rewind', { steps: 2 });
         if (r.error) toast('Rewind', r.error, true);
@@ -636,26 +646,34 @@ function openGameMenu(rom) {
   const fav = rom.meta?.favorite;
   const items = [];
 
+  // Cart sessions have no libretro host, so pause/save aren't offered rather
+  // than being offered and throwing.
+  const can = (k) => (live?.caps ? live.caps[k] !== false : true);
+
   if (live) {
-    items.push({
-      label: live.paused ? 'Resume' : 'Pause',
-      action: async () => {
-        closeAllMenus();
-        await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
-        state.playing.get(live.id).paused = !live.paused;
-        renderDetails();
-      },
-    });
-    items.push({
-      label: 'Save state',
-      action: async () => {
-        closeAllMenus();
-        const name = `save-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
-        const r = await romdeck.saveState(live.id, name);
-        r.error ? toast('Save failed', r.error, true) : toast('State saved', name);
-        renderDetails();
-      },
-    });
+    if (can('pause')) {
+      items.push({
+        label: live.paused ? 'Resume' : 'Pause',
+        action: async () => {
+          closeAllMenus();
+          await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
+          state.playing.get(live.id).paused = !live.paused;
+          renderDetails();
+        },
+      });
+    }
+    if (can('saveState')) {
+      items.push({
+        label: 'Save state',
+        action: async () => {
+          closeAllMenus();
+          const name = `save-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
+          const r = await romdeck.saveState(live.id, name);
+          r.error ? toast('Save failed', r.error, true) : toast('State saved', name);
+          renderDetails();
+        },
+      });
+    }
     items.push({
       label: 'Screenshot',
       action: async () => {
@@ -680,8 +698,14 @@ function openGameMenu(rom) {
     items.push({ label: 'Play from start', action: () => { closeAllMenus(); launch(rom, { resume: false }); } });
   }
 
-  items.push({ label: 'Save states…', action: () => { closeMenu(); openStatesMenu(rom); } });
-  items.push({ label: 'Cheats', action: () => { closeAllMenus(); openCheats(rom); } });
+  // Both ride the libretro host: states serialize it, cheats go through
+  // retro_cheat_set. Neither exists for a wasmcart or jsgame.
+  if (can('saveState')) {
+    items.push({ label: 'Save states…', action: () => { closeMenu(); openStatesMenu(rom); } });
+  }
+  if (can('cheats')) {
+    items.push({ label: 'Cheats', action: () => { closeAllMenus(); openCheats(rom); } });
+  }
   items.push({
     label: fav ? 'Remove from favorites' : 'Add to favorites',
     action: async () => {
@@ -1519,6 +1543,11 @@ romdeck.on('session:update', (ev) => {
       if (!s || r.error || !r.result) return;
       s.ffSpeed = r.result.ffSpeed ?? 4;
       s.rewindEnabled = r.result.rewindEnabled !== false;
+      // wasmcart and jsgame sessions run their own loop and have no
+      // libretro host, so pause/save/cheats genuinely don't exist for them.
+      // Hiding those controls beats offering buttons that throw.
+      s.caps = r.result.capabilities ?? null;
+      s.kind = r.result.kind ?? 'libretro';
       renderDetails();
     });
     return; // no re-render needed yet; resume event may follow
