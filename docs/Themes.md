@@ -1,8 +1,17 @@
 # Themes
 
-romdeck's big-screen mode is an EmulationStation/ES-DE frontend reimplemented in
+romdeck's themed view is an EmulationStation/ES-DE frontend reimplemented in
 browser tech. Themes are the **ES-DE XML format** — romdeck invents no format of
 its own — rendered as DOM + CSS instead of OpenGL.
+
+> ⚠️ **Status: real community themes do not render yet.** The engine reads the
+> ES-DE format but only in a *flattened* form: conditionals as attributes on
+> views/elements. Real themes nest their content inside `<variant>` /
+> `<aspectRatio>` / `<fontSize>` wrapper elements and reach their views through
+> includes at every depth — which the parser does not descend into. Loading
+> `modern-es-de` yields **0 elements** (a blank screen). Root cause, evidence
+> and the fix are in `PLAN.md` §16f. What works today is the bundled
+> `romdeck-default` and themes written in the same flattened subset.
 
 Drop a theme folder in `<userData>/themes/<name>/` and it appears in the theme
 picker. Bundled themes live in the app's `themes/` directory.
