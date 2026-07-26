@@ -19,7 +19,7 @@ picker. Bundled themes live in the app's `themes/` directory.
 The engine renders a documented subset and **ignores anything it doesn't know**
 — an unsupported theme renders partially rather than failing.
 
-**Views:** `system`, `gamelist`
+**Views:** `system`, `gamelist`, `desktop` (romdeck extension — see below)
 
 **Elements:** `image`, `text`, `carousel`, `textlist`, `video`, `rating`,
 `datetime`
@@ -37,6 +37,44 @@ layout is resolution independent. Colors are `RRGGBB` or `RRGGBBAA`.
 and `variant` / `colorScheme` / `aspectRatio` attributes on views, elements,
 and variable blocks. With nothing selected, the theme's *first declared*
 variant and color scheme are the defaults (ES-DE semantics).
+
+## The desktop view (romdeck extension)
+
+ES-DE's format only describes the 10-foot UI, so romdeck adds an optional
+`desktop` view that skins the **windowed library**: background, panels, text,
+accent colors, and a couple of layout hints.
+
+**Every ES-DE theme restyles the desktop even without this block.** romdeck maps
+conventionally-named theme variables onto the same tokens, in this order:
+
+| token | variables tried (first match wins) |
+|---|---|
+| `bg` | bg, background, backgroundColor, primaryColor, bgColor |
+| `bg2` | bg2, panelBg, secondaryBackground, backgroundAlt |
+| `panel` | panel, panelColor, cardColor, secondaryColor |
+| `line` | line, border, borderColor, separator |
+| `ink` | ink, text, textColor, fontColor, primaryText |
+| `dim` | dim, textDim, secondaryText, subtleColor, unfocusedColor |
+| `accent` | accent, accentColor, selectedColor, highlight, primary |
+| `accent2` | accent2, accentSecondary, warning, highlight2 |
+| `danger` | danger, error, errorColor, alert |
+
+To be explicit instead, declare them:
+
+```xml
+<view name="desktop">
+    <text name="bg"><color>0d0f14</color></text>
+    <text name="ink"><color>e8ecf4</color></text>
+    <text name="accent"><color>4fd1c5</color></text>
+    <image name="background"><path>./art/wallpaper.jpg</path></image>
+    <grid name="grid"><itemSize>150 0</itemSize></grid>
+</view>
+```
+
+`variant` / `colorScheme` filtering works here too, so a theme's color schemes
+restyle the desktop and big-screen views together. Games without box art get
+placeholder tiles generated around the theme's accent hue, so the fallback art
+matches the palette.
 
 ## Metadata bindings
 

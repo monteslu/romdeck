@@ -32,6 +32,7 @@ const AUTOPLAY = process.argv.includes('--autoplay');
 const BIGSHOT = process.argv.includes('--bigshot');
 const UISHOT = process.argv.includes('--uishot');
 const DEVCHECK = process.argv.includes('--devcheck');
+const THEMESHOT = process.argv.includes('--themeshot');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -576,6 +577,22 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (THEMESHOT) {
+    // --themeshot: capture the desktop UI under each color scheme, proving
+    // the theme drives the windowed view and not just big-screen mode.
+    (async () => {
+      for (const scheme of ['midnight', 'amber']) {
+        await win.webContents.executeJavaScript(
+          `window.__romdeckTest.setScheme(${JSON.stringify(scheme)})`);
+        await new Promise((r) => setTimeout(r, 1200));
+        const img = await win.webContents.capturePage();
+        writeFileSync(`/tmp/romdeck-desktop-${scheme}.png`, img.toPNG());
+        console.log(`THEMESHOT ${scheme}`);
+      }
+      setTimeout(() => app.exit(0), 300);
+    })().catch((e) => { console.error('THEMESHOT FAIL:', e.message); app.exit(1); });
+    return;
+  }
   if (UISHOT) {
     // --uishot: screenshot the settings + cheats panels for visual review.
     (async () => {

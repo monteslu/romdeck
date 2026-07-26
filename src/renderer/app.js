@@ -16,6 +16,7 @@ const state = {
   filtered: [],
   selected: 0,
   playing: new Map(), // sessionId -> { romPath, paused, speed }
+  accentHue: null,    // theme accent hue, drives placeholder tile art
 };
 
 // Deterministic pleasant gradient per system for placeholder art (real box art
@@ -25,10 +26,33 @@ function hueOf(str) {
   for (const c of str) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 360;
 }
+// Placeholder art for games with no cover. Hues are spread around the THEME's
+// accent so the fallback tiles harmonize with whatever theme is active instead
+// of always being romdeck-teal.
 function artStyle(rom) {
-  const h = hueOf(rom.system);
-  const h2 = (h + 40) % 360;
-  return `background: linear-gradient(135deg, hsl(${h} 45% 30%), hsl(${h2} 55% 18%))`;
+  const base = state.accentHue ?? 175;
+  const spread = (hueOf(rom.system) % 90) - 45; // ±45° around the accent
+  const h = (base + spread + 360) % 360;
+  const h2 = (h + 30) % 360;
+  return `background: linear-gradient(135deg, hsl(${h} 40% 30%), hsl(${h2} 50% 17%))`;
+}
+
+/** Hue of a hex color, for deriving harmonious placeholder art. */
+function hueOfHex(hex) {
+  const s = String(hex ?? '').replace('#', '');
+  if (!/^[0-9a-f]{6}/i.test(s)) return null;
+  const r = parseInt(s.slice(0, 2), 16) / 255;
+  const g = parseInt(s.slice(2, 4), 16) / 255;
+  const b = parseInt(s.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (!d) return 0;
+  let h;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return Math.round(h * 60 + 360) % 360;
 }
 
 function systems() {
@@ -404,6 +428,69 @@ async function toggleBigScreen() {
 }
 
 $('bigscreenbtn').onclick = toggleBigScreen;
+
+// ── theme → desktop UI ───────────────────────────────────────────────
+// The windowed library is styled from the SAME theme that drives big-screen
+// mode: the theme's palette becomes the CSS custom properties the whole UI
+// is built on, so picking a theme (or a color scheme) re-skins everything,
+// not just the 10-foot view.
+const TOKEN_TO_CSS = {
+  bg: '--bg',
+  bg2: '--bg2',
+  panel: '--panel',
+  line: '--line',
+  ink: '--text',
+  dim: '--dim',
+  accent: '--accent',
+  accent2: '--accent2',
+  danger: '--danger',
+};
+
+function themeColor(v) {
+  if (!v) return null;
+  const s = String(v).trim().replace(/^#/, '');
+  if (/^[0-9a-f]{6}$/i.test(s)) return `#${s}`;
+  if (/^[0-9a-f]{8}$/i.test(s)) {
+    const a = (parseInt(s.slice(6, 8), 16) / 255).toFixed(3);
+    return `rgba(${parseInt(s.slice(0, 2), 16)},${parseInt(s.slice(2, 4), 16)},${parseInt(s.slice(4, 6), 16)},${a})`;
+  }
+  return /^[a-z]+$/i.test(s) ? s : null; // named CSS colors pass through
+}
+
+async function applyDesktopTheme() {
+  const prefs = await romdeck.themePrefs();
+  const res = await romdeck.themeLoad(prefs.theme, {
+    variant: prefs.variant,
+    colorScheme: prefs.colorScheme,
+  });
+  if (res.error) return;
+  const tokens = res.theme.desktop ?? {};
+  const root = document.documentElement;
+
+  // Clear any previous theme overrides so switching themes doesn't leave
+  // stale colors behind, then apply what this theme actually defines.
+  for (const cssVar of Object.values(TOKEN_TO_CSS)) root.style.removeProperty(cssVar);
+  for (const [token, cssVar] of Object.entries(TOKEN_TO_CSS)) {
+    const color = themeColor(tokens[token]);
+    if (color) root.style.setProperty(cssVar, color);
+  }
+
+  // Optional layout hints
+  const grid = $('grid');
+  if (tokens.tileMin) {
+    grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${tokens.tileMin}px, 1fr))`;
+  } else {
+    grid.style.removeProperty('grid-template-columns');
+  }
+  document.body.style.backgroundImage = tokens.backgroundImage
+    ? `url("${tokens.backgroundImage}")`
+    : '';
+  document.body.style.backgroundSize = 'cover';
+
+  state.themeName = res.theme.displayName;
+  state.accentHue = hueOfHex(tokens.accent) ?? state.accentHue;
+  render(); // repaint placeholder art in the new palette
+}
 
 // ── homebrew feed ────────────────────────────────────────────────────
 async function openFeed() {
@@ -800,16 +887,19 @@ async function openThemes() {
     };
     mkSel('Variant', t.variants, prefs.variant, async (v) => {
       await romdeck.themeSetPrefs({ theme: t.name, variant: v });
+      await applyDesktopTheme();
       toast('Theme', `${t.displayName} · ${v}`);
     });
     mkSel('Colors', t.colorSchemes, prefs.colorScheme, async (c) => {
       await romdeck.themeSetPrefs({ theme: t.name, colorScheme: c });
+      await applyDesktopTheme();
       toast('Theme', `${t.displayName} · ${c}`);
     });
     card.appendChild(opts);
 
     card.onclick = async () => {
       await romdeck.themeSetPrefs({ theme: t.name });
+      await applyDesktopTheme();
       toast('Theme selected', t.displayName);
       openThemes();
     };
@@ -828,6 +918,10 @@ window.__romdeckTest = {
   enterBigScreen: () => toggleBigScreen(),
   nav: (action) => nav(action),
   openSettings: () => openSettings(),
+  setScheme: async (colorScheme) => {
+    await romdeck.themeSetPrefs({ theme: 'romdeck-default', colorScheme });
+    await applyDesktopTheme();
+  },
   openCheats: () => openCheats(selectedRom()),
   state: () => ({
     active: bigScreenActive(),
@@ -1166,6 +1260,7 @@ $('padclose').onclick = closePads;
 $('padmodal').onclick = (ev) => { if (ev.target.id === 'padmodal') closePads(); };
 
 (async () => {
+  await applyDesktopTheme();
   await loadLibrary(await romdeck.getLibrary());
   romdeck.uiReady();
 })();

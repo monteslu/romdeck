@@ -24,6 +24,35 @@
         <accent>f6ad55</accent>
     </variables>
 
+    <!--
+      Desktop view (romdeck extension).
+
+      ES-DE's format has no windowed/mouse view, so romdeck adds one. It is
+      OPTIONAL: any ES-DE theme without this block still restyles the desktop,
+      because romdeck maps conventionally-named theme variables (bg, text,
+      accent, selectedColor, …) onto the same tokens. This block just makes
+      the intent explicit.
+    -->
+    <view name="desktop">
+        <text name="bg"><color>${bg}</color></text>
+        <text name="bg2"><color>${panel}</color></text>
+        <text name="panel"><color>${panel}</color></text>
+        <text name="line"><color>262d3d</color></text>
+        <text name="ink"><color>${ink}</color></text>
+        <text name="dim"><color>${dim}</color></text>
+        <text name="accent"><color>${accent}</color></text>
+        <text name="accent2"><color>f6ad55</color></text>
+        <text name="danger"><color>fc8181</color></text>
+        <grid name="grid">
+            <itemSize>150 0</itemSize>
+        </grid>
+    </view>
+
+    <view name="desktop" colorScheme="amber">
+        <text name="line"><color>3a2a14</color></text>
+        <text name="accent2"><color>ffd79a</color></text>
+    </view>
+
     <!-- ── system view: the console carousel ─────────────────────────── -->
     <view name="system">
         <image name="background">

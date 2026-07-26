@@ -33,7 +33,28 @@ const parser = new XMLParser({
   isArray: (name) => ['view', 'variant', 'colorScheme', 'aspectRatio', 'include'].includes(name),
 });
 
-const ELEMENT_TYPES = new Set(['image', 'text', 'carousel', 'textlist', 'rating', 'datetime', 'video']);
+const ELEMENT_TYPES = new Set(['image', 'text', 'carousel', 'textlist', 'rating', 'datetime', 'video', 'grid']);
+
+// romdeck extension: ES-DE's format has no desktop/mouse view, so a theme can
+// declare <view name="desktop"> with a <colors> block (and a few layout hints)
+// to skin the windowed library. Themes that don't are still fully supported —
+// their <variables> are mapped onto the same tokens by convention, so every
+// ES-DE theme changes the desktop look without being written for romdeck.
+const DESKTOP_TOKENS = [
+  'bg', 'bg2', 'panel', 'line', 'ink', 'dim', 'accent', 'accent2', 'danger',
+];
+// Conventional variable names themes already use, in preference order.
+const TOKEN_ALIASES = {
+  bg: ['bg', 'background', 'backgroundColor', 'primaryColor', 'bgColor'],
+  bg2: ['bg2', 'panelBg', 'secondaryBackground', 'backgroundAlt'],
+  panel: ['panel', 'panelColor', 'cardColor', 'secondaryColor'],
+  line: ['line', 'border', 'borderColor', 'separator'],
+  ink: ['ink', 'text', 'textColor', 'fontColor', 'primaryText'],
+  dim: ['dim', 'textDim', 'secondaryText', 'subtleColor', 'unfocusedColor'],
+  accent: ['accent', 'accentColor', 'selectedColor', 'highlight', 'primary'],
+  accent2: ['accent2', 'accentSecondary', 'warning', 'highlight2'],
+  danger: ['danger', 'error', 'errorColor', 'alert'],
+};
 
 // props that carry "x y" pairs
 const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'itemSize']);
@@ -123,7 +144,7 @@ export class ThemeStore {
       aspectRatio: aspectRatio ?? theme.aspectRatios[0] ?? null,
     };
     const variables = {};
-    const views = { system: [], gamelist: [] };
+    const views = { system: [], gamelist: [], desktop: [] };
     this._loadFile(path.join(theme.dir, 'theme.xml'), theme.dir, ctx, variables, views, 0);
 
     // resolve ${var} everywhere now that all variables are collected
@@ -136,7 +157,43 @@ export class ThemeStore {
       dir: theme.dir,
       variables,
       views,
+      desktop: this._desktopTokens(variables, views.desktop),
+      selected: ctx,
     };
+  }
+
+  /**
+   * Design tokens for the windowed library UI.
+   *
+   * Preference order: an explicit <view name="desktop"> element wins, then a
+   * conventionally-named theme variable, then romdeck's built-in default. So
+   * a theme written for ES-DE still restyles the desktop through its own
+   * palette, and a theme that cares can be precise.
+   */
+  _desktopTokens(variables, desktopElements = []) {
+    const explicit = {};
+    for (const el of desktopElements) {
+      // <text name="accent"><color>ff0000</color></text> or a <colors> element
+      const val = el.props?.color ?? el.props?.value ?? el.props?.path;
+      if (val && DESKTOP_TOKENS.includes(el.name)) explicit[el.name] = val;
+      for (const token of DESKTOP_TOKENS) {
+        if (el.props?.[token]) explicit[token] = el.props[token];
+      }
+      if (el.name === 'background' && el.props?.path) explicit.backgroundImage = el.props.path;
+      if (el.name === 'grid') {
+        if (el.props.itemSize) explicit.tileMin = Math.round(el.props.itemSize[0]);
+        if (el.props.aspectRatio) explicit.tileAspect = el.props.aspectRatio;
+      }
+    }
+
+    const out = { ...explicit };
+    for (const token of DESKTOP_TOKENS) {
+      if (out[token]) continue;
+      for (const alias of TOKEN_ALIASES[token]) {
+        if (variables[alias]) { out[token] = variables[alias]; break; }
+      }
+    }
+    return out;
   }
 
   _loadFile(file, themeDir, ctx, variables, views, depth) {
