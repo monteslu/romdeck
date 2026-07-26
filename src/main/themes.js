@@ -18,13 +18,58 @@
 //
 // Anything unrecognized is ignored rather than fatal — an unsupported theme
 // renders partially instead of blowing up.
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { XMLParser } from 'fast-xml-parser';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const BUNDLED_THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
+
+/**
+ * Themes romdeck offers to install, the way ES-DE ships a themes list.
+ *
+ * They are FETCHED, not bundled. Every one is CC-BY-NC-SA or similar: bundling
+ * would make romdeck a redistributor of other people's artwork, with the
+ * attribution and share-alike obligations that follow, and art-book-next alone
+ * is 220 MB against an app that is otherwise about one. Downloading on request
+ * keeps romdeck a client — the same posture ES-DE takes — and keeps `npx
+ * romdeck` small.
+ *
+ * Each entry carries its licence and author so the UI can show them BEFORE
+ * anything is downloaded.
+ */
+export const THEME_CATALOG = [
+  {
+    name: 'art-book-next-es-de',
+    displayName: 'Art Book Next',
+    author: 'Anthony Caccese',
+    license: 'CC-BY-NC-SA 2.0',
+    url: 'https://github.com/anthonycaccese/art-book-next-es-de.git',
+    description: 'Cover-art-forward, in the style of a coffee table book. 20 variants, 31 colour schemes.',
+    size: '~220 MB',
+    recommended: true,
+  },
+  {
+    name: 'modern-es-de',
+    displayName: 'Modern',
+    author: 'Sophia Hadash',
+    license: 'CC-BY-NC-SA',
+    url: 'https://gitlab.com/es-de/themes/modern-es-de.git',
+    description: 'Clean and image-driven, based on the Nintendo Switch UI.',
+    size: '~60 MB',
+  },
+  {
+    name: 'slate-es-de',
+    displayName: 'Slate',
+    author: 'ES-DE',
+    license: 'CC-BY-NC-SA',
+    url: 'https://gitlab.com/es-de/themes/slate-es-de.git',
+    description: "ES-DE's own default theme.",
+    size: '~20 MB',
+  },
+];
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -132,6 +177,89 @@ export class ThemeStore {
 
   find(name) {
     return this.list().find((t) => t.name === name) ?? null;
+  }
+
+  /** The catalog, annotated with what's already on disk. */
+  catalog() {
+    const installed = new Set(this.list().map((t) => t.name));
+    return THEME_CATALOG.map((entry) => ({
+      ...entry,
+      installed: installed.has(entry.name),
+    }));
+  }
+
+  /**
+   * Install a catalog theme with a shallow git clone.
+   *
+   * `--depth 1` matters: art-book-next carries 187 MB of history on top of
+   * 220 MB of artwork, and none of it is wanted.
+   *
+   * @param {string} name catalog entry name
+   * @param {(line:string)=>void} [onProgress] git's stderr, line by line
+   */
+  install(name, onProgress = null) {
+    const entry = THEME_CATALOG.find((t) => t.name === name);
+    if (!entry) return Promise.reject(new Error(`unknown theme: ${name}`));
+    if (this.find(name)) return Promise.resolve({ name, alreadyInstalled: true });
+
+    mkdirSync(this.userThemesDir, { recursive: true });
+    const dest = path.join(this.userThemesDir, entry.name);
+    // A previous attempt may have left a partial clone behind.
+    rmSync(dest, { recursive: true, force: true });
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('git', [
+        'clone', '--depth', '1', '--progress', entry.url, dest,
+      ], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+      let tail = '';
+      child.stderr.on('data', (buf) => {
+        tail = String(buf).slice(-400);
+        if (!onProgress) return;
+        // git writes progress with \r; take the last non-empty fragment.
+        const line = String(buf).split(/[\r\n]+/).filter(Boolean).pop();
+        if (line) onProgress(line.trim());
+      });
+
+      child.on('error', (err) => {
+        rmSync(dest, { recursive: true, force: true });
+        reject(new Error(err.code === 'ENOENT'
+          ? 'git is not installed — themes are fetched with git'
+          : err.message));
+      });
+
+      child.on('exit', (code) => {
+        if (code !== 0) {
+          rmSync(dest, { recursive: true, force: true });
+          reject(new Error(`download failed: ${tail.trim() || `git exited ${code}`}`));
+          return;
+        }
+        // A clone that lands without a theme.xml is not a theme, and leaving
+        // it would put a broken entry in the picker.
+        if (!existsSync(path.join(dest, 'theme.xml'))) {
+          rmSync(dest, { recursive: true, force: true });
+          reject(new Error('downloaded, but it contains no theme.xml'));
+          return;
+        }
+        // Drop the git metadata — it is dead weight once cloned.
+        rmSync(path.join(dest, '.git'), { recursive: true, force: true });
+        resolve({ name: entry.name, displayName: entry.displayName });
+      });
+    });
+  }
+
+  /** Remove an installed user theme. Bundled themes are never removable. */
+  remove(name) {
+    const theme = this.find(name);
+    if (!theme) throw new Error(`not installed: ${name}`);
+    if (theme.bundled) throw new Error('bundled themes cannot be removed');
+    const target = path.normalize(theme.dir);
+    // Jail: only ever delete inside the user themes directory.
+    if (!target.startsWith(this.userThemesDir + path.sep)) {
+      throw new Error('refusing to remove a theme outside the themes folder');
+    }
+    rmSync(target, { recursive: true, force: true });
+    return { name };
   }
 
   capabilities(themeDir) {
@@ -379,7 +507,12 @@ export class ThemeStore {
     for (const [key, value] of Object.entries(raw)) {
       if (key.startsWith('@_') || key === '#text') continue;
       const v = typeof value === 'object' ? value['#text'] ?? '' : value;
-      if (PAIR_PROPS.has(key)) el.props[key] = parsePair(v);
+      // A prop written as ${variable} must stay a STRING until _substitute()
+      // resolves it. Parsing it now turns "${systemViewLogoPos}" into [0, 0]
+      // and silently pins the element to the top-left corner — the variable is
+      // then never seen again, because it is no longer a string to substitute.
+      if (typeof v === 'string' && v.includes('${')) el.props[key] = v;
+      else if (PAIR_PROPS.has(key)) el.props[key] = parsePair(v);
       else if (NUM_PROPS.has(key)) el.props[key] = Number(v);
       else el.props[key] = String(v);
     }

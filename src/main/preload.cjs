@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENT_CHANNELS = new Set([
   'session:update', 'pad:nav', 'library:changed', 'pad:devices', 'pad:raw',
+  'theme:progress',
 ]);
 
 contextBridge.exposeInMainWorld('romdeck', {
@@ -35,6 +36,9 @@ contextBridge.exposeInMainWorld('romdeck', {
   themePrefs: () => ipcRenderer.invoke('theme:prefs'),
   themeSetPrefs: (p) => ipcRenderer.invoke('theme:setPrefs', p),
   themeLoad: (name, opts) => ipcRenderer.invoke('theme:load', name, opts),
+  themeCatalog: () => ipcRenderer.invoke('theme:catalog'),
+  themeInstall: (name) => ipcRenderer.invoke('theme:install', name),
+  themeRemove: (name) => ipcRenderer.invoke('theme:remove', name),
   setFullscreen: (on) => ipcRenderer.invoke('window:fullscreen', on),
   quit: () => ipcRenderer.invoke('app:quit'),
   prefsSet: (key, value) => ipcRenderer.invoke('prefs:set', key, value),

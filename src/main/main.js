@@ -427,10 +427,53 @@ ipcMain.handle('theme:setPrefs', (_ev, p = {}) => {
   return { ok: true };
 });
 
-ipcMain.handle('theme:load', (_ev, name, opts = {}) => {
+// Themes are FETCHED rather than bundled — see THEME_CATALOG in themes.js for
+// why (licence obligations + 220 MB against a 1 MB app).
+ipcMain.handle('theme:catalog', () => themes.catalog());
+
+ipcMain.handle('theme:install', async (_ev, name) => {
   try {
-    return { theme: themes.load(name ?? 'romdeck-default', opts) };
+    const result = await themes.install(name, (line) => {
+      send('theme:progress', { name, line });
+    });
+    return { result };
   } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('theme:remove', (_ev, name) => {
+  try {
+    // Switch away first, so removing the active theme can't leave the UI
+    // pointed at a directory that no longer exists.
+    if (prefs.get('theme') === name) {
+      prefs.set('theme', 'romdeck-default');
+      prefs.set('themeVariant', null);
+      prefs.set('themeColorScheme', null);
+    }
+    return { result: themes.remove(name) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('theme:load', (_ev, name, opts = {}) => {
+  const wanted = name ?? 'romdeck-default';
+  try {
+    return { theme: themes.load(wanted, opts) };
+  } catch (err) {
+    // A theme can vanish between runs — removed here, or a userData folder
+    // copied to another machine. Falling back beats a blank screen, and the
+    // preference is corrected so it doesn't fail again next launch.
+    if (wanted !== 'romdeck-default') {
+      try {
+        const theme = themes.load('romdeck-default', {});
+        prefs.set('theme', 'romdeck-default');
+        prefs.set('themeVariant', null);
+        prefs.set('themeColorScheme', null);
+        return { theme, fellBackFrom: wanted };
+      } catch { /* the bundled theme is missing too — report the original */ }
+    }
     return { error: err.message };
   }
 });
@@ -939,6 +982,14 @@ async function runPadOnlyCheck() {
       check(`${label} reachable by pad`, opened.group === group,
         `group=${opened.group} controls=${opened.count}`);
       check(`${label} has a focusable ring`, opened.count > 0 && opened.ringVisible);
+      // Downloading a theme is a feature, so it has to be pad-reachable too.
+      if (group === 'themes') {
+        const dl = await js(
+          `[...document.querySelectorAll('#themelist .theme-card.avail button')].length`);
+        check('theme downloader is reachable by pad', dl > 0,
+          `${dl} downloadable themes offered`);
+        writeFileSync('/tmp/romdeck-themes.png', (await win.webContents.capturePage()).toPNG());
+      }
       // `back` must walk out of every surface the way you came in.
       await pad('back');
       await new Promise((r) => setTimeout(r, 500));

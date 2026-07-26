@@ -608,7 +608,7 @@ function openMainMenu() {
       },
       { label: 'Settings', hint: 'picture, resume, rewind', action: () => { closeAllMenus(); openSettings(); } },
       { label: 'Controllers', hint: 'remap, ports, deadzone', action: () => { closeAllMenus(); openPads(); } },
-      { label: 'Themes', action: () => { closeAllMenus(); openThemes(); } },
+      { label: 'Themes', hint: 'switch or download', action: () => { closeAllMenus(); openThemes(); } },
       { label: 'BIOS files', action: () => { closeAllMenus(); $('bios').click(); } },
       { label: 'Get box art', hint: 'scrape the whole library', action: () => { closeAllMenus(); $('scrapeall').click(); } },
       { label: 'Identify ROMs', hint: 'CRC match against No-Intro', action: () => { closeAllMenus(); $('identify').click(); } },
@@ -1301,9 +1301,58 @@ $('cheatmodal').onclick = (ev) => { if (ev.target.id === 'cheatmodal') closeModa
 
 // ── theme picker ─────────────────────────────────────────────────────
 async function openThemes() {
-  const [list, prefs] = await Promise.all([romdeck.themeList(), romdeck.themePrefs()]);
+  const [list, prefs, catalog] = await Promise.all([
+    romdeck.themeList(), romdeck.themePrefs(), romdeck.themeCatalog(),
+  ]);
   const wrap = $('themelist');
   wrap.replaceChildren();
+
+  // Themes romdeck can fetch but hasn't. They are downloaded rather than
+  // bundled: every one is CC-BY-NC-SA, and art-book-next alone is 220 MB.
+  const available = catalog.filter((c) => !c.installed);
+  if (available.length) {
+    const head = document.createElement('div');
+    head.className = 'theme-section';
+    head.textContent = 'Available to download';
+    wrap.appendChild(head);
+    for (const c of available) {
+      const card = document.createElement('div');
+      card.className = 'theme-card avail';
+      const nm = document.createElement('div');
+      nm.className = 'tname';
+      nm.textContent = c.displayName + (c.recommended ? '  ★ recommended' : '');
+      const desc = document.createElement('div');
+      desc.className = 'tmeta';
+      desc.textContent = c.description;
+      const meta = document.createElement('div');
+      meta.className = 'tmeta dim';
+      // Licence and size shown BEFORE anything is downloaded.
+      meta.textContent = `${c.author} · ${c.license} · ${c.size}`;
+      const btn = document.createElement('button');
+      btn.textContent = 'Download';
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        btn.disabled = true;
+        btn.textContent = 'Downloading…';
+        const res = await romdeck.themeInstall(c.name);
+        if (res.error) {
+          toast('Theme download failed', res.error, true);
+          btn.disabled = false;
+          btn.textContent = 'Download';
+          return;
+        }
+        toast('Theme installed', c.displayName);
+        openThemes();
+      };
+      card.append(nm, desc, meta, btn);
+      wrap.appendChild(card);
+    }
+    const head2 = document.createElement('div');
+    head2.className = 'theme-section';
+    head2.textContent = 'Installed';
+    wrap.appendChild(head2);
+  }
+
   for (const t of list) {
     const card = document.createElement('div');
     card.className = 'theme-card' + (t.name === prefs.theme ? ' sel' : '');
@@ -1341,6 +1390,20 @@ async function openThemes() {
       await applyDesktopTheme();
       toast('Theme', `${t.displayName} · ${c}`);
     });
+    if (!t.bundled) {
+      const rm = document.createElement('button');
+      rm.className = 'danger';
+      rm.textContent = 'Remove';
+      rm.onclick = async (ev) => {
+        ev.stopPropagation();
+        const res = await romdeck.themeRemove(t.name);
+        if (res.error) { toast('Could not remove', res.error, true); return; }
+        toast('Theme removed', t.displayName);
+        await applyDesktopTheme(); // may have been the active one
+        openThemes();
+      };
+      opts.appendChild(rm);
+    }
     card.appendChild(opts);
 
     card.onclick = async () => {
@@ -1353,7 +1416,10 @@ async function openThemes() {
   }
   $('thememodal').classList.remove('hidden');
   registerGroup('themes', [
-    ...wrap.querySelectorAll('.theme-card, .theme-card select'), $('themeclose'),
+    // Download and Remove buttons join the ring too — installing a theme is a
+    // feature, so it has to be reachable without a pointer like the rest.
+    ...wrap.querySelectorAll('.theme-card, .theme-card select, .theme-card button'),
+    $('themeclose'),
   ], { onBack: () => closeModal('thememodal', 'themes') });
   if (focus.activeName() !== 'themes') focus.push('themes');
   else focus.paint();
@@ -1411,6 +1477,11 @@ window.__romdeckTest = {
 // The --padonly driver needs to aim the ring at a specific control before
 // activating it, the way a user would after navigating there.
 window.__romdeckFocus = focus;
+
+// A 220 MB clone is slow enough that silence reads as a hang.
+romdeck.on('theme:progress', (ev) => {
+  $('status').textContent = `${ev.name}: ${ev.line}`;
+});
 
 romdeck.on('pad:nav', (ev) => nav(ev.action));
 

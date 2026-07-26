@@ -693,6 +693,20 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
 .theme-card .tname { font-weight: 700; }
 .theme-card .tmeta { color: var(--dim); font-size: 12px; margin-top: 2px; }
 .theme-card .opts { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+/* Section headings separating downloadable themes from installed ones. */
+.theme-section {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 14px 0 6px;
+}
+.theme-section:first-child { margin-top: 0; }
+/* Not-yet-installed themes: licence and size are stated before downloading. */
+.theme-card.avail { border-style: dashed; }
+.theme-card.avail .tmeta.dim { opacity: 0.75; font-size: 11px; }
+.theme-card.avail button { margin-top: 10px; }
+.theme-card .danger { border-color: var(--danger); color: var(--danger); }
 .theme-card select {
   background: var(--bg2);
   color: var(--text);

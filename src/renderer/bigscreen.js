@@ -150,13 +150,28 @@ function buildImage(el) {
   }
   if (p.path) {
     const img = document.createElement('img');
-    img.src = p.path;
+    // ${system.theme} appears on ordinary images too (a per-system logo beside
+    // the carousel), not only on carousel art — it is resolved wherever it
+    // appears, since only the renderer knows which system is selected.
+    img.src = perSystemPath(p.path) ?? p.path;
     // A theme referencing art for a system/game we don't have shouldn't leave
-    // a broken-image glyph on the stage.
-    img.onerror = () => img.remove();
+    // a broken-image glyph on the stage. <default> is the theme's own fallback.
+    img.onerror = () => {
+      const fallback = perSystemPath(p.default) ?? p.default;
+      if (fallback && img.src !== fallback) img.src = fallback;
+      else img.remove();
+    };
     node.appendChild(img);
   }
   return node;
+}
+
+/** Fill ${system.theme} — the ES-DE shortname — for the current system. */
+function perSystemPath(template) {
+  if (typeof template !== 'string' || !template.includes('${system.theme}')) return null;
+  const sys = currentSystem();
+  const short = sys?.short ?? null;
+  return short ? template.replace(/\$\{system\.theme\}/g, short) : null;
 }
 
 function buildText(el) {
@@ -256,6 +271,12 @@ function paint() {
       node.textContent = key
         ? (metaValue(key) || p.defaultValue || '')
         : bindText(p.text);
+    } else if (el.type === 'image' && typeof p.path === 'string' && p.path.includes('${system.theme}')) {
+      // A per-system image has to follow the carousel, so its src is refreshed
+      // on every paint rather than fixed when the view was built.
+      const img = node.querySelector('img');
+      const src = perSystemPath(p.path);
+      if (img && src && img.getAttribute('src') !== src) img.src = src;
     } else if (el.type === 'image' && (p.metadata || p.imageType)) {
       node.replaceChildren();
       // <imageType>marquee|image|cover</imageType> is how real themes ask for
