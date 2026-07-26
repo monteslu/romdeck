@@ -31,6 +31,7 @@ import { ScreenScraper } from '../services/screenscraper.js';
 import { shortnameOf, libretroNameOf } from '../services/systems.js';
 import { MetadataStore } from '../services/metadata.js';
 import { CollectionStore } from '../services/collections.js';
+import { deviceStatus } from '../services/devicestatus.js';
 import { Prefs } from '../services/prefs.js';
 import { userDataDir, ensureUserData, appVersion } from './paths.js';
 
@@ -70,6 +71,9 @@ export class Services {
     this._cliRomsDir = romsDir;
     this._library = null;
   }
+
+  /** Battery / wifi / bluetooth for the <systemstatus> element. */
+  deviceStatus() { return deviceStatus(); }
 
   romsDir() {
     return this._cliRomsDir ?? this.prefs.get('romsDir') ?? null;

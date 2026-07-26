@@ -572,6 +572,27 @@ export async function shots({ romsDir, argAfter }) {
     app.stage.setLibrary(app.svc.library().roms);
   }
 
+  // <systemstatus>: battery / wifi / bluetooth from sysfs. The VALUES are
+  // the machine's, so the assertion is that the element draws something when
+  // there is something to report -- not that a specific icon appears.
+  {
+    const el = app.stage.elements().find((e) => e.type === 'systemstatus'
+      && e.props.scope !== 'none');
+    if (el) {
+      const st = app.svc.deviceStatus();
+      const reportable = !!(st.bluetooth?.on || st.wifi || st.battery);
+      const eb = app.stage.box(el.props);
+      const [ox, oy] = el.props.origin ?? [0, 0];
+      const h = Math.max(0.01, Math.min(0.5, Number(el.props.height ?? 0.03))) * STAGE_H;
+      const band = { x: eb.x - ox * 340, y: eb.y - oy * h, w: 340, h: Math.max(h, 40) };
+      const sd = readRect(app.render().getContext('2d'), band);
+      let lit = 0;
+      for (let i = 0; sd && i < sd.data.length; i += 4) if (sd.data[i] > 90) lit++;
+      if (reportable) r.check('system status draws', lit > 40, `${lit} lit px`);
+      else console.log('SKIP: nothing to report on this machine');
+    }
+  }
+
   // Scrolling containers. The animation cannot show in a still, but the
   // MECHANISM can be driven directly: text sits still for the start delay,
   // then advances, then holds at the end. Also guards the repaint policy --

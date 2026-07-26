@@ -593,10 +593,10 @@ export class Stage {
       case 'clock': return this.drawText(ctx, el, b, clockText());
       case 'rating': return this.drawRating(ctx, el, b);
       case 'helpsystem': return this.drawHelp(ctx, el, b);
+      case 'systemstatus': return this.drawSystemStatus(ctx, el, b);
       case 'text':
       case 'datetime':
-      case 'gamelistinfo':
-      case 'systemstatus': {
+      case 'gamelistinfo': {
         const key = el.props.metadata ?? el.props.systemdata;
         let text = key
           ? (this.meta(key) || el.props.defaultValue || '')
@@ -712,6 +712,50 @@ export class Stage {
   }
 
 
+  /**
+   * The device status row: battery, wifi, bluetooth.
+   *
+   * <height> sizes the icons as a fraction of screen height, clamped 0.01-0.5
+   * (SystemStatusComponent.cpp:191); <pos> and <origin> place the row as
+   * usual. Values come from sysfs, not from the theme -- this was the last
+   * themable element that needed something other than a renderer.
+   *
+   * An absent indicator is SKIPPED rather than drawn empty: a desktop has no
+   * battery, and a greyed-out battery icon there would be a lie.
+   */
+  drawSystemStatus(ctx, el, b) {
+    const p = el.props;
+    if (p.scope === 'none') return;
+    const size = Math.max(0.01, Math.min(0.5, Number(p.height ?? 0.03))) * STAGE_H;
+    const gap = size * 0.45;
+    const st = this.svc.deviceStatus?.() ?? {};
+
+    const parts = [];
+    if (st.bluetooth?.on) parts.push(['\u0042', null]);          // B
+    if (st.wifi) parts.push([st.wifi.connected ? '\u25B0'.repeat(Math.max(1, st.wifi.bars)) : '\u2715', null]);
+    if (st.battery) {
+      parts.push([`${st.battery.charging ? '\u26A1' : ''}${st.battery.capacity}%`, null]);
+    }
+    if (!parts.length) return;
+
+    ctx.font = fontStack(size * 0.8, { family: p._family ?? null, weight: 700 });
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    let width = 0;
+    for (const [txt] of parts) width += ctx.measureText(txt).width + gap;
+    width -= gap;
+
+    const [ox, oy] = p.origin ?? [0, 0];
+    let x = b.x - ox * width;
+    const y = b.y - oy * size + size / 2;
+    ctx.fillStyle = hex(p.color ?? p.iconColor, '#e8ecf4');
+    for (const [txt] of parts) {
+      ctx.fillText(txt, x, y);
+      x += ctx.measureText(txt).width + gap;
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+
   drawText(ctx, el, b, text) {
     if (!text) {
       // Clear the measured height, or a container that HAD long text keeps
@@ -750,8 +794,12 @@ export class Stage {
     // ES-DE wraps and scrolls inside its box. The scrolling is animation we
     // cannot show in a still, but the WRAPPING is layout: a description drawn
     // as one line runs straight out of its box and across the view.
-    const wraps = p.container === 'true' || p.container === true
-      || (p.metadata === 'description' && p.container !== 'false');
+    // <containerType> "horizontal" is a marquee, not a scrolling block, and
+    // ES-DE turns the container OFF for it (GamelistView.cpp:297) -- so the
+    // text stays on one line rather than wrapping.
+    const wraps = (p.container === 'true' || p.container === true
+      || (p.metadata === 'description' && p.container !== 'false'))
+      && p.containerType !== 'horizontal';
     if (wraps && b.w && b.h) {
       const lineH = size * Number(p.lineSpacing ?? 1.3);
       ctx.save();
@@ -1234,6 +1282,25 @@ export class Stage {
       const y = b.y + ln * (itemH + marginY);
       const tint = slot === 'controller' ? p.controllerIconColor : p.badgeIconColor;
       drawContain(ctx, icon, { x, y, w: size, h: size }, tint ? hex(tint) : null, 1);
+
+      // OVERLAY: a second icon sitting on top of the badge -- the controller
+      // type on a "controller" badge, the link marker on a folder. Position is
+      // a FRACTION of the badge that the overlay is CENTRED on, size is a
+      // multiple of the badge's width (FlexboxComponent.cpp:222).
+      const overlayKey = slot === 'controller' ? 'controller'
+        : slot === 'folderlink' ? 'folderLink' : null;
+      if (!overlayKey) return;
+      const overlay = this.img(this.perSystem(
+        p[`customBadgeIcon:${overlayKey.toLowerCase()}`] ?? p[`customBadgeIcon:${slot}-overlay`]));
+      if (!overlay) return;
+      const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
+      const oSize = size * clampN(p[`${overlayKey}Size`] ?? 0.5, 0.1,
+        overlayKey === 'controller' ? 2 : 1);
+      const [opx, opy] = p[`${overlayKey}Pos`] ?? [0.5, 0.5];
+      const ox = x + size * clampN(opx, -1, 2) - oSize / 2;
+      const oy = y + size * clampN(opy, -1, 2) - oSize / 2;
+      drawContain(ctx, overlay, { x: ox, y: oy, w: oSize, h: oSize },
+        p.controllerIconColor ? hex(p.controllerIconColor) : null, 1);
     });
   }
 
@@ -1264,9 +1331,15 @@ export class Stage {
       const [ox, oy] = p.origin ?? [0, 0];
       const x0 = b.x - ox * size * 5;
       const y0 = b.y - oy * size;
+      // <overlay> (default true, RatingComponent.cpp:24): filled icons draw
+      // ON TOP of a full unfilled row. With it off, the unfilled row is
+      // clipped away where the filled one covers it -- which matters for
+      // semi-transparent icons, where overlapping would double the alpha.
+      const overlay = !(p.overlay === 'false' || p.overlay === false);
       const whole = Math.round(value * 5);
       for (let i = 0; i < 5; i++) {
-        const img = i < whole ? (filled ?? unfilled) : (unfilled ?? null);
+        const showUnfilled = overlay || i >= whole;
+        const img = i < whole ? (filled ?? unfilled) : (showUnfilled ? unfilled : null);
         if (!img) continue;
         drawContain(ctx, img, { x: x0 + i * size, y: y0, w: size, h: size },
           p.color ? hex(p.color) : null);
