@@ -66,14 +66,29 @@ export class App {
   async _openWindow() {
     const sdl = (await import('@kmamal/sdl')).default;
     const fullscreen = !!this.svc.prefs.get('fullscreen');
-    this.window = sdl.video.createWindow({
+    const wantGl = process.env.ROMDECK_GL !== '0';
+    const makeWindow = (opengl) => sdl.video.createWindow({
       title: 'romdeck',
       width: 1280,
       height: 720,
       resizable: true,
       fullscreen,
+      ...(opengl ? { opengl: true } : {}),
     });
+
+    // A GL context needs a window created FOR gl; asking for one afterwards
+    // fails with eglCreateWindowSurface 0x3003. Try the GL window first and
+    // fall back to a plain one, so a machine with no usable GL still gets a
+    // working UI rather than a black screen.
+    this.window = makeWindow(wantGl);
     this.presenter = await createPresenter({ window: this.window });
+    if (wantGl && this.presenter.kind !== 'gl') {
+      // The GL window is useless to the CPU path (window.render is not
+      // available on an opengl window), so swap it for a plain one.
+      try { this.window.destroy(); } catch { /* already gone */ }
+      this.window = makeWindow(false);
+      this.presenter = await createPresenter({ window: this.window, mode: 'cpu' });
+    }
 
     this.window.on('close', () => this.quit());
     this.window.on('resize', () => this.invalidate());

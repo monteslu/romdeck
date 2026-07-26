@@ -45,9 +45,12 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@kmamal/sdl": "^0.11.13",
+    "@napi-rs/canvas": "^1.0.2",
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
-    "retroemu": "file:../retroemu"
+    "retroemu": "file:../retroemu",
+    "webgl-node": "^1.2.0"
   },
   "devDependencies": {
     "electron": "^37.10.3",

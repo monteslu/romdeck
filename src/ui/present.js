@@ -125,10 +125,16 @@ export class HeadlessPresenter extends BasePresenter {
  */
 export async function createPresenter({ window = null, mode = 'auto' } = {}) {
   if (mode === 'headless' || !window) return new HeadlessPresenter();
-  if (mode === 'gl' || (mode === 'auto' && process.env.ROMDECK_GL === '1')) {
+  // GL is the DEFAULT, because the bake-off settled it rather than taste:
+  // the CPU blit is ~1.6 ms at 1080p but 25 ms at 4K (it copies the whole
+  // stage per frame), while GL is flat at ~1.6 ms everywhere because the GPU
+  // does the scaling. 15x at 4K, and above a 60 Hz budget on CPU.
+  // ROMDECK_GL=0 forces the CPU path for debugging.
+  if (mode === 'cpu' || process.env.ROMDECK_GL === '0') return new CpuPresenter(window);
+  if (mode === 'gl' || mode === 'auto') {
     try {
       const { GlPresenter } = await import('./present-gl.js');
-      return new GlPresenter(window);
+      return await GlPresenter.create(window);
     } catch (err) {
       // A missing or broken GL stack must degrade to a working UI, never to
       // a black screen.
