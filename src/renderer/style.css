@@ -755,6 +755,88 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
 }
 .te-video { border-radius: 10px; overflow: hidden; }
 
+/* ── on-screen keyboard (M7) ─────────────────────────────────────────
+   One component, three alphabets. Text entry is the hardest thing to do
+   without a keyboard, so this is what makes search, cheat codes and share
+   codes pad-reachable.                                                  */
+#osk {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+.osk-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  min-width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.osk-title { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+.osk-preview {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 20px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  min-height: 44px;
+  margin-bottom: 14px;
+  word-break: break-all;
+}
+.osk-caret { animation: pulse 1s infinite; color: var(--accent); }
+.osk-row { display: flex; gap: 6px; justify-content: center; margin-bottom: 6px; }
+.osk-key {
+  min-width: 42px;
+  height: 42px;
+  font-size: 16px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.osk-key:hover { border-color: var(--accent); }
+.osk-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.osk-actions button { padding: 8px 14px; }
+.osk-actions button.primary {
+  background: var(--accent);
+  color: #06231f;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── focus ring (M7) ──────────────────────────────────────────────────
+   ONE focus style, theme-derived, shared by pad, keyboard and mouse. The
+   ring is what makes every surface reachable without a pointer; hover sets
+   it rather than bypassing it, so the two input models never disagree.  */
+.focus-ring {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+  position: relative;
+  z-index: 1;
+}
+/* Tiles carry their own selected treatment; keep the ring readable over it. */
+.tile.focus-ring { outline-offset: -2px; }
+/* Inputs already show a caret — a heavy ring on top reads as double focus. */
+input.focus-ring, select.focus-ring, textarea.focus-ring {
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 .hidden { display: none !important; }
 
 @keyframes pulse { 50% { opacity: 0.3; } }

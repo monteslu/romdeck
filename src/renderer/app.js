@@ -5,8 +5,118 @@
 import {
   enterBigScreen, exitBigScreen, bigScreenNav, bigScreenActive, bigScreenRefresh,
 } from './bigscreen.js';
+import { focus } from './focus.js';
+import { openKeyboard, close as closeKeyboard, isOpen as keyboardOpen } from './osk.js';
 
 const $ = (id) => document.getElementById(id);
+
+// ── focus wiring (M7 Phase 1) ────────────────────────────────────────
+// Every surface declares its focusable controls in DOM order; the manager
+// handles movement, activation and the visible ring. Modals push a group and
+// pop it on close, so `back` always walks out the way you came in.
+
+/** Register a list of elements (ids or nodes) into a group, in order. */
+function registerGroup(name, items, { onBack = null } = {}) {
+  focus.group(name, { onBack });
+  for (const item of items) {
+    const el = typeof item === 'string' ? $(item) : item;
+    if (el) focus.register(name, el);
+  }
+  return name;
+}
+
+/** Open a modal: show it, build its ring, push it, focus the first control. */
+function openModal(modalId, groupName, buildItems, { onBack = null } = {}) {
+  $(modalId).classList.remove('hidden');
+  registerGroup(groupName, buildItems(), { onBack: onBack ?? (() => closeModal(modalId, groupName)) });
+  focus.push(groupName);
+}
+
+function closeModal(modalId, groupName) {
+  $(modalId).classList.add('hidden');
+  if (focus.activeName() === groupName) focus.pop();
+}
+
+// The desktop surface is rebuilt whenever the library re-renders, so its ring
+// is rebuilt with it. Toolbar → system rail → tiles → details actions, in the
+// order the eye travels; geometry handles the rest.
+let railItems = [];
+let gridTiles = [];
+
+/**
+ * Repaint which tile reads as selected, without a full render().
+ *
+ * A full re-render would rebuild the focus ring mid-navigation and throw the
+ * position away, so moving the ring updates the class directly instead.
+ */
+function markSelectedTile() {
+  gridTiles.forEach((el, i) => el.classList.toggle('selected', i === state.selected));
+}
+
+const TOOLBAR_IDS = [
+  'search', 'choosedir', 'rescan', 'scrapeall', 'identify', 'bios', 'pads',
+  'joinbtn', 'feedbtn', 'devbtn', 'settingsbtn', 'themebtn', 'bigscreenbtn',
+  'fullscreenbtn',
+];
+
+/**
+ * Register a text field so the ring opens the on-screen keyboard on it, while
+ * a real keyboard still types into it directly. Both roads lead to the field.
+ */
+function registerTextField(group, id, opts) {
+  const el = $(id);
+  if (!el) return;
+  focus.register(group, el, { onActivate: () => openKeyboard(el, opts) });
+}
+
+function rebuildDesktopFocus() {
+  // Preserve the ring position across re-renders — a repaint shouldn't yank
+  // focus back to the toolbar every time art or a session state arrives.
+  const prev = focus.groups.get('desktop');
+  const keep = focus.activeName() === 'desktop' ? prev.index : null;
+  focus.group('desktop'); // clears and rebuilds
+  for (const id of TOOLBAR_IDS) {
+    const el = $(id);
+    if (!el) continue;
+    if (id === 'search') {
+      registerTextField('desktop', 'search', {
+        layout: 'text',
+        title: 'Search your library',
+        onInput: () => {
+          state.query = $('search').value.trim();
+          state.selected = 0;
+          applyFilter();
+          render();
+        },
+      });
+    } else {
+      focus.register('desktop', el);
+    }
+  }
+  for (const el of railItems) focus.register('desktop', el);
+  gridTiles.forEach((el, i) => {
+    focus.register('desktop', el, {
+      // The ring IS the selection. Keeping a separate `state.selected` in sync
+      // only when a tile happened to be focused let the details panel drift
+      // out of step with the highlighted tile — caught in a --padonly
+      // screenshot, invisible in the assertions.
+      onFocus: () => {
+        if (state.selected !== i) {
+          state.selected = i;
+          markSelectedTile();
+          renderDetails();
+        }
+      },
+      onActivate: () => launch(state.filtered[i]),
+    });
+  });
+  for (const el of $('dt-actions').children) focus.register('desktop', el);
+  for (const el of $('dt-states').querySelectorAll('button')) focus.register('desktop', el);
+
+  if (keep !== null) focus.groups.get('desktop').index = keep;
+  if (!focus.stack.length) focus.push('desktop');
+  else if (focus.activeName() === 'desktop') focus.paint();
+}
 
 const state = {
   romsDir: null,
@@ -94,6 +204,7 @@ function render() {
     el.onclick = () => { state.system = name; state.selected = 0; applyFilter(); render(); };
     rail.appendChild(el);
   }
+  railItems = [...rail.children];
 
   // grid
   const grid = $('grid');
@@ -152,6 +263,8 @@ function render() {
     tile.ondblclick = () => launch(rom);
     grid.appendChild(tile);
   });
+  gridTiles = [...grid.children];
+  rebuildDesktopFocus();
 
   const n = state.playing.size;
   $('sessioncount').classList.toggle('hidden', n === 0);
@@ -385,28 +498,14 @@ function toast(title, body, isCrash = false, actions = []) {
 }
 
 // ── navigation (keyboard + gamepad share one code path) ──────────────
-function columns() {
-  const grid = $('grid');
-  if (!grid.children.length) return 1;
-  const style = getComputedStyle(grid);
-  return Math.max(1, style.gridTemplateColumns.split(' ').length);
-}
-
 function nav(action) {
   if (bigScreenActive()) {
     bigScreenNav(action);
     return;
   }
-  const cols = columns();
-  const max = state.filtered.length - 1;
-  if (max < 0) return;
-  let i = state.selected;
-  if (action === 'left') i -= 1;
-  else if (action === 'right') i += 1;
-  else if (action === 'up') i -= cols;
-  else if (action === 'down') i += cols;
-  else if (action === 'confirm') return launch(selectedRom());
-  else if (action === 'prevSystem' || action === 'nextSystem') {
+
+  // System switching is a shoulder-button shortcut on every surface.
+  if (action === 'prevSystem' || action === 'nextSystem') {
     const names = systems().map(([n]) => n);
     const cur = names.indexOf(state.system);
     const next = (cur + (action === 'nextSystem' ? 1 : names.length - 1)) % names.length;
@@ -414,15 +513,27 @@ function nav(action) {
     state.selected = 0;
     applyFilter();
     return render();
-  } else return;
-  state.selected = Math.max(0, Math.min(max, i));
-  render();
-  document.querySelector('.tile.selected')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Everything else goes through the ONE focus ring — the same code path for
+  // pad, keyboard and mouse, on whichever surface is currently active.
+  if (action === 'confirm') { focus.activate(); return; }
+  if (action === 'back') { focus.back(); return; }
+  // On a dropdown or slider, left/right changes the VALUE rather than moving
+  // off it — the behaviour console UIs use, and the only way a pad can set one.
+  if ((action === 'left' || action === 'right') && focus.adjustable()) {
+    focus.adjust(action === 'right' ? 1 : -1);
+    return;
+  }
+  if (['up', 'down', 'left', 'right'].includes(action)) {
+    focus.move(action);
+    return;
+  }
 }
 
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'F11') { ev.preventDefault(); toggleBigScreen(); return; }
-  if (ev.key === 'Escape' && bigScreenActive()) { ev.preventDefault(); nav('back'); return; }
+  if (ev.key === 'F11') { ev.preventDefault(); toggleFullscreen(); return; }
+  if (ev.key === 'Escape') { ev.preventDefault(); nav('back'); return; }
   const map = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     Enter: 'confirm', Backspace: 'back', '[': 'prevSystem', ']': 'nextSystem',
@@ -430,11 +541,24 @@ document.addEventListener('keydown', (ev) => {
   if (map[ev.key]) { ev.preventDefault(); nav(map[ev.key]); }
 });
 
-// ── big-screen mode ──────────────────────────────────────────────────
-async function toggleBigScreen() {
+// ── the themed view + fullscreen ─────────────────────────────────────
+// The themed view is a VIEW, not a display mode (PLAN §16e Phase 3). The
+// stage has always been resolution-independent — fitStage() scales it to the
+// window and re-fits on resize — so it runs perfectly well in a window. What
+// welded it to fullscreen was two setFullscreen() calls here, an artefact of
+// building it as "big-screen mode". Fullscreen is now its own toggle.
+let isFullscreen = false;
+
+async function toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  await romdeck.setFullscreen(isFullscreen);
+  romdeck.prefsSet?.('fullscreen', isFullscreen);
+}
+
+async function toggleThemedView() {
   if (bigScreenActive()) {
     exitBigScreen();
-    await romdeck.setFullscreen(false);
+    focus.reset('desktop');
     return;
   }
   const prefs = await romdeck.themePrefs();
@@ -444,13 +568,13 @@ async function toggleBigScreen() {
     variant: prefs.variant,
     colorScheme: prefs.colorScheme,
     onLaunch: (rom) => launch(rom),
-    onExit: () => toggleBigScreen(),
+    onExit: () => toggleThemedView(),
   });
-  if (res?.error) { toast('Big-screen mode', res.error, true); return; }
-  await romdeck.setFullscreen(true);
+  if (res?.error) { toast('Themed view', res.error, true); return; }
 }
 
-$('bigscreenbtn').onclick = toggleBigScreen;
+$('bigscreenbtn').onclick = toggleThemedView;
+$('fullscreenbtn')?.addEventListener('click', toggleFullscreen);
 
 // ── theme → desktop UI ───────────────────────────────────────────────
 // The windowed library is styled from the SAME theme that drives big-screen
@@ -519,7 +643,6 @@ async function applyDesktopTheme() {
 async function openJoin() {
   $('joinmodal').classList.remove('hidden');
   $('join-code').value = '';
-  $('join-code').focus();
   const recent = await romdeck.remoteRecent();
   const wrap = $('join-recent');
   wrap.replaceChildren();
@@ -531,6 +654,18 @@ async function openJoin() {
     chip.onclick = () => { $('join-code').value = code; doJoin(false); };
     wrap.appendChild(chip);
   }
+  // Code entry needs no keyboard: the on-screen one offers exactly the base24
+  // alphabet, so a character that can't appear in a real code can't be typed.
+  focus.group('join', { onBack: () => closeModal('joinmodal', 'join') });
+  registerTextField('join', 'join-code', {
+    layout: 'base24',
+    title: 'Enter the share code your host gave you',
+  });
+  for (const item of ['join-play', 'join-watch', ...wrap.children, 'joinclose']) {
+    const el = typeof item === 'string' ? $(item) : item;
+    if (el) focus.register('join', el);
+  }
+  focus.push('join');
 }
 
 async function doJoin(watch) {
@@ -560,8 +695,8 @@ $('join-code').addEventListener('keydown', (ev) => {
 $('joinbtn').onclick = openJoin;
 $('join-play').onclick = () => doJoin(false);
 $('join-watch').onclick = () => doJoin(true);
-$('joinclose').onclick = () => $('joinmodal').classList.add('hidden');
-$('joinmodal').onclick = (ev) => { if (ev.target.id === 'joinmodal') $('joinmodal').classList.add('hidden'); };
+$('joinclose').onclick = () => closeModal('joinmodal', 'join');
+$('joinmodal').onclick = (ev) => { if (ev.target.id === 'joinmodal') closeModal('joinmodal', 'join'); };
 
 // ── homebrew feed ────────────────────────────────────────────────────
 async function openFeed() {
@@ -609,10 +744,14 @@ async function openFeed() {
     row.append(kind, info, btn);
     list.appendChild(row);
   }
+  registerGroup('feed', [...list.querySelectorAll('button'), $('feedclose')],
+    { onBack: () => closeModal('feedmodal', 'feed') });
+  if (focus.activeName() !== 'feed') focus.push('feed');
+  else focus.paint();
 }
 $('feedbtn').onclick = openFeed;
-$('feedclose').onclick = () => $('feedmodal').classList.add('hidden');
-$('feedmodal').onclick = (ev) => { if (ev.target.id === 'feedmodal') $('feedmodal').classList.add('hidden'); };
+$('feedclose').onclick = () => closeModal('feedmodal', 'feed');
+$('feedmodal').onclick = (ev) => { if (ev.target.id === 'feedmodal') closeModal('feedmodal', 'feed'); };
 
 // ── developer mode: live memory viewer ───────────────────────────────
 const dev = { sessionId: null, regions: [], prev: null, timer: null, base: null };
@@ -625,6 +764,12 @@ function devSessionId() {
 
 async function openDev() {
   $('devmodal').classList.remove('hidden');
+  focus.group('dev', { onBack: () => closeDev() });
+  for (const id of ['dev-region', 'dev-refresh', 'dev-auto', 'dev-scan', 'devclose']) {
+    focus.register('dev', $(id));
+  }
+  registerTextField('dev', 'dev-offset', { layout: 'code', title: 'Memory offset (hex or decimal)' });
+  if (focus.activeName() !== 'dev') focus.push('dev');
   dev.sessionId = devSessionId();
   if (dev.sessionId === null) {
     $('dev-status').textContent = 'No game running — start one, then reopen this panel.';
@@ -720,11 +865,12 @@ $('dev-auto').onchange = () => {
   clearInterval(dev.timer);
   if ($('dev-auto').checked) dev.timer = setInterval(readMem, 500);
 };
-$('devclose').onclick = () => {
+function closeDev() {
   clearInterval(dev.timer);
   $('dev-auto').checked = false;
-  $('devmodal').classList.add('hidden');
-};
+  closeModal('devmodal', 'dev');
+}
+$('devclose').onclick = closeDev;
 
 // ── settings (with provenance) ───────────────────────────────────────
 // Scope follows the selection: with a game selected you can pin a setting to
@@ -877,11 +1023,18 @@ async function openSettings() {
   });
 
   $('settingsmodal').classList.remove('hidden');
+  // Every control in the panel joins the ring — selects, checkboxes, the
+  // scope picker and each ↺ reset — so settings are configurable with a pad.
+  registerGroup('settings', [
+    ...list.querySelectorAll('select, input, button'), $('settingsclose'),
+  ], { onBack: () => closeModal('settingsmodal', 'settings') });
+  if (focus.activeName() !== 'settings') focus.push('settings');
+  else focus.paint();
 }
 
 $('settingsbtn').onclick = openSettings;
-$('settingsclose').onclick = () => $('settingsmodal').classList.add('hidden');
-$('settingsmodal').onclick = (ev) => { if (ev.target.id === 'settingsmodal') $('settingsmodal').classList.add('hidden'); };
+$('settingsclose').onclick = () => closeModal('settingsmodal', 'settings');
+$('settingsmodal').onclick = (ev) => { if (ev.target.id === 'settingsmodal') closeModal('settingsmodal', 'settings'); };
 
 // ── cheats drawer ────────────────────────────────────────────────────
 let cheatRom = null;
@@ -922,6 +1075,18 @@ async function renderCheats() {
     row.append(on, desc, code, del);
     list.appendChild(row);
   });
+
+  // Cheat codes are typed with the hex/separator keyboard, so a pad can enter
+  // a Game Genie code without a keyboard anywhere in the room.
+  focus.group('cheats', { onBack: () => closeModal('cheatmodal', 'cheats') });
+  for (const el of list.querySelectorAll('input, button')) focus.register('cheats', el);
+  registerTextField('cheats', 'cheat-desc', { layout: 'text', title: 'Cheat description' });
+  registerTextField('cheats', 'cheat-code', { layout: 'code', title: 'Cheat code' });
+  for (const id of ['cheat-add-btn', 'cheat-import-btn', 'cheatclose']) {
+    focus.register('cheats', $(id));
+  }
+  if (focus.activeName() !== 'cheats') focus.push('cheats');
+  else focus.paint();
 }
 
 $('cheat-add-btn').onclick = async () => {
@@ -939,8 +1104,8 @@ $('cheat-import-btn').onclick = async () => {
   else if (!res.canceled) toast('Cheats imported', `${res.added} codes`);
   renderCheats();
 };
-$('cheatclose').onclick = () => $('cheatmodal').classList.add('hidden');
-$('cheatmodal').onclick = (ev) => { if (ev.target.id === 'cheatmodal') $('cheatmodal').classList.add('hidden'); };
+$('cheatclose').onclick = () => closeModal('cheatmodal', 'cheats');
+$('cheatmodal').onclick = (ev) => { if (ev.target.id === 'cheatmodal') closeModal('cheatmodal', 'cheats'); };
 
 // ── theme picker ─────────────────────────────────────────────────────
 async function openThemes() {
@@ -995,16 +1160,21 @@ async function openThemes() {
     wrap.appendChild(card);
   }
   $('thememodal').classList.remove('hidden');
+  registerGroup('themes', [
+    ...wrap.querySelectorAll('.theme-card, .theme-card select'), $('themeclose'),
+  ], { onBack: () => closeModal('thememodal', 'themes') });
+  if (focus.activeName() !== 'themes') focus.push('themes');
+  else focus.paint();
 }
 
 $('themebtn').onclick = openThemes;
-$('themeclose').onclick = () => $('thememodal').classList.add('hidden');
-$('thememodal').onclick = (ev) => { if (ev.target.id === 'thememodal') $('thememodal').classList.add('hidden'); };
+$('themeclose').onclick = () => closeModal('thememodal', 'themes');
+$('thememodal').onclick = (ev) => { if (ev.target.id === 'thememodal') closeModal('thememodal', 'themes'); };
 
 // Hook for the main process's --bigshot self-check (headless verification of
 // the theme engine). Harmless in normal runs.
 window.__romdeckTest = {
-  enterBigScreen: () => toggleBigScreen(),
+  enterBigScreen: () => toggleThemedView(),
   nav: (action) => nav(action),
   openSettings: () => openSettings(),
   join: async (code) => { await openJoin(); $('join-code').value = code; return doJoin(false); },
@@ -1018,7 +1188,33 @@ window.__romdeckTest = {
     elements: document.getElementById('bs-stage').children.length,
     text: [...document.querySelectorAll('#bs-stage .te-text')].map((n) => n.textContent).filter(Boolean),
   }),
+
+  // ── --padonly hooks (M7 acceptance test) ──────────────────────────
+  // The unplugged test: drive ONLY these and every feature must be reachable.
+  // nav() is the same entry point real pad events use, so this exercises the
+  // production path rather than a parallel one.
+  pad: (action) => nav(action),
+  focusState: () => ({
+    group: focus.activeName(),
+    stack: focus.stack.map((g) => g.name),
+    index: focus.active()?.index ?? -1,
+    count: focus.active()?.live().length ?? 0,
+    current: focus.active()?.current()?.el?.id
+      || focus.active()?.current()?.el?.textContent?.trim().slice(0, 30)
+      || null,
+    inventory: focus.inventory(),
+    ringVisible: !!document.querySelector('.focus-ring'),
+  }),
+  focusStats: () => ({
+    moves: focus.stats.moves,
+    activations: focus.stats.activations,
+    visited: [...focus.stats.visited],
+  }),
+  keyboardOpen: () => keyboardOpen(),
 };
+// The --padonly driver needs to aim the ring at a specific control before
+// activating it, the way a user would after navigating there.
+window.__romdeckFocus = focus;
 
 romdeck.on('pad:nav', (ev) => nav(ev.action));
 
@@ -1157,9 +1353,12 @@ $('bios').onclick = async () => {
     table.appendChild(tr);
   }
   $('biosmodal').classList.remove('hidden');
+  // The BIOS table is read-only; the ring only needs a way back out.
+  registerGroup('bios', ['biosclose'], { onBack: () => closeModal('biosmodal', 'bios') });
+  focus.push('bios');
 };
-$('biosclose').onclick = () => $('biosmodal').classList.add('hidden');
-$('biosmodal').onclick = (ev) => { if (ev.target.id === 'biosmodal') $('biosmodal').classList.add('hidden'); };
+$('biosclose').onclick = () => closeModal('biosmodal', 'bios');
+$('biosmodal').onclick = (ev) => { if (ev.target.id === 'biosmodal') closeModal('biosmodal', 'bios'); };
 
 // ── controllers: live view + press-to-bind remapping ─────────────────
 const padUI = {
@@ -1192,8 +1391,9 @@ async function openPads() {
 async function closePads() {
   padUI.open = false;
   padUI.listening = null;
+  focus.enabled = true;
   await romdeck.padsRawMode(false);
-  $('padmodal').classList.add('hidden');
+  closeModal('padmodal', 'pads');
 }
 
 function bindingFor(deviceKey, buttonId) {
@@ -1275,6 +1475,9 @@ function renderPads() {
       row.append(label, val);
       row.onclick = () => {
         padUI.listening = listening ? null : { deviceKey: dev.key, buttonId: btn.id };
+        // While waiting for a press, the pad is BINDING, not navigating —
+        // otherwise pressing the button you want to bind would move the ring.
+        focus.enabled = !padUI.listening;
         renderPads();
       };
       grid.appendChild(row);
@@ -1328,6 +1531,23 @@ function renderPads() {
 
     list.appendChild(card);
   });
+
+  // The point of the whole exercise: configure a controller WITH the
+  // controller. Every bind row, the port picker, the deadzone slider and the
+  // profile buttons all join the ring.
+  //
+  // Rebuilt on every raw-pad frame, so the ring position is preserved
+  // explicitly — otherwise focus would snap back 30 times a second.
+  const prev = focus.groups.get('pads');
+  const keep = focus.activeName() === 'pads' ? prev?.index ?? 0 : null;
+  focus.group('pads', { onBack: () => closePads() });
+  for (const el of list.querySelectorAll('select, .bindrow, input[type=range], button')) {
+    focus.register('pads', el);
+  }
+  focus.register('pads', $('padclose'));
+  if (keep !== null) focus.groups.get('pads').index = keep;
+  if (focus.activeName() !== 'pads') focus.push('pads');
+  else focus.paint();
 }
 
 // Raw pad stream: drives the live view AND completes press-to-bind
@@ -1348,6 +1568,7 @@ romdeck.on('pad:raw', (snapshot) => {
       if (source) {
         const { deviceKey, buttonId } = padUI.listening;
         padUI.listening = null;
+        focus.enabled = true; // binding captured; the pad navigates again
         romdeck.padsBind(deviceKey, buttonId, source, padUI.layer).then(async () => {
           padUI.info = await romdeck.padsList();
           renderPads();

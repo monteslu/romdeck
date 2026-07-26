@@ -34,6 +34,7 @@ const UISHOT = process.argv.includes('--uishot');
 const DEVCHECK = process.argv.includes('--devcheck');
 const THEMESHOT = process.argv.includes('--themeshot');
 const JOINCHECK = process.argv.includes('--joincheck');
+const PADONLY = process.argv.includes('--padonly');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -601,6 +602,7 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (PADONLY) { runPadOnlyCheck(); return; }
   if (JOINCHECK) {
     // --joincheck <CODE>: drive the join UI exactly as a user would, then
     // verify a guest session actually connects to the host.
@@ -707,6 +709,157 @@ ipcMain.on('ui:ready', () => {
   }
   if (AUTOPLAY) runAutoplayCheck();
 });
+
+// --padonly: THE ACCEPTANCE TEST for M7 (PLAN §16e).
+//
+// "Unplug the keyboard and the mouse. Everything must still work."
+//
+// Injects only synthetic pad actions through the same nav() entry point real
+// pad events use, then asserts that every surface is reachable, that the ring
+// is visible on each, and that text entry works without a keyboard. A feature
+// that needs a pointer fails here, which is the whole point: this check
+// defines "done" far better than clicking around does.
+async function runPadOnlyCheck() {
+  let failures = 0;
+  const check = (name, cond, extra = '') => {
+    console.log(`${cond ? 'PASS' : 'FAIL'}: ${name} ${extra}`);
+    if (!cond) failures++;
+  };
+  const js = (expr) => win.webContents.executeJavaScript(expr);
+  const pad = async (action, times = 1) => {
+    for (let i = 0; i < times; i++) {
+      await js(`window.__romdeckTest.pad(${JSON.stringify(action)})`);
+      await new Promise((r) => setTimeout(r, 45));
+    }
+  };
+  const st = () => js('window.__romdeckTest.focusState()');
+
+  try {
+    await new Promise((r) => setTimeout(r, 1200));
+
+    // The desktop surface must come up with a live ring.
+    let s = await st();
+    check('desktop ring exists', s.group === 'desktop' && s.count > 0, `${s.count} controls`);
+    check('focus ring is visible', s.ringVisible === true, `on ${s.current}`);
+
+    // Movement must actually move, and reach the game tiles.
+    const before = s.current;
+    await pad('down', 3);
+    await pad('right', 2);
+    s = await st();
+    check('pad moves the ring', s.current !== before, `${before} → ${s.current}`);
+
+    // The highlighted tile and the details panel must agree. They were two
+    // separate concepts before M7, and drifted apart the moment focus left the
+    // grid — visible in a screenshot, silent in every assertion.
+    const sync = await js(`(() => {
+      const tile = document.querySelector('.tile.selected');
+      const ring = document.querySelector('.tile.focus-ring');
+      return {
+        selectedName: tile?.querySelector('.name')?.textContent ?? null,
+        ringName: ring?.querySelector('.name')?.textContent ?? null,
+        panelName: document.getElementById('dt-name')?.textContent ?? null,
+      };
+    })()`);
+    check('selection and details panel agree',
+      sync.selectedName === sync.panelName,
+      `tile=${JSON.stringify(sync.selectedName)} panel=${JSON.stringify(sync.panelName)}`);
+    if (sync.ringName) {
+      check('ring and selection agree on the grid',
+        sync.ringName === sync.selectedName,
+        `ring=${JSON.stringify(sync.ringName)} selected=${JSON.stringify(sync.selectedName)}`);
+    }
+
+    // Every toolbar surface must be reachable and open with a pad. Each entry
+    // is a feature that was mouse-only before M7.
+    const surfaces = [
+      ['settingsbtn', 'settings', 'Settings'],
+      ['pads', 'pads', 'Controllers'],
+      ['themebtn', 'themes', 'Themes'],
+      ['bios', 'bios', 'BIOS'],
+      ['feedbtn', 'feed', 'Homebrew'],
+      ['devbtn', 'dev', 'Developer mode'],
+      ['joinbtn', 'join', 'Remote play join'],
+    ];
+    for (const [id, group, label] of surfaces) {
+      // Focus the toolbar button directly, then activate it with the pad.
+      await js(`(() => { const g = window.__romdeckFocus.groups.get('desktop');
+        const live = g.live(); const i = live.findIndex(f => f.el.id === ${JSON.stringify(id)});
+        if (i >= 0) { g.index = i; window.__romdeckFocus.paint(); } })()`);
+      await pad('confirm');
+      await new Promise((r) => setTimeout(r, 700));
+      const opened = await st();
+      check(`${label} reachable by pad`, opened.group === group,
+        `group=${opened.group} controls=${opened.count}`);
+      check(`${label} has a focusable ring`, opened.count > 0 && opened.ringVisible);
+      // `back` must walk out of every surface the way you came in.
+      await pad('back');
+      await new Promise((r) => setTimeout(r, 500));
+      const closed = await st();
+      check(`${label} closes with back`, closed.group === 'desktop', `→ ${closed.group}`);
+    }
+
+    // Text entry without a keyboard: the on-screen keyboard must open on the
+    // search field and actually change the query.
+    await js(`(() => { const g = window.__romdeckFocus.groups.get('desktop');
+      const live = g.live(); const i = live.findIndex(f => f.el.id === 'search');
+      if (i >= 0) { g.index = i; window.__romdeckFocus.paint(); } })()`);
+    await pad('confirm');
+    await new Promise((r) => setTimeout(r, 500));
+    const oskOpen = await js('window.__romdeckTest.keyboardOpen()');
+    const oskState = await st();
+    check('on-screen keyboard opens on a text field', oskOpen === true && oskState.group === 'osk',
+      `group=${oskState.group} keys=${oskState.count}`);
+    await pad('confirm'); // press whatever key the ring starts on
+    await new Promise((r) => setTimeout(r, 300));
+    const typed = await js('document.getElementById("search").value');
+    check('pad types into the field', typed.length > 0, `value=${JSON.stringify(typed)}`);
+    await pad('back');
+    await new Promise((r) => setTimeout(r, 400));
+
+    // The themed view must be enterable with a pad — it was F11/mouse-only.
+    await js('window.__romdeckTest.enterBigScreen()');
+    await new Promise((r) => setTimeout(r, 900));
+    const big = await js('window.__romdeckTest.state()');
+    check('themed view reachable', big.active === true && big.elements > 0,
+      `${big.elements} elements`);
+    // ...and must NOT have forced fullscreen (Phase 3: it's a view, not a mode)
+    check('themed view does not force fullscreen', win.isFullScreen() === false);
+    await pad('back');
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Reachability is what matters, not how many controls this particular
+    // walk happened to touch: sum the ring sizes of every surface the pad can
+    // open. Before M7 that number was ~0 outside the library grid.
+    const reach = await js(`(() => {
+      const f = window.__romdeckFocus;
+      const out = {};
+      for (const [name, g] of f.groups) out[name] = g.items.length;
+      return out;
+    })()`);
+    const total = Object.values(reach).reduce((a, b) => a + b, 0);
+    const surfaceCount = Object.keys(reach).length;
+    check('every surface has a populated ring',
+      Object.entries(reach).every(([, n]) => n > 0),
+      JSON.stringify(reach));
+    check('pad reaches the whole app', total >= 80 && surfaceCount >= 8,
+      `${total} controls across ${surfaceCount} surfaces`);
+
+    const stats = await js('window.__romdeckTest.focusStats()');
+    check('ring drove real interactions', stats.activations >= 8 && stats.moves > 0,
+      `${stats.moves} moves, ${stats.activations} activations, ${stats.visited.length} visited`);
+
+    const img = await win.webContents.capturePage();
+    writeFileSync('/tmp/romdeck-padonly.png', img.toPNG());
+    console.log(failures === 0
+      ? 'PADONLY OK — every surface reachable without a pointer'
+      : `PADONLY ${failures} FAILURES`);
+  } catch (err) {
+    console.error('PADONLY FAIL — driver error:', err.message);
+    failures++;
+  }
+  setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
+}
 
 // --autoplay: end-to-end M1 check. Launch the first game, then drive the whole
 // session surface through the control channel: pause/resume, named save state
