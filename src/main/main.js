@@ -33,6 +33,7 @@ const BIGSHOT = process.argv.includes('--bigshot');
 const UISHOT = process.argv.includes('--uishot');
 const DEVCHECK = process.argv.includes('--devcheck');
 const THEMESHOT = process.argv.includes('--themeshot');
+const JOINCHECK = process.argv.includes('--joincheck');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -343,6 +344,19 @@ ipcMain.handle('remote:host', async (_ev, sessionId) => {
     return { error: err.message };
   }
 });
+ipcMain.handle('remote:join', (_ev, code, opts = {}) => {
+  const res = sessions.joinRemote(code, opts);
+  if (!res.error) {
+    // Remember codes so rejoining a friend's game is one click.
+    const recent = (prefs.get('recentCodes') ?? []).filter((c) => c !== res.code);
+    recent.unshift(res.code);
+    prefs.set('recentCodes', recent.slice(0, 6));
+  }
+  return res;
+});
+
+ipcMain.handle('remote:recent', () => prefs.get('recentCodes') ?? []);
+
 ipcMain.handle('remote:status', async (_ev, sessionId) => {
   try {
     return { result: await sessions.rpc(sessionId, 'remoteStatus', {}) };
@@ -577,6 +591,36 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (JOINCHECK) {
+    // --joincheck <CODE>: drive the join UI exactly as a user would, then
+    // verify a guest session actually connects to the host.
+    (async () => {
+      const code = process.argv[process.argv.indexOf('--joincheck') + 1];
+      let ready = false;
+      sessions.on('update', (ev) => {
+        if (!ev.remote) return;
+        if (ev.type === 'started') console.log(`JOINCHECK started: ${ev.name}`);
+        if (ev.type === 'ready') { ready = true; console.log(`JOINCHECK connected: ${ev.name}`); }
+        if (ev.type === 'crashed' || ev.type === 'error') {
+          console.error('JOINCHECK FAIL:', ev.message ?? ev.code, ev.logTail ?? '');
+          app.exit(1);
+        }
+      });
+      await win.webContents.executeJavaScript(
+        `window.__romdeckTest.join(${JSON.stringify(code)})`);
+      await new Promise((r) => setTimeout(r, 25000));
+      const img = await win.webContents.capturePage();
+      writeFileSync('/tmp/romdeck-join.png', img.toPNG());
+      if (!ready) {
+        const s = sessions.list().find((x) => x.name?.includes(code)) ?? null;
+        const live = s ? sessions.get(s.id) : null;
+        console.log('JOINCHECK guest log:', (live?.log ?? []).slice(-6).join(' | ') || '(no output)');
+      }
+      console.log(ready ? 'JOINCHECK OK' : 'JOINCHECK FAIL — never connected');
+      setTimeout(() => app.exit(ready ? 0 : 1), 300);
+    })().catch((e) => { console.error('JOINCHECK FAIL:', e.message); app.exit(1); });
+    return;
+  }
   if (THEMESHOT) {
     // --themeshot: capture the desktop UI under each color scheme, proving
     // the theme drives the windowed view and not just big-screen mode.

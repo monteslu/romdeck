@@ -18,12 +18,14 @@
       <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
       <button id="bios" title="Check BIOS files">BIOS</button>
       <button id="pads" title="Controllers">🎮</button>
+      <button id="joinbtn" title="Join someone's game (remote play)">📡</button>
       <button id="feedbtn" title="Homebrew">🏠</button>
       <button id="devbtn" title="Developer mode">🔬</button>
       <button id="settingsbtn" title="Settings">⚙</button>
       <button id="themebtn" title="Theme">🎨𝗧</button>
       <button id="bigscreenbtn" title="Big-screen mode (F11)">📺</button>
     </div>
+    <div id="remotebar" class="hidden"></div>
     <div id="sessioncount" class="hidden">0 playing</div>
   </header>
 
@@ -78,6 +80,30 @@
         No controllers detected. Plug one in — it appears here immediately.
         Keyboard always works: arrows + Z/X/A/S, Enter, Right-Shift.
       </div>
+    </div>
+  </div>
+
+  <div id="joinmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Join a game</h2>
+        <button id="joinclose">✕</button>
+      </div>
+      <p class="dim">
+        Someone hosting a game gives you a share code. You don't need the ROM —
+        their machine runs the game and streams it to you; your controller is
+        player 2.
+      </p>
+      <div class="join-row">
+        <input id="join-code" type="text" placeholder="ABCD-1234" spellcheck="false"
+               autocomplete="off" maxlength="9" />
+        <button id="join-play" class="primary">▶ Join as Player 2</button>
+        <button id="join-watch">👁 Watch only</button>
+      </div>
+      <div id="join-recent"></div>
+      <p class="dim" id="join-hint">
+        Hosting instead? Start a game, then press <b>📡 Invite</b> in its panel.
+      </p>
     </div>
   </div>
 

@@ -17,6 +17,7 @@ const state = {
   selected: 0,
   playing: new Map(), // sessionId -> { romPath, paused, speed }
   accentHue: null,    // theme accent hue, drives placeholder tile art
+  remotes: new Map(), // sessionId -> { code, watch } for guest sessions
 };
 
 // Deterministic pleasant gradient per system for placeholder art (real box art
@@ -161,6 +162,23 @@ function render() {
 
 function selectedRom() {
   return state.filtered[state.selected] ?? null;
+}
+
+function renderRemotes() {
+  const bar = $('remotebar');
+  bar.replaceChildren();
+  bar.classList.toggle('hidden', state.remotes.size === 0);
+  for (const [id, r] of state.remotes) {
+    const chip = document.createElement('div');
+    chip.className = 'remote-chip';
+    const label = document.createElement('span');
+    label.textContent = r.name;
+    const stop = document.createElement('button');
+    stop.textContent = 'Leave';
+    stop.onclick = () => romdeck.stopSession(id);
+    chip.append(label, stop);
+    bar.appendChild(chip);
+  }
 }
 
 let launching = null; // guards against a second spawn while one is in flight
@@ -491,6 +509,48 @@ async function applyDesktopTheme() {
   state.accentHue = hueOfHex(tokens.accent) ?? state.accentHue;
   render(); // repaint placeholder art in the new palette
 }
+
+// ── remote play: joining someone else's game ─────────────────────────
+async function openJoin() {
+  $('joinmodal').classList.remove('hidden');
+  $('join-code').value = '';
+  $('join-code').focus();
+  const recent = await romdeck.remoteRecent();
+  const wrap = $('join-recent');
+  wrap.replaceChildren();
+  for (const code of recent) {
+    const chip = document.createElement('div');
+    chip.className = 'rc';
+    chip.textContent = code;
+    chip.title = 'Join this code again';
+    chip.onclick = () => { $('join-code').value = code; doJoin(false); };
+    wrap.appendChild(chip);
+  }
+}
+
+async function doJoin(watch) {
+  const code = $('join-code').value.trim();
+  if (!code) { toast('Join', 'Enter the share code your host gave you.', true); return; }
+  const res = await romdeck.remoteJoin(code, { watch });
+  if (res.error) { toast('Join failed', res.error, true); return; }
+  $('joinmodal').classList.add('hidden');
+  $('status').textContent = `${watch ? 'watching' : 'joining'} ${res.code}…`;
+}
+
+// Share codes read as XXXX-XXXX; insert the dash as they type.
+$('join-code').addEventListener('input', (ev) => {
+  const raw = ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  ev.target.value = raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
+});
+$('join-code').addEventListener('keydown', (ev) => {
+  ev.stopPropagation(); // don't let grid nav steal the keystrokes
+  if (ev.key === 'Enter') doJoin(false);
+});
+$('joinbtn').onclick = openJoin;
+$('join-play').onclick = () => doJoin(false);
+$('join-watch').onclick = () => doJoin(true);
+$('joinclose').onclick = () => $('joinmodal').classList.add('hidden');
+$('joinmodal').onclick = (ev) => { if (ev.target.id === 'joinmodal') $('joinmodal').classList.add('hidden'); };
 
 // ── homebrew feed ────────────────────────────────────────────────────
 async function openFeed() {
@@ -918,6 +978,7 @@ window.__romdeckTest = {
   enterBigScreen: () => toggleBigScreen(),
   nav: (action) => nav(action),
   openSettings: () => openSettings(),
+  join: async (code) => { await openJoin(); $('join-code').value = code; return doJoin(false); },
   setScheme: async (colorScheme) => {
     await romdeck.themeSetPrefs({ theme: 'romdeck-default', colorScheme });
     await applyDesktopTheme();
@@ -934,6 +995,25 @@ romdeck.on('pad:nav', (ev) => nav(ev.action));
 
 // ── sessions ─────────────────────────────────────────────────────────
 romdeck.on('session:update', (ev) => {
+  // Guest sessions (we joined someone else's game) aren't library games —
+  // they get their own banner rather than a tile.
+  if (ev.remote) {
+    if (ev.type === 'started') {
+      state.remotes.set(ev.id, { name: ev.name });
+      toast('Connecting…', ev.name);
+    } else if (ev.type === 'ready') {
+      toast('Connected', `${ev.name} — their machine is running the game`);
+    } else {
+      state.remotes.delete(ev.id);
+      if (ev.type === 'crashed') {
+        toast('Remote session ended', (ev.logTail ?? []).slice(-1)[0] ?? `exit ${ev.code}`, true);
+      } else if (ev.type === 'error') {
+        toast('Could not join', ev.message, true);
+      }
+    }
+    renderRemotes();
+    return;
+  }
   if (ev.type === 'started') {
     state.playing.set(ev.id, { romPath: ev.romPath, paused: false, speed: 1 });
     $('status').textContent = `${ev.name} running (session ${ev.id})`;

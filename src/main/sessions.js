@@ -168,6 +168,83 @@ export class GameSessionManager extends EventEmitter {
     return { id };
   }
 
+  /**
+   * Join someone else's hosted game as player 2 (or a spectator).
+   *
+   * A guest session runs no ROM and no core — the host does the emulating —
+   * so it gets no control channel; it's tracked like any other player process
+   * purely so the library can show it and stop it.
+   */
+  joinRemote(code, { watch = false } = {}) {
+    const id = this.nextId++;
+    const cli = resolveRetroemuCli();
+    const { cmd, env } = resolveNode();
+    const clean = String(code ?? '').trim().toUpperCase();
+    if (!clean) return { error: 'enter a share code' };
+
+    const child = spawn(cmd, [cli, watch ? '--watch' : '--join', clean], {
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const name = `${watch ? 'Watching' : 'Playing with'} ${clean}`;
+    const session = {
+      id,
+      child,
+      remote: true,
+      watch,
+      code: clean,
+      rom: null,
+      romPath: `remote:${clean}`,
+      name,
+      startedAt: Date.now(),
+      log: [],
+      ready: false,
+      paused: false,
+      speed: 1,
+      core: null,
+      nextRpcId: 1,
+      pending: new Map(),
+    };
+    this.sessions.set(id, session);
+
+    const tail = (buf) => {
+      const lines = buf.toString().split('\n').filter(Boolean);
+      session.log.push(...lines);
+      if (session.log.length > 50) session.log.splice(0, session.log.length - 50);
+      // join.js prints "joined <CODE>" once the data channel is up
+      if (!session.ready && /joined|Connected/i.test(buf.toString())) {
+        session.ready = true;
+        this.emit('update', { type: 'ready', id, name, romPath: session.romPath, remote: true });
+      }
+    };
+    child.stdout.on('data', tail);
+    child.stderr.on('data', tail);
+
+    child.on('error', (err) => {
+      this.sessions.delete(id);
+      this.emit('update', { type: 'error', id, name, romPath: session.romPath, message: err.message });
+    });
+
+    child.on('exit', (exitCode, signal) => {
+      this.sessions.delete(id);
+      const crashed = exitCode !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL';
+      this.emit('update', {
+        type: crashed ? 'crashed' : 'closed',
+        id,
+        name,
+        romPath: session.romPath,
+        code: exitCode,
+        signal,
+        remote: true,
+        logTail: crashed ? session.log.slice(-8) : undefined,
+      });
+    });
+
+    this.emit('update', { type: 'started', id, name, romPath: session.romPath, remote: true });
+    return { id, code: clean, watch };
+  }
+
   _onMessage(session, msg) {
     if (!msg || typeof msg !== 'object') return;
 
@@ -261,6 +338,14 @@ export class GameSessionManager extends EventEmitter {
   async stop(id) {
     const session = this.sessions.get(id);
     if (!session) return false;
+    // Guest sessions have no control channel — just close the window.
+    if (session.remote) {
+      session.child.kill('SIGTERM');
+      setTimeout(() => {
+        if (this.sessions.has(id)) session.child.kill('SIGKILL');
+      }, 5000);
+      return true;
+    }
     // Graceful: quit via the channel (triggers autosave push); SIGTERM fallback.
     try {
       await this.rpc(id, 'quit');

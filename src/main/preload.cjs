@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('romdeck', {
   raWhoami: () => ipcRenderer.invoke('ra:whoami'),
   raGame: (romPath) => ipcRenderer.invoke('ra:game', romPath),
   remoteHost: (id) => ipcRenderer.invoke('remote:host', id),
+  remoteJoin: (code, opts) => ipcRenderer.invoke('remote:join', code, opts),
+  remoteRecent: () => ipcRenderer.invoke('remote:recent'),
   remoteStatus: (id) => ipcRenderer.invoke('remote:status', id),
   remoteStop: (id) => ipcRenderer.invoke('remote:stop', id),
   feedList: () => ipcRenderer.invoke('feed:list'),
