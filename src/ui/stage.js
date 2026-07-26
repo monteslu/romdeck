@@ -341,6 +341,9 @@ export class Stage {
    * does a headless render -- there is nobody to see a 400ms slide in a
    * screenshot, and animating there would make every check time-dependent.
    */
+  /** Reset the video start-delay clock; the app calls this on selection change. */
+  markSnapDelay(now = Date.now()) { this._snapShownAt = now; }
+
   startCarouselSlide(fromIndex, fast = false) {
     const el = this.elements().find((e) => e.type === 'carousel');
     if (!el || el.props.itemTransitions === 'instant') { this.carouselOffset = 0; return false; }
@@ -1419,6 +1422,27 @@ export class Stage {
     // screenshot scaled to a 16:9 plate is exactly the case "nearest" is for.
     const restoreInterp = withInterpolation(ctx, el.props.interpolation
       ?? el.props.imageInterpolation);
+
+    // <delay> holds the STILL image for up to 15s before the video starts
+    // (VideoComponent.cpp:325), so a gamelist that is being scrolled through
+    // shows covers rather than a burst of half-second video stabs.
+    // <fadeInType> black paints a black frame behind the fade; transparent
+    // lets whatever is underneath show through.
+    const delayMs = Math.max(0, Math.min(15, Number(el.props.delay ?? 0))) * 1000;
+    if (delayMs > 0) {
+      const since = Date.now() - (this._snapShownAt ?? Date.now());
+      if (since < delayMs) {
+        if (el.props.fadeInType === 'black') {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+        const still = this.img(el.props.imageType
+          ? this.artFor(el.props.imageType) : this.currentGame()?.art);
+        if (still) drawContain(ctx, still, b, null, 1);
+        restoreInterp();
+        return;
+      }
+    }
     // A decoded snap frame if one is ready, otherwise the game's static
     // image — which is exactly what ES-DE shows before a snap starts, so the
     // fallback is correct rather than merely safe.

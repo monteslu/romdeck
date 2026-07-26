@@ -274,6 +274,7 @@ export class App {
     // real app, only in the check that drove them by hand.
     if (this._animKey !== this._animState()) {
       this._animKey = this._animState();
+      this.stage.markSnapDelay();
       this.updateSnap?.();
       this.updateScroll?.();
     }
