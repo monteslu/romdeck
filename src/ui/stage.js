@@ -494,37 +494,77 @@ export class Stage {
     // variant, and drawing it put a second prompt row in the top-left corner
     // on top of the theme's real one. "shared" and "view" both render.
     if (p.scope === 'menu' || p.scope === 'none') return;
-    const entries = this.view === 'gamelist'
-      ? [['\u24B6', 'play'], ['\u24B7', 'back'], ['\u24CD', 'options'], ['\u24C2', 'menu']]
-      : [['\u2190\u2192', 'system'], ['\u24B6', 'open'], ['\u24C2', 'menu']];
 
+    // The prompts this view offers. ES-DE names them with stable ids, and
+    // <entries> filters and orders which are shown ("all" means every one).
+    // Ids are ES-DE's own (HelpComponent.h sAllowedEntries): a, b, x, y,
+    // start, back, lr, left/right, up/down and so on. Inventing our own meant
+    // a theme naming "back" matched nothing and its row silently lost an
+    // entry, which is exactly what art-book-next's "back,start,a" did.
+    const all = this.view === 'gamelist'
+      ? [['a', '\u24B6', 'play'], ['b', '\u24B7', 'back'],
+        ['x', '\u24CD', 'options'], ['start', '\u24C2', 'menu'],
+        ['back', '\u24C8', 'select']]
+      : [['lr', '\u2190\u2192', 'system'], ['a', '\u24B6', 'open'],
+        ['start', '\u24C2', 'menu'], ['back', '\u24C8', 'select']];
+    let entries = all;
+    if (typeof p.entries === 'string' && !/\ball\b/i.test(p.entries)) {
+      const want = p.entries.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      // ES-DE preserves ITS canonical order, not the theme's writing order
+      // (HelpComponent.cpp:247 walks sAllowedEntries and keeps matches).
+      const picked = all.filter(([id]) => want.includes(id));
+      if (picked.length) entries = picked;
+    }
+
+    // Spacings are fractions of SCREEN WIDTH, clamped exactly as ES-DE does
+    // (HelpComponent.cpp:277). Hardcoding them ignored the theme's own rhythm.
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
     const size = (p.fontSize ?? 0.022) * STAGE_H * Number(p.entryRelativeScale ?? 1);
-    const gap = size * 1.1;
+    const entryGap = p.entrySpacing !== undefined
+      ? clamp(p.entrySpacing, 0, 0.04) * STAGE_W : size * 1.1;
+    const iconGap = p.iconTextSpacing !== undefined
+      ? clamp(p.iconTextSpacing, 0, 0.04) * STAGE_W : size * 0.35;
+
     ctx.font = fontStack(size, { family: p._family ?? null, weight: 700 });
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
+    const widthOf = ([, icon, label]) =>
+      ctx.measureText(icon).width + iconGap + ctx.measureText(label).width;
+    let width = entries.reduce((a, e) => a + widthOf(e) + entryGap, 0) - entryGap;
+
     // <pos> is the anchor and <origin> says which corner of the row it names,
     // so the row has to be measured before it can be placed.
-    let width = 0;
-    for (const [icon, label] of entries) {
-      width += ctx.measureText(`${icon} ${label}`).width + gap;
-    }
-    width -= gap;
     const [ox, oy] = p.origin ?? [0, 0];
     let x = b.x - ox * width;
     const y = b.y - oy * size + size / 2;
 
-    for (const [icon, label] of entries) {
+    // The background plate, when the theme asks for one. Padding pairs are
+    // (before, after) and BOTH axes are fractions of screen width.
+    if (p.backgroundColor) {
+      const [padL, padR] = p.backgroundHorizontalPadding ?? [0, 0];
+      const [padT, padB] = p.backgroundVerticalPadding ?? [0, 0];
+      const bx = x - padL * STAGE_W;
+      const by = y - size / 2 - padT * STAGE_W;
+      const bw = width + (padL + padR) * STAGE_W;
+      const bh = size + (padT + padB) * STAGE_W;
+      const radius = clamp(p.backgroundCornerRadius ?? 0, 0, 0.5) * STAGE_W;
+      roundRect(ctx, bx, by, bw, bh, radius);
+      ctx.fillStyle = hex(p.backgroundColor);
+      ctx.fill();
+    }
+
+    for (const [, icon, label] of entries) {
       ctx.fillStyle = hex(p.iconColor, '#cccccc');
       ctx.fillText(icon, x, y);
-      const iw = ctx.measureText(`${icon} `).width;
+      x += ctx.measureText(icon).width + iconGap;
       ctx.fillStyle = hex(p.textColor, '#cccccc');
-      ctx.fillText(label, x + iw, y);
-      x += ctx.measureText(`${icon} ${label}`).width + gap;
+      ctx.fillText(applyCase(label, p.letterCase), x, y);
+      x += ctx.measureText(label).width + entryGap;
     }
     ctx.textBaseline = 'alphabetic';
   }
+
 
   drawText(ctx, el, b, text) {
     if (!text) return;
@@ -541,8 +581,59 @@ export class Stage {
     const tx = b.w
       ? (align === 'center' ? b.x + b.w / 2 : align === 'right' ? b.x + b.w : b.x)
       : (p.pos?.[0] ?? 0) * STAGE_W;
-    const ty = (b.h ? b.y + b.h / 2 : (p.pos?.[1] ?? 0) * STAGE_H) + size * 0.35;
+    // <verticalAlignment> is top | center | bottom (DateTimeComponent.cpp:332)
+    // and defaults to centre. Always centring ignored a theme that anchors a
+    // label to the top of its box, which is how metadata columns stay on the
+    // same baseline as the icons beside them.
+    const vAlign = p.verticalAlignment ?? 'center';
+    const boxTop = b.h ? b.y : (p.pos?.[1] ?? 0) * STAGE_H;
+    const ty = !b.h
+      ? boxTop + size * 0.35
+      : vAlign === 'top' ? boxTop + size * 0.85
+        : vAlign === 'bottom' ? boxTop + b.h - size * 0.2
+          : boxTop + b.h / 2 + size * 0.35;
     const shown = applyCase(text, p.letterCase);
+
+    // A <container> element (or any <metadata>description) holds prose that
+    // ES-DE wraps and scrolls inside its box. The scrolling is animation we
+    // cannot show in a still, but the WRAPPING is layout: a description drawn
+    // as one line runs straight out of its box and across the view.
+    const wraps = p.container === 'true' || p.container === true
+      || (p.metadata === 'description' && p.container !== 'false');
+    if (wraps && b.w && b.h) {
+      const lineH = size * Number(p.lineSpacing ?? 1.3);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(b.x, b.y, b.w, b.h);
+      ctx.clip();
+      const words = String(shown).split(/\s+/).filter(Boolean);
+      let line = '';
+      let ly = b.y + size * 0.9;
+      for (const word of words) {
+        const test = line ? `${line} ${word}` : word;
+        if (ctx.measureText(test).width > b.w && line) {
+          ctx.fillText(line, tx, ly);
+          line = word;
+          ly += lineH;
+          if (ly > b.y + b.h) break;
+        } else {
+          line = test;
+        }
+      }
+      if (line && ly <= b.y + b.h) ctx.fillText(line, tx, ly);
+      ctx.restore();
+      return;
+    }
+
+    // A text element may carry its own plate (<backgroundColor> plus an
+    // optional <backgroundCornerRadius>, clamped to 0.5 of screen width).
+    if (p.backgroundColor && b.w && b.h) {
+      const radius = Math.max(0, Math.min(0.5, Number(p.backgroundCornerRadius ?? 0))) * STAGE_W;
+      roundRect(ctx, b.x, b.y, b.w, b.h, radius);
+      ctx.fillStyle = hex(p.backgroundColor);
+      ctx.fill();
+      ctx.fillStyle = hex(p.color, '#e8ecf4');
+    }
     if (b.w) {
       ctx.save();
       ctx.beginPath();
@@ -581,7 +672,23 @@ export class Stage {
     if (!img) return;
     // Recompute with the image in hand: a one-dimension <size> needs the
     // aspect ratio before the origin offset can be right.
-    drawContain(ctx, img, this.box(p, img), p.color ? hex(p.color) : null);
+    const box = this.box(p, img);
+    // <saturation> is 1 = untouched, and <cornerRadius> rounds the image's own
+    // corners (both clamped as ImageComponent.cpp clamps them).
+    const sat = Number(p.saturation ?? p.imageSaturation ?? 1);
+    const shown = sat < 1
+      ? saturateImage(img, box.w || img.width, box.h || img.height, Math.max(0, sat))
+      : img;
+    const radius = Math.max(0, Math.min(0.5, Number(p.cornerRadius ?? 0))) * STAGE_W;
+    if (radius > 0 && box.w && box.h) {
+      ctx.save();
+      roundRect(ctx, box.x, box.y, box.w, box.h, radius);
+      ctx.clip();
+      drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
+      ctx.restore();
+      return;
+    }
+    drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
   }
 
   drawCarousel(ctx, el, b) {
@@ -644,6 +751,19 @@ export class Stage {
         ctx.fillStyle = hex(plate, '#1a1f2b');
         ctx.fill();
       }
+      // <selectedBackgroundColor> is a PLATE behind the selected row, with
+      // (left, right) margins and a corner radius, all fractions of screen
+      // width (TextListComponent.h:518). It is distinct from selectorColor:
+      // slate draws the pill with this and no selector bar at all.
+      if (sel && p.selectedBackgroundColor && p.selectedBackgroundColor !== '00000000') {
+        const [mL, mR] = p.selectedBackgroundMargins ?? [0, 0];
+        const radius = Math.max(0, Math.min(0.5,
+          Number(p.selectedBackgroundCornerRadius ?? 0))) * STAGE_W;
+        roundRect(ctx, b.x + mL * STAGE_W, y - size * 0.95,
+          b.w - (mL + mR) * STAGE_W, lh, radius);
+        ctx.fillStyle = hex(p.selectedBackgroundColor);
+        ctx.fill();
+      }
       if (sel && p.selectorColor && p.selectorColor !== '00000000') {
         roundRect(ctx, cx, cy, w, h, 14);
         ctx.strokeStyle = hex(p.selectorColor);
@@ -656,6 +776,14 @@ export class Stage {
       if (!img) img = this.img(this.perSystem(p.defaultImage, sys));
       if (img) {
         const tint = sel ? (p.imageSelectedColor ?? p.imageColor) : p.imageColor;
+        // Unfocused items get their own opacity/dimming, clamped as ES-DE
+        // clamps them (CarouselComponent.h:1753). Drawing every item at full
+        // strength is why our carousels read flatter than the themes do.
+        const clamp01 = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
+        const prevAlpha = ctx.globalAlpha;
+        if (!sel && p.unfocusedItemOpacity !== undefined) {
+          ctx.globalAlpha = prevAlpha * clamp01(p.unfocusedItemOpacity, 0.1, 1);
+        }
         // Full-bleed items COVER their box; inset cards are contained with a
         // margin. Letterboxing a 1x1 item left bars where the theme expects
         // edge-to-edge artwork.
@@ -664,6 +792,15 @@ export class Stage {
         } else {
           drawContain(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
         }
+        // Dimming is a black wash OVER the item, not a change to its alpha.
+        if (!sel && p.unfocusedItemDimming !== undefined) {
+          const dim = 1 - clamp01(p.unfocusedItemDimming, 0, 1);
+          if (dim > 0) {
+            ctx.fillStyle = `rgba(0,0,0,${dim.toFixed(3)})`;
+            ctx.fillRect(cx, cy, w, h);
+          }
+        }
+        ctx.globalAlpha = prevAlpha;
       } else {
         ctx.fillStyle = hex(p.textColor, '#e8ecf4');
         ctx.font = fontStack(Math.round(h * 0.13));
@@ -961,6 +1098,28 @@ function drawContain(ctx, img, b, tint = null, pad = 1) {
  * wants the silhouette behaviour, and multiply gives that for free: a white
  * glyph multiplied by the tint IS the tint.
  */
+/**
+ * Desaturate an image toward greyscale.
+ *
+ * <imageSaturation> / <saturation> is 0..1 where 1 is untouched
+ * (ImageComponent.cpp:462). Uses the same luminance weights the shader does.
+ */
+function saturateImage(img, w, h, amount) {
+  const buf = createCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
+  const bctx = buf.getContext('2d');
+  bctx.drawImage(img, 0, 0, w, h);
+  const d = bctx.getImageData(0, 0, buf.width, buf.height);
+  const px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    px[i] = lum + (px[i] - lum) * amount;
+    px[i + 1] = lum + (px[i + 1] - lum) * amount;
+    px[i + 2] = lum + (px[i + 2] - lum) * amount;
+  }
+  bctx.putImageData(d, 0, 0);
+  return buf;
+}
+
 function tintImage(img, w, h, tint) {
   const buf = createCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
   const bctx = buf.getContext('2d');

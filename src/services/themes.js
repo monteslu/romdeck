@@ -144,7 +144,11 @@ const ASSET_PROPS = [
 // right, and art-book-next uses them INSTEAD of <size>. Left out of this set
 // they parse as strings, so every element sized that way computed a zero box.
 const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'itemSize',
-  'cropSize', 'imageMaxSize', 'imageSize', 'imageCropSize']);
+  'cropSize', 'imageMaxSize', 'imageSize', 'imageCropSize',
+  // Padding pairs are (before, after) on one axis -- both expressed as a
+  // fraction of SCREEN WIDTH, even the vertical one (HelpComponent.cpp:160).
+  'backgroundHorizontalPadding', 'backgroundVerticalPadding',
+  'selectedBackgroundMargins', 'selectedItemMargins', 'itemMargin']);
 const NUM_PROPS = new Set([
   'rotation', 'opacity', 'zIndex', 'fontSize', 'lineSpacing', 'itemScale',
   'itemSpacing', 'maxItemCount', 'textRelativeScale', 'unfocusedItemOpacity',
