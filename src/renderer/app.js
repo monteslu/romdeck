@@ -4,7 +4,7 @@
 
 import {
   enterBigScreen, exitBigScreen, bigScreenNav, bigScreenActive, bigScreenRefresh,
-  bigScreenSelectedGame,
+  bigScreenSelectedGame, bigScreenSearch, bigScreenQuery,
 } from './bigscreen.js';
 import { focus } from './focus.js';
 import { openKeyboard, close as closeKeyboard, isOpen as keyboardOpen } from './osk.js';
@@ -501,7 +501,25 @@ function toast(title, body, isCrash = false, actions = []) {
 
 // ── navigation (keyboard + gamepad share one code path) ──────────────
 function nav(action) {
+  // Menus and the keyboard float above every view, so they get first refusal
+  // on input — otherwise `back` in a menu would navigate the view behind it.
+  if (menuOpen() || keyboardOpen()) {
+    if (action === 'confirm') { focus.activate(); return; }
+    if (action === 'back') { focus.back(); return; }
+    if ((action === 'left' || action === 'right') && focus.adjustable()) {
+      focus.adjust(action === 'right' ? 1 : -1);
+      return;
+    }
+    if (['up', 'down', 'left', 'right'].includes(action)) { focus.move(action); return; }
+    if (action === 'menu') { closeAllMenus(); return; }
+    return;
+  }
+
   if (bigScreenActive()) {
+    // The themed view gets the same menu chords as the desktop — this is what
+    // makes it the product rather than a browse-only mode.
+    if (action === 'menu') { openMainMenu(); return; }
+    if (action === 'options') { openGameMenu(bigScreenSelectedGame()); return; }
     bigScreenNav(action);
     return;
   }
@@ -565,6 +583,29 @@ function openMainMenu() {
     title: 'romdeck',
     subtitle: `${state.roms.length} games · ${state.playing.size} playing`,
     items: [
+      {
+        // Search from a couch: the on-screen keyboard drives the filter in
+        // whichever view is active.
+        label: 'Search',
+        hint: bigScreenActive() ? (bigScreenQuery() || 'find a game') : (state.query || 'find a game'),
+        action: () => {
+          closeAllMenus();
+          const target = $('search');
+          openKeyboard(target, {
+            layout: 'text',
+            title: 'Search your library',
+            onInput: (v) => {
+              if (bigScreenActive()) bigScreenSearch(v);
+              else {
+                state.query = v.trim();
+                state.selected = 0;
+                applyFilter();
+                render();
+              }
+            },
+          });
+        },
+      },
       { label: 'Settings', hint: 'picture, resume, rewind', action: () => { closeAllMenus(); openSettings(); } },
       { label: 'Controllers', hint: 'remap, ports, deadzone', action: () => { closeAllMenus(); openPads(); } },
       { label: 'Themes', action: () => { closeAllMenus(); openThemes(); } },
@@ -706,6 +747,7 @@ async function toggleThemedView() {
   if (bigScreenActive()) {
     exitBigScreen();
     focus.reset('desktop');
+    romdeck.prefsSet('view', 'desktop');
     return;
   }
   const prefs = await romdeck.themePrefs();
@@ -716,8 +758,11 @@ async function toggleThemedView() {
     colorScheme: prefs.colorScheme,
     onLaunch: (rom) => launch(rom),
     onExit: () => toggleThemedView(),
+    onOptions: (rom) => openGameMenu(rom),
+    onMenu: () => openMainMenu(),
   });
   if (res?.error) { toast('Themed view', res.error, true); return; }
+  romdeck.prefsSet('view', 'themed');
 }
 
 $('bigscreenbtn').onclick = toggleThemedView;
@@ -1748,5 +1793,23 @@ $('padmodal').onclick = (ev) => { if (ev.target.id === 'padmodal') closePads(); 
 (async () => {
   await applyDesktopTheme();
   await loadLibrary(await romdeck.getLibrary());
+
+  // §16e Phase 3 + decision 3: the themed view IS the product, so the app
+  // launches into it — windowed, because that's the least surprising thing
+  // for an app you just started on a desktop, and fullscreen is one keypress
+  // away. The choice is remembered. Self-check runs skip this so the flags
+  // that drive the desktop surface still see it.
+  const [view, selfCheck] = await Promise.all([
+    romdeck.prefsGet('view'), romdeck.selfCheck(),
+  ]);
+  const wantsDesktop = view === 'desktop' || selfCheck;
+  if (!wantsDesktop && state.roms.length) {
+    await toggleThemedView();
+  }
+  if (await romdeck.prefsGet('fullscreen')) {
+    isFullscreen = true;
+    await romdeck.setFullscreen(true);
+  }
+
   romdeck.uiReady();
 })();

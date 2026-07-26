@@ -35,6 +35,7 @@ const DEVCHECK = process.argv.includes('--devcheck');
 const THEMESHOT = process.argv.includes('--themeshot');
 const JOINCHECK = process.argv.includes('--joincheck');
 const PADONLY = process.argv.includes('--padonly');
+const VIEWCHECK = process.argv.includes('--viewcheck');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -452,6 +453,13 @@ ipcMain.handle('prefs:set', (_ev, key, value) => {
 
 ipcMain.handle('prefs:get', (_ev, key) => prefs.get(key) ?? null);
 
+// Self-checks drive specific surfaces, so they opt out of the launch-into-
+// themed-view behaviour rather than each having to navigate back out of it.
+ipcMain.handle('app:selfCheck', () =>
+  // --viewcheck deliberately does NOT opt out: it exists to verify the
+  // launch-into-themed-view behaviour a real user gets.
+  SMOKE || AUTOPLAY || BIGSHOT || UISHOT || DEVCHECK || THEMESHOT || JOINCHECK || PADONLY);
+
 // ── controllers ──────────────────────────────────────────────────────
 ipcMain.handle('pads:list', () => ({
   devices: padNav.devices(),
@@ -617,6 +625,7 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (VIEWCHECK) { runViewCheck(); return; }
   if (PADONLY) { runPadOnlyCheck(); return; }
   if (JOINCHECK) {
     // --joincheck <CODE>: drive the join UI exactly as a user would, then
@@ -724,6 +733,45 @@ ipcMain.on('ui:ready', () => {
   }
   if (AUTOPLAY) runAutoplayCheck();
 });
+
+// --viewcheck: the themed view is the PRODUCT (§16e Phase 3).
+//
+// Asserts what a real user gets on launch: the themed view, WINDOWED (§16e
+// decision 3 — least surprising for an app you just started, and fullscreen
+// is one keypress away), with the choice remembered afterwards.
+async function runViewCheck() {
+  let failures = 0;
+  const check = (name, cond, extra = '') => {
+    console.log(`${cond ? 'PASS' : 'FAIL'}: ${name} ${extra}`);
+    if (!cond) failures++;
+  };
+  const js = (expr) => win.webContents.executeJavaScript(expr);
+  try {
+    await new Promise((r) => setTimeout(r, 2000));
+    const view = await js('window.__romdeckTest.state()');
+    check('launches into the themed view', view.active === true,
+      `elements=${view.elements}`);
+    check('launches WINDOWED, not fullscreen', win.isFullScreen() === false);
+    check('the choice is remembered', prefs.get('view') === 'themed',
+      `view=${prefs.get('view')}`);
+
+    // Switching to the desktop must persist too, so the preference is a real
+    // choice rather than something reset on every start.
+    await js('window.__romdeckTest.enterBigScreen()');
+    await new Promise((r) => setTimeout(r, 800));
+    const after = await js('window.__romdeckTest.state()');
+    check('can switch to the desktop view', after.active === false);
+    check('desktop choice persists', prefs.get('view') === 'desktop',
+      `view=${prefs.get('view')}`);
+
+    writeFileSync('/tmp/romdeck-viewcheck.png', (await win.webContents.capturePage()).toPNG());
+    console.log(failures === 0 ? 'VIEWCHECK OK' : `VIEWCHECK ${failures} FAILURES`);
+  } catch (err) {
+    console.error('VIEWCHECK FAIL — driver error:', err.message);
+    failures++;
+  }
+  setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
+}
 
 // --padonly: THE ACCEPTANCE TEST for M7 (PLAN §16e).
 //
@@ -886,8 +934,33 @@ async function runPadOnlyCheck() {
       `${big.elements} elements`);
     // ...and must NOT have forced fullscreen (Phase 3: it's a view, not a mode)
     check('themed view does not force fullscreen', win.isFullScreen() === false);
+
+    // Phase 3: the themed view is the PRODUCT, so the menus that carry every
+    // feature must work inside it too — not just in the desktop grid.
+    await pad('menu');
+    await new Promise((r) => setTimeout(r, 600));
+    const bigMenu = await st();
+    check('main menu opens inside the themed view',
+      bigMenu.group?.startsWith('menu') && bigMenu.count > 0, `${bigMenu.count} entries`);
     await pad('back');
+    await new Promise((r) => setTimeout(r, 400));
+
+    await pad('confirm'); // system carousel → gamelist
     await new Promise((r) => setTimeout(r, 500));
+    await pad('options');
+    await new Promise((r) => setTimeout(r, 600));
+    const bigGameMenu = await st();
+    const bigMenuTitle = await js(`document.querySelector('.menu-panel:last-child .menu-title')?.textContent ?? null`);
+    check('per-game menu opens inside the themed view',
+      bigGameMenu.group?.startsWith('menu') && bigGameMenu.count > 0,
+      `title=${JSON.stringify(bigMenuTitle)} entries=${bigGameMenu.count}`);
+    writeFileSync('/tmp/romdeck-themed-menu.png', (await win.webContents.capturePage()).toPNG());
+    await pad('back');
+    await new Promise((r) => setTimeout(r, 400));
+    await pad('back'); // gamelist → carousel
+    await new Promise((r) => setTimeout(r, 400));
+    await pad('back'); // leave the themed view
+    await new Promise((r) => setTimeout(r, 600));
 
     // Reachability is what matters, not how many controls this particular
     // walk happened to touch: sum the ring sizes of every surface the pad can

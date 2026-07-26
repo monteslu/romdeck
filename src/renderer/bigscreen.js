@@ -20,6 +20,10 @@ const bs = {
   els: new Map(), // element name -> DOM node
   onLaunch: null,
   onExit: null,
+  onOptions: null, // per-game menu (M7 Phase 2)
+  onMenu: null,    // main menu
+  query: '',       // themed-view search filter
+  allRoms: [],     // unfiltered, so search can be cleared
 };
 
 function hex(color, fallback = '#ffffff') {
@@ -250,16 +254,46 @@ function nav(action) {
   return true;
 }
 
-// ── public API ───────────────────────────────────────────────────────
-export async function enterBigScreen({ roms, themeName, variant, colorScheme, onLaunch, onExit }) {
+/**
+ * Filter the themed view's gamelist. Search from a couch needs the on-screen
+ * keyboard, so the query arrives already typed rather than being read from a
+ * DOM input the pad can't reach.
+ */
+export function bigScreenSearch(query) {
+  bs.query = String(query ?? '').trim().toLowerCase();
+  regroup(bs.allRoms);
+  bs.gameIndex = 0;
+  buildView(bs.view);
+}
+
+export function bigScreenQuery() {
+  return bs.query;
+}
+
+/** Group roms into systems, honouring the active search filter. */
+function regroup(roms) {
+  bs.allRoms = roms;
+  const list = bs.query
+    ? roms.filter((r) => r.name.toLowerCase().includes(bs.query)
+      || r.system.toLowerCase().includes(bs.query))
+    : roms;
   const grouped = new Map();
-  for (const rom of roms) {
+  for (const rom of list) {
     if (!grouped.has(rom.system)) grouped.set(rom.system, []);
     grouped.get(rom.system).push(rom);
   }
   bs.systems = [...grouped.entries()]
-    .map(([name, list]) => ({ name, roms: list }))
+    .map(([name, l]) => ({ name, roms: l }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  if (bs.sysIndex >= bs.systems.length) bs.sysIndex = Math.max(0, bs.systems.length - 1);
+}
+
+// ── public API ───────────────────────────────────────────────────────
+export async function enterBigScreen({
+  roms, themeName, variant, colorScheme, onLaunch, onExit, onOptions, onMenu,
+}) {
+  bs.query = '';
+  regroup(roms);
   if (!bs.systems.length) return { error: 'no games in library' };
 
   const res = await romdeck.themeLoad(themeName, { variant, colorScheme });
@@ -271,6 +305,8 @@ export async function enterBigScreen({ roms, themeName, variant, colorScheme, on
   bs.gameIndex = 0;
   bs.onLaunch = onLaunch;
   bs.onExit = onExit;
+  bs.onOptions = onOptions;
+  bs.onMenu = onMenu;
 
   document.getElementById('bigscreen').classList.remove('hidden');
   fitStage();
@@ -300,13 +336,8 @@ export function bigScreenSelectedGame() {
 
 export function bigScreenRefresh(roms) {
   if (!bs.active) return;
-  const grouped = new Map();
-  for (const rom of roms) {
-    if (!grouped.has(rom.system)) grouped.set(rom.system, []);
-    grouped.get(rom.system).push(rom);
-  }
   const name = currentSystem()?.name;
-  bs.systems = [...grouped.entries()].map(([n, l]) => ({ name: n, roms: l })).sort((a, b) => a.name.localeCompare(b.name));
+  regroup(roms);
   const idx = bs.systems.findIndex((s) => s.name === name);
   if (idx >= 0) bs.sysIndex = idx;
   paint();

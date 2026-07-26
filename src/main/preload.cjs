@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('romdeck', {
   quit: () => ipcRenderer.invoke('app:quit'),
   prefsSet: (key, value) => ipcRenderer.invoke('prefs:set', key, value),
   prefsGet: (key) => ipcRenderer.invoke('prefs:get', key),
+  selfCheck: () => ipcRenderer.invoke('app:selfCheck'),
   settingsGet: (ctx) => ipcRenderer.invoke('settings:get', ctx),
   settingsSet: (key, value, layer) => ipcRenderer.invoke('settings:set', key, value, layer),
   cheatsList: (romPath) => ipcRenderer.invoke('cheats:list', romPath),
