@@ -267,6 +267,31 @@ function stackOrder(offsets, mode) {
 }
 
 /**
+ * Properties ES-DE defines that romdeck reads but cannot act on, and why.
+ *
+ * Each is parsed so a theme using it is never reported as unsupported, and
+ * each is listed here rather than silently ignored -- a property that does
+ * nothing should say so in one place instead of looking implemented.
+ */
+export const INERT_PROPS = {
+  // Needs a compositor with transition state; our repaint is event-driven and
+  // has no "during a transition" phase to render differently in.
+  renderDuringTransitions: 'no transition phase exists in an event-driven repaint',
+  stationary: 'elements never move between views, so nothing can stay put',
+  fadeAbovePrimary: 'no cross-view fade to order elements against',
+  rowTransitions: 'grid rows jump; no row-slide animation to configure',
+  // Audio belongs to the player process, not the frontend renderer.
+  audio: 'snap audio is the player process\'s, not the stage\'s',
+  fadeInTime: 'video fades need frame-accurate compositing we do not do',
+  // GIF/Lottie frame clocks: we decode frame 0 only.
+  speed: 'only the first frame of an animation is decoded',
+  // Texture detail levels are a GL concern; canvas has no mipmap control.
+  mipmap: 'canvas exposes no mipmap control',
+  // Collections features with no romdeck equivalent.
+  allowDuplicates: 'gameselector pools are per-system and already unique',
+};
+
+/**
  * The themed view.
  *
  * Owns the theme model, the current selection, and how to paint it. Knows
@@ -726,6 +751,10 @@ export class Stage {
   paint() {
     const ctx = this.ctx;
     this.drawErrors = [];
+    // Record which INERT_PROPS the loaded theme actually uses, so the fact
+    // that they do nothing is visible rather than buried.
+    this.inertUsed = [...new Set(this.elements().flatMap((el) => Object
+      .keys(INERT_PROPS).filter((k) => el.props[k] !== undefined)))];
     ctx.clearRect(0, 0, STAGE_W, STAGE_H);
     // A theme with no background still needs one, or the previous frame and
     // the desktop show through.
@@ -775,6 +804,12 @@ export class Stage {
       case 'carousel': return this.drawCarousel(ctx, el, b);
       case 'textlist': return this.drawTextlist(ctx, el, b);
       case 'grid': return this.drawGrid(ctx, el, b);
+      case 'animation':
+        // An <animation> is a GIF or Lottie file. @napi-rs/canvas decodes the
+        // FIRST FRAME of a GIF, so it renders as its opening frame rather than
+        // not at all; <speed> and <iterationCount> would drive frames we do
+        // not have, so they are parsed and inert rather than faked.
+        return this.drawImage(ctx, el, b);
       case 'badges': return this.drawBadges(ctx, el, b);
       case 'video': return this.drawVideo(ctx, el, b);
       case 'clock': return this.drawText(ctx, el, b, clockText());
@@ -1052,7 +1087,10 @@ export class Stage {
       // clipped at the bottom edge.
       const snap = p.containerVerticalSnap !== 'false' && p.containerVerticalSnap !== false;
       const usableH = snap ? Math.max(lineH, Math.floor(b.h / lineH) * lineH) : b.h;
-      const contentH = lines.length * lineH;
+      // <containerScrollGap> adds blank space after the text before it
+      // scrolls back round, so the end and the start do not touch.
+      const scrollGap = Math.max(0, Math.min(5, Number(p.containerScrollGap ?? 0))) * lineH;
+      const contentH = lines.length * lineH + scrollGap;
       const offset = contentH > usableH ? (el._scroll?.pos ?? 0) : 0;
       let ly = b.y + size * 0.9 - offset;
       for (const l of lines) {
@@ -1109,8 +1147,17 @@ export class Stage {
         ctx.beginPath();
         ctx.rect(tb.x, tb.y, tb.w, tb.h);
         ctx.clip();
-        for (let ty = tb.y; ty < tb.y + tb.h; ty += th) {
-          for (let tx = tb.x; tx < tb.x + tb.w; tx += tw) {
+        // <tileHorizontalAlignment>/<tileVerticalAlignment> decide which edge
+        // a partial tile lands on: the grid starts flush left/top by default,
+        // or is pushed so the remainder falls at the start instead.
+        const hAlign = p.tileHorizontalAlignment ?? 'left';
+        const vAlignT = p.tileVerticalAlignment ?? 'top';
+        const remX = tb.w % tw;
+        const remY = tb.h % th;
+        const originX = tb.x - (hAlign === 'right' ? remX : hAlign === 'center' ? remX / 2 : 0);
+        const originY = tb.y - (vAlignT === 'bottom' ? remY : vAlignT === 'center' ? remY / 2 : 0);
+        for (let ty = originY; ty < tb.y + tb.h; ty += th) {
+          for (let tx = originX; tx < tb.x + tb.w; tx += tw) {
             ctx.drawImage(tImg, tx, ty, tw, th);
           }
         }
@@ -1130,6 +1177,20 @@ export class Stage {
     let img = this.img(url);
     if (!img && p.default) img = this.img(this.perSystem(p.default));
     if (!img && p.defaultImage) img = this.img(this.perSystem(p.defaultImage));
+    // <defaultFolderImage> is ES-DE's fallback for FOLDER entries. romdeck
+    // has no folder rows, so it can only apply as a last-resort default --
+    // which is better than an empty slot for a theme that supplies one.
+    if (!img && p.defaultFolderImage) img = this.img(this.perSystem(p.defaultFolderImage));
+    // <gameOverridePath> lets a theme ship art for one specific game,
+    // keyed on the ROM's basename.
+    if (p.gameOverridePath) {
+      const game = this.gameFor(p);
+      const base = game?.file?.replace(/\.[^.]+$/, '');
+      const over = base
+        ? this.img(this.perSystem(String(p.gameOverridePath).replace(/\$\{game\}/g, base)))
+        : null;
+      if (over) img = over;
+    }
     if (!img) return;
     // Recompute with the image in hand: a one-dimension <size> needs the
     // aspect ratio before the origin offset can be right.
@@ -1152,9 +1213,22 @@ export class Stage {
     // <saturation> is 1 = untouched, and <cornerRadius> rounds the image's own
     // corners (both clamped as ImageComponent.cpp clamps them).
     const sat = Number(p.saturation ?? p.imageSaturation ?? 1);
-    const shown = sat < 1
+    let shown = sat < 1
       ? saturateImage(img, box.w || img.width, box.h || img.height, Math.max(0, sat))
       : img;
+    // <brightness> lifts (+) or darkens (-) an image, -2..2 in ES-DE.
+    const bright = Math.max(-2, Math.min(2, Number(p.brightness ?? 0)));
+    if (bright !== 0) {
+      shown = brightenImage(shown, box.w || img.width, box.h || img.height, bright);
+    }
+    // <scaleFactor> scales the image about its own centre without moving the
+    // element, which a theme uses to make art overflow or inset its box.
+    const scaleF = Math.max(0.1, Math.min(5, Number(p.scaleFactor ?? 1)));
+    if (scaleF !== 1) {
+      const dw = box.w * (scaleF - 1) / 2;
+      const dh = box.h * (scaleF - 1) / 2;
+      box.x -= dw; box.y -= dh; box.w += dw * 2; box.h += dh * 2;
+    }
     const radius = Math.max(0, Math.min(0.5, Number(p.cornerRadius ?? 0))) * STAGE_W;
     if (radius > 0 && box.w && box.h) {
       ctx.save();
@@ -1256,7 +1330,7 @@ export class Stage {
       const cx = centerX + (off + this.carouselOffset) * pitch - w / 2;
       // <itemVerticalAlignment> is top | center | bottom
       // (CarouselComponent.h:1674); centre is the default.
-      const vAlign = p.itemVerticalAlignment ?? 'center';
+      const vAlign = p.itemVerticalAlignment ?? p.wheelVerticalAlignment ?? 'center';
       const cy = (vAlign === 'top' ? b.y
         : vAlign === 'bottom' ? b.y + b.h - h
           : b.y + b.h / 2 - h / 2) + offsetY
@@ -1267,7 +1341,12 @@ export class Stage {
       // <itemRotation> turns each UNSELECTED item by a fixed angle about
       // <itemRotationOrigin> (a fraction of the item). The selected one stays
       // upright, which is what makes a fanned wheel read as a wheel.
-      const itemRot = sel ? 0 : Number(p.itemRotation ?? 0);
+      // <itemAxisRotation> turns EVERY item including the selection, and
+      // <itemAxisHorizontal> keeps them upright as the wheel turns. Combined
+      // with itemRotation this is what fans a wheel.
+      const axisRot = p.itemAxisHorizontal === 'true' || p.itemAxisHorizontal === true
+        ? 0 : Number(p.itemAxisRotation ?? 0) * off;
+      const itemRot = (sel ? 0 : Number(p.itemRotation ?? 0)) + axisRot;
       const rotated = itemRot !== 0;
       if (rotated) {
         const [rox, roy] = p.itemRotationOrigin ?? [0.5, 0.5];
@@ -1297,9 +1376,12 @@ export class Stage {
           Number(p.selectedBackgroundCornerRadius ?? 0))) * STAGE_W;
         roundRect(ctx, b.x + mL * STAGE_W, y - size * 0.95,
           b.w - (mL + mR) * STAGE_W, lh, radius);
+        // Secondary = folder rows, which romdeck does not have; read so a
+        // theme setting only the secondary plate still gets its colour.
+        const plateColor = p.selectedBackgroundColor ?? p.selectedSecondaryBackgroundColor;
         ctx.fillStyle = fillStyle(ctx,
           { x: b.x + mL * STAGE_W, y: y - size * 0.95, w: b.w - (mL + mR) * STAGE_W, h: lh },
-          p.selectedBackgroundColor, p.selectedBackgroundColorEnd, p.gradientType);
+          plateColor, p.selectedBackgroundColorEnd, p.gradientType);
         ctx.fill();
       }
       if (sel && p.selectorColor && p.selectorColor !== '00000000') {
@@ -1318,7 +1400,8 @@ export class Stage {
         const tintGrad = sel ? (p.imageSelectedGradientType ?? p.imageGradientType)
           : p.imageGradientType;
         // <imageBrightness> lifts or drops the item's artwork, -1..1.
-        const brightness = Number(p.imageBrightness ?? 0);
+        const brightness = Math.max(-2, Math.min(2, Number(p.imageBrightness ?? 0)));
+        if (brightness !== 0) shownImg = brightenImage(shownImg, w, h, brightness);
         // Unfocused items get their own opacity/dimming, clamped as ES-DE
         // clamps them (CarouselComponent.h:1753). Drawing every item at full
         // strength is why our carousels read flatter than the themes do.
@@ -1336,7 +1419,7 @@ export class Stage {
         // selection (CarouselComponent.h:1038); 1 leaves them untouched.
         const restoreItemInterp = withInterpolation(ctx, p.imageInterpolation);
         const itemSat = sel ? 1 : Number(p.unfocusedItemSaturation ?? 1);
-        const shownImg = itemSat < 1
+        let shownImg = itemSat < 1
           ? saturateImage(img, w, h, Math.max(0, itemSat)) : img;
         const imgRadius = Math.max(0, Math.min(0.5,
           Number(p.imageCornerRadius ?? 0))) * STAGE_W;
@@ -1454,7 +1537,22 @@ export class Stage {
         // <selectorImagePath> replaces the bar with an image (tiled or not).
         const selImg = this.img(this.perSystem(p.selectorImagePath));
         if (selImg) {
-          drawContain(ctx, selImg, selBox, p.selectorColor ? hex(p.selectorColor) : null, 1);
+          const selTint = p.selectorColor ? hex(p.selectorColor) : null;
+          // <selectorImageTile> repeats the selector art instead of
+          // stretching one copy across the row.
+          if (p.selectorImageTile === 'true' || p.selectorImageTile === true) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(selBox.x, selBox.y, selBox.w, selBox.h);
+            ctx.clip();
+            const tw = selImg.width;
+            for (let tx = selBox.x; tx < selBox.x + selBox.w; tx += tw) {
+              drawContain(ctx, selImg, { x: tx, y: selBox.y, w: tw, h: selBox.h }, selTint, 1);
+            }
+            ctx.restore();
+          } else {
+            drawContain(ctx, selImg, selBox, selTint, 1);
+          }
         } else {
           ctx.fillStyle = fillStyle(ctx, selBox, p.selectorColor, p.selectorColorEnd,
             p.selectorGradientType, 'rgba(255,255,255,0.08)');
@@ -1605,9 +1703,26 @@ export class Stage {
       const fit = p.imageFit ?? 'contain';
       const sel = i === this.gameIndex;
 
-      roundRect(ctx, cx, cy, cw, ch, 8);
-      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      // <backgroundRelativeScale> sizes the cell's backing plate against the
+      // cell, so artwork can sit on a smaller or larger pad than the slot.
+      const bgScale = Math.max(0.1, Math.min(2, Number(p.backgroundRelativeScale ?? 1)));
+      const bw2 = cw * bgScale;
+      const bh2 = ch * bgScale;
+      roundRect(ctx, cx + (cw - bw2) / 2, cy + (ch - bh2) / 2, bw2, bh2, 8);
+      ctx.fillStyle = fillStyle(ctx, { x: cx, y: cy, w: cw, h: ch },
+        p.backgroundColor ?? 'ffffff0d', p.backgroundColorEnd, p.backgroundGradientType,
+        'rgba(255,255,255,0.05)');
       ctx.fill();
+      // <selectorLayer> "bottom" puts the selector UNDER the artwork, so a
+      // cover with transparent edges shows the highlight through it.
+      const selUnder = sel && p.selectorLayer === 'bottom';
+      if (selUnder) {
+        roundRect(ctx, cx, cy, cw, ch,
+          Math.max(0, Math.min(0.5, Number(p.selectorCornerRadius ?? 0))) * STAGE_W || 8);
+        ctx.fillStyle = fillStyle(ctx, { x: cx, y: cy, w: cw, h: ch },
+          p.selectorColor, p.selectorColorEnd, p.selectorGradientType, '#4fd1c5');
+        ctx.fill();
+      }
       const img = this.img(game.art);
       if (img) {
         const cell = { x: cx, y: cy, w: cw, h: ch };
@@ -1622,7 +1737,7 @@ export class Stage {
         ctx.textAlign = 'center';
         wrapText(ctx, game.name, cx + cw / 2, cy + ch / 2, cw * 0.9, Math.round(ch * 0.11), 3);
       }
-      if (sel) {
+      if (sel && !selUnder) {
         // <selectorRelativeScale> sizes the selector against the CELL, and
         // <selectorLayer> decides whether it sits under or over the artwork.
         // "bottom" is drawn before the image, so this branch only runs for
@@ -2060,6 +2175,23 @@ function drawContain(ctx, img, b, tint = null, pad = 1) {
  * wants the silhouette behaviour, and multiply gives that for free: a white
  * glyph multiplied by the tint IS the tint.
  */
+/** Lift or darken an image. <brightness> is -2..2, 0 = untouched. */
+function brightenImage(img, w, h, amount) {
+  const buf = createCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
+  const bctx = buf.getContext('2d');
+  bctx.drawImage(img, 0, 0, w, h);
+  const d = bctx.getImageData(0, 0, buf.width, buf.height);
+  const px = d.data;
+  const shift = amount * 128;
+  for (let i = 0; i < px.length; i += 4) {
+    px[i] = Math.max(0, Math.min(255, px[i] + shift));
+    px[i + 1] = Math.max(0, Math.min(255, px[i + 1] + shift));
+    px[i + 2] = Math.max(0, Math.min(255, px[i + 2] + shift));
+  }
+  bctx.putImageData(d, 0, 0);
+  return buf;
+}
+
 /**
  * Desaturate an image toward greyscale.
  *
