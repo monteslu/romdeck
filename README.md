@@ -139,7 +139,8 @@ packages — **nothing is installed system-wide**.
 > controller remapping, themes, remote play, and even *entering* big-screen
 > mode) needs a mouse or keyboard today. This is a known design error, not a
 > missing feature: the app was meant to be gamepad-first like
-> EmulationStation. See PLAN.md §16d.
+> EmulationStation. Diagnosis in PLAN.md §16d; the fix is planned as M7 in
+> §16e, with an "unplug the keyboard and mouse" acceptance test.
 
 ## Where things live
 
