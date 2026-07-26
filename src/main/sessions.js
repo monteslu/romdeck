@@ -34,12 +34,22 @@ function resolveNode() {
 }
 
 export class GameSessionManager extends EventEmitter {
-  constructor({ stateStore, saveDir } = {}) {
+  constructor({ stateStore, saveDir, mappings } = {}) {
     super();
     this.sessions = new Map();
     this.nextId = 1;
     this.stateStore = stateStore ?? null;
     this.saveDir = saveDir ?? null; // shared SRAM/battery-save dir
+    this.mappings = mappings ?? null; // MappingStore
+  }
+
+  /** Push the current controller config to every live session. */
+  broadcastInputMap(ctxFor = () => ({})) {
+    if (!this.mappings) return;
+    for (const [id, session] of this.sessions) {
+      const map = this.mappings.playerConfig(ctxFor(session));
+      this.rpc(id, 'setInputMap', { map }).catch(() => { /* session may be closing */ });
+    }
   }
 
   list() {
@@ -70,6 +80,15 @@ export class GameSessionManager extends EventEmitter {
     const args = [cli, rom.path, '--video', 'sdl', '--control'];
     if (fullscreen) args.push('--fullscreen');
     if (this.saveDir) args.push('--save-dir', this.saveDir);
+    if (this.mappings) {
+      const map = this.mappings.playerConfig({
+        platform: rom.short ?? null,
+        gameKey: this.stateStore?.gameKey(rom) ?? null,
+      });
+      if (Object.keys(map.devices).length || map.portOrder.length) {
+        args.push('--input-map', JSON.stringify(map));
+      }
+    }
 
     const child = spawn(cmd, args, {
       env: { ...process.env, ...env },

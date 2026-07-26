@@ -1,7 +1,9 @@
 // Preload bridge — the renderer's only door to the main process.
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENT_CHANNELS = new Set(['session:update', 'pad:nav', 'library:changed']);
+const EVENT_CHANNELS = new Set([
+  'session:update', 'pad:nav', 'library:changed', 'pad:devices', 'pad:raw',
+]);
 
 contextBridge.exposeInMainWorld('romdeck', {
   getLibrary: () => ipcRenderer.invoke('library:get'),
@@ -21,6 +23,14 @@ contextBridge.exposeInMainWorld('romdeck', {
   scrapeAll: () => ipcRenderer.invoke('library:scrapeAll'),
   identify: () => ipcRenderer.invoke('library:identify'),
   biosCheck: () => ipcRenderer.invoke('bios:check'),
+  padsList: () => ipcRenderer.invoke('pads:list'),
+  padsRawMode: (on) => ipcRenderer.invoke('pads:rawMode', on),
+  padsBind: (key, buttonId, source, layer) => ipcRenderer.invoke('pads:bind', key, buttonId, source, layer),
+  padsClear: (key, layer) => ipcRenderer.invoke('pads:clear', key, layer),
+  padsDeadzone: (key, value) => ipcRenderer.invoke('pads:setDeadzone', key, value),
+  padsAssignPort: (key, port) => ipcRenderer.invoke('pads:assignPort', key, port),
+  padsExport: (key) => ipcRenderer.invoke('pads:exportProfile', key),
+  padsImport: (key) => ipcRenderer.invoke('pads:importProfile', key),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;

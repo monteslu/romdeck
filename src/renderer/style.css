@@ -319,6 +319,87 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
 .toast .body { color: var(--dim); font-size: 12px; }
 .toast .actions { margin-top: 8px; display: flex; gap: 8px; }
 
+/* controllers */
+#padmodal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.pad-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.pad-card .pad-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.pad-card .pad-name { font-weight: 700; }
+.pad-card .pad-key { color: var(--dim); font-size: 11px; }
+.pad-card select, .pad-card input[type=range] { font: inherit; }
+.pad-card select {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+.bindgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+.bindrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bindrow:hover { border-color: var(--accent); }
+.bindrow.listening {
+  border-color: var(--accent2);
+  color: var(--accent2);
+  animation: pulse 1s infinite;
+}
+.bindrow.active { background: rgba(79, 209, 197, 0.18); border-color: var(--accent); }
+.bindrow .src { color: var(--dim); font-size: 11px; }
+.bindrow.custom .src { color: var(--accent); }
+.pad-live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 8px 0;
+}
+.pad-live .b {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+.pad-live .b.on { background: var(--accent); color: #062824; border-color: var(--accent); }
+.pad-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pad-actions button { font-size: 12px; }
+
 /* modal */
 #biosmodal {
   position: fixed;

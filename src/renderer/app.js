@@ -457,6 +457,222 @@ $('bios').onclick = async () => {
 $('biosclose').onclick = () => $('biosmodal').classList.add('hidden');
 $('biosmodal').onclick = (ev) => { if (ev.target.id === 'biosmodal') $('biosmodal').classList.add('hidden'); };
 
+// ── controllers: live view + press-to-bind remapping ─────────────────
+const padUI = {
+  open: false,
+  info: null,       // { devices, buttons, portOrder, layers, deadzones }
+  live: new Map(),  // deviceKey -> { buttons:[], axes:[] }
+  listening: null,  // { deviceKey, buttonId }
+  layer: 'global',
+};
+
+// W3C default source per libretro button — shown when nothing is rebound
+const DEFAULT_W3C = { 0: 0, 1: 2, 2: 8, 3: 9, 4: 12, 5: 13, 6: 14, 7: 15, 8: 1, 9: 3, 10: 4, 11: 5, 12: 6, 13: 7, 14: 10, 15: 11 };
+const W3C_NAMES = ['South', 'East', 'West', 'North', 'L1', 'R1', 'L2', 'R2', 'Select', 'Start', 'L3', 'R3', 'D-Up', 'D-Down', 'D-Left', 'D-Right', 'Guide'];
+
+function sourceLabel(source, buttonId) {
+  if (!source) return W3C_NAMES[DEFAULT_W3C[buttonId]] ?? '—';
+  if (source.type === 'button') return W3C_NAMES[source.index] ?? `btn ${source.index}`;
+  if (source.type === 'axis') return `axis ${source.index}${source.dir < 0 ? '−' : '+'}`;
+  return '—';
+}
+
+async function openPads() {
+  padUI.open = true;
+  padUI.info = await romdeck.padsList();
+  await romdeck.padsRawMode(true);
+  $('padmodal').classList.remove('hidden');
+  renderPads();
+}
+
+async function closePads() {
+  padUI.open = false;
+  padUI.listening = null;
+  await romdeck.padsRawMode(false);
+  $('padmodal').classList.add('hidden');
+}
+
+function bindingFor(deviceKey, buttonId) {
+  const layers = padUI.info?.layers ?? {};
+  // most specific wins; UI edits the global layer for now
+  return layers[padUI.layer]?.[deviceKey]?.bindings?.[buttonId]
+    ?? layers.global?.[deviceKey]?.bindings?.[buttonId]
+    ?? null;
+}
+
+function renderPads() {
+  const list = $('padlist');
+  const info = padUI.info;
+  list.replaceChildren();
+  const devices = info?.devices ?? [];
+  $('padnone').classList.toggle('hidden', devices.length > 0);
+
+  devices.forEach((dev) => {
+    const card = document.createElement('div');
+    card.className = 'pad-card';
+
+    const head = document.createElement('div');
+    head.className = 'pad-head';
+    const name = document.createElement('div');
+    name.className = 'pad-name';
+    name.textContent = dev.id;
+    const key = document.createElement('div');
+    key.className = 'pad-key';
+    key.textContent = dev.key.slice(0, 20);
+    head.append(name, key);
+
+    // player port
+    const portSel = document.createElement('select');
+    for (let p = 0; p < Math.max(4, devices.length); p++) {
+      const o = document.createElement('option');
+      o.value = String(p);
+      o.textContent = `Player ${p + 1}`;
+      portSel.appendChild(o);
+    }
+    const curPort = info.portOrder.indexOf(dev.key);
+    portSel.value = String(curPort >= 0 ? curPort : dev.port);
+    portSel.onchange = async () => {
+      const r = await romdeck.padsAssignPort(dev.key, Number(portSel.value));
+      padUI.info.portOrder = r.portOrder;
+      toast('Controllers', `${dev.id} → Player ${Number(portSel.value) + 1}`);
+      renderPads();
+    };
+    head.appendChild(portSel);
+    card.appendChild(head);
+
+    // live button state
+    const live = document.createElement('div');
+    live.className = 'pad-live';
+    const snapshot = padUI.live.get(dev.key);
+    for (let i = 0; i < dev.buttons; i++) {
+      const b = document.createElement('div');
+      b.className = 'b' + (snapshot?.buttons?.[i] ? ' on' : '');
+      b.textContent = String(i);
+      live.appendChild(b);
+    }
+    card.appendChild(live);
+
+    // bindings
+    const grid = document.createElement('div');
+    grid.className = 'bindgrid';
+    for (const btn of info.buttons) {
+      const source = bindingFor(dev.key, btn.id);
+      const row = document.createElement('div');
+      const listening = padUI.listening?.deviceKey === dev.key && padUI.listening?.buttonId === btn.id;
+      row.className = 'bindrow' + (listening ? ' listening' : '') + (source ? ' custom' : '');
+      // highlight when this binding is currently pressed
+      const src = source ?? { type: 'button', index: DEFAULT_W3C[btn.id] };
+      if (src.type === 'button' && snapshot?.buttons?.[src.index]) row.classList.add('active');
+      const label = document.createElement('span');
+      label.textContent = btn.name;
+      const val = document.createElement('span');
+      val.className = 'src';
+      val.textContent = listening ? 'press…' : sourceLabel(source, btn.id);
+      row.append(label, val);
+      row.onclick = () => {
+        padUI.listening = listening ? null : { deviceKey: dev.key, buttonId: btn.id };
+        renderPads();
+      };
+      grid.appendChild(row);
+    }
+    card.appendChild(grid);
+
+    // deadzone + profile actions
+    const actions = document.createElement('div');
+    actions.className = 'pad-actions';
+    const dzLabel = document.createElement('span');
+    dzLabel.className = 'src';
+    const dz = info.deadzones?.[dev.key] ?? 0.35;
+    dzLabel.textContent = `deadzone ${dz.toFixed(2)}`;
+    const dzInput = document.createElement('input');
+    dzInput.type = 'range';
+    dzInput.min = '0.05';
+    dzInput.max = '0.8';
+    dzInput.step = '0.05';
+    dzInput.value = String(dz);
+    dzInput.oninput = () => { dzLabel.textContent = `deadzone ${Number(dzInput.value).toFixed(2)}`; };
+    dzInput.onchange = async () => {
+      await romdeck.padsDeadzone(dev.key, Number(dzInput.value));
+      padUI.info.deadzones[dev.key] = Number(dzInput.value);
+    };
+    const resetB = document.createElement('button');
+    resetB.textContent = 'Reset to defaults';
+    resetB.onclick = async () => {
+      await romdeck.padsClear(dev.key, padUI.layer);
+      padUI.info = await romdeck.padsList();
+      renderPads();
+    };
+    const expB = document.createElement('button');
+    expB.textContent = 'Export profile';
+    expB.onclick = async () => {
+      const r = await romdeck.padsExport(dev.key);
+      if (r.file) toast('Profile exported', r.file);
+    };
+    const impB = document.createElement('button');
+    impB.textContent = 'Import profile';
+    impB.onclick = async () => {
+      const r = await romdeck.padsImport(dev.key);
+      if (r.error) toast('Import failed', r.error, true);
+      else if (!r.canceled) {
+        padUI.info = await romdeck.padsList();
+        renderPads();
+        toast('Profile imported', dev.id);
+      }
+    };
+    actions.append(dzLabel, dzInput, resetB, expB, impB);
+    card.appendChild(actions);
+
+    list.appendChild(card);
+  });
+}
+
+// Raw pad stream: drives the live view AND completes press-to-bind
+romdeck.on('pad:raw', (snapshot) => {
+  if (!padUI.open) return;
+  for (const pad of snapshot.pads) padUI.live.set(pad.key, pad);
+
+  if (padUI.listening) {
+    const pad = snapshot.pads.find((p) => p.key === padUI.listening.deviceKey);
+    if (pad) {
+      const btnIdx = pad.buttons.findIndex(Boolean);
+      let source = null;
+      if (btnIdx >= 0) source = { type: 'button', index: btnIdx };
+      else {
+        const axIdx = pad.axes.findIndex((v) => Math.abs(v) > 0.7);
+        if (axIdx >= 0) source = { type: 'axis', index: axIdx, dir: pad.axes[axIdx] < 0 ? -1 : 1 };
+      }
+      if (source) {
+        const { deviceKey, buttonId } = padUI.listening;
+        padUI.listening = null;
+        romdeck.padsBind(deviceKey, buttonId, source, padUI.layer).then(async () => {
+          padUI.info = await romdeck.padsList();
+          renderPads();
+        });
+        return;
+      }
+    }
+  }
+  renderPads();
+});
+
+romdeck.on('pad:devices', async (info) => {
+  for (const key of info.added) {
+    const dev = info.devices.find((d) => d.key === key);
+    toast('Controller connected', dev?.id ?? key);
+  }
+  if (info.removed.length) {
+    toast('Controller disconnected', 'Live games paused', true);
+  }
+  if (padUI.open) {
+    padUI.info = await romdeck.padsList();
+    renderPads();
+  }
+});
+
+$('pads').onclick = openPads;
+$('padclose').onclick = closePads;
+$('padmodal').onclick = (ev) => { if (ev.target.id === 'padmodal') closePads(); };
+
 (async () => {
   await loadLibrary(await romdeck.getLibrary());
   romdeck.uiReady();

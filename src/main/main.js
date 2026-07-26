@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { scanRoms } from './scanner.js';
 import { GameSessionManager } from './sessions.js';
 import { StateStore } from './statestore.js';
@@ -15,6 +15,7 @@ import { GamelistStore } from './gamelist.js';
 import { ArtworkStore } from './artwork.js';
 import { Identifier } from './identify.js';
 import { BiosChecker } from './bios.js';
+import { MappingStore, BUTTONS } from './inputmap.js';
 import { shortnameOf, libretroNameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
@@ -34,16 +35,38 @@ let gamelists = null;
 let artwork = null;
 let identifier = null;
 let biosChecker = null;
+let mappings = null;
 
 // Custom scheme for artwork must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'romdeck-media', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
-const padNav = new PadNav((ev) => {
-  if (win && !win.isDestroyed() && win.isFocused()) {
-    win.webContents.send('pad:nav', ev);
-  }
-});
+const send = (channel, payload) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+};
+
+const padNav = new PadNav(
+  (ev) => {
+    if (win && !win.isDestroyed() && win.isFocused()) win.webContents.send('pad:nav', ev);
+  },
+  {
+    onDevices: (info) => {
+      for (const key of info.added) {
+        const dev = info.devices.find((d) => d.key === key);
+        if (dev) mappings?.noteDevice(dev.key, dev.id);
+      }
+      send('pad:devices', info);
+      // A pad vanishing mid-game is a "someone tripped on the cable" moment:
+      // pause every live session rather than let the player take damage.
+      if (info.removed.length && sessions) {
+        for (const s of sessions.list()) {
+          if (!s.paused) sessions.rpc(s.id, 'pause').catch(() => {});
+        }
+      }
+    },
+    onRaw: (snapshot) => send('pad:raw', snapshot),
+  },
+);
 
 function romsDir() {
   return cliRomsDir ?? prefs.get('romsDir') ?? null;
@@ -176,6 +199,74 @@ ipcMain.handle('library:identify', async () => {
 });
 
 ipcMain.handle('bios:check', () => biosChecker.check(romsDir()));
+
+// ── controllers ──────────────────────────────────────────────────────
+ipcMain.handle('pads:list', () => ({
+  devices: padNav.devices(),
+  buttons: BUTTONS,
+  portOrder: mappings.portOrder,
+  layers: mappings.data.layers,
+  deadzones: Object.fromEntries(
+    padNav.devices().map((d) => [d.key, mappings.deadzoneFor(d.key)]),
+  ),
+}));
+
+ipcMain.handle('pads:rawMode', (_ev, on) => {
+  padNav.setRawMode(on);
+  return { on: !!on };
+});
+
+ipcMain.handle('pads:bind', (_ev, deviceKey, buttonId, source, layer) => {
+  mappings.bind(deviceKey, buttonId, source, { layer: layer || 'global' });
+  sessions.broadcastInputMap();
+  return { ok: true };
+});
+
+ipcMain.handle('pads:clear', (_ev, deviceKey, layer) => {
+  mappings.clearLayer(deviceKey, layer || 'global');
+  sessions.broadcastInputMap();
+  return { ok: true };
+});
+
+ipcMain.handle('pads:setDeadzone', (_ev, deviceKey, value) => {
+  mappings.setDeadzone(deviceKey, value);
+  sessions.broadcastInputMap();
+  return { ok: true };
+});
+
+ipcMain.handle('pads:assignPort', (_ev, deviceKey, port) => {
+  mappings.assignPort(deviceKey, port);
+  sessions.broadcastInputMap();
+  return { portOrder: mappings.portOrder };
+});
+
+ipcMain.handle('pads:exportProfile', async (_ev, deviceKey) => {
+  const profile = mappings.exportProfile(deviceKey);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Export controller profile',
+    defaultPath: `${(profile.name ?? 'controller').replace(/[^\w-]+/g, '_')}.romdeck-pad.json`,
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  writeFileSync(res.filePath, JSON.stringify(profile, null, 2));
+  return { file: res.filePath };
+});
+
+ipcMain.handle('pads:importProfile', async (_ev, deviceKey) => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Import controller profile',
+    properties: ['openFile'],
+    filters: [{ name: 'romdeck controller profile', extensions: ['json'] }],
+  });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  try {
+    const profile = JSON.parse(readFileSync(res.filePaths[0], 'utf8'));
+    const key = mappings.importProfile(profile, { deviceKey });
+    sessions.broadcastInputMap();
+    return { deviceKey: key };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
 
 ipcMain.handle('library:scrapeAll', async () => {
   const { roms } = getLibrary();
@@ -388,6 +479,7 @@ app.whenReady().then(async () => {
   artwork = new ArtworkStore(app.getPath('userData'));
   identifier = new Identifier(app.getPath('userData'));
   biosChecker = new BiosChecker(app.getPath('userData'));
+  mappings = new MappingStore(app.getPath('userData'));
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)
@@ -403,7 +495,7 @@ app.whenReady().then(async () => {
   });
   const saveDir = path.join(app.getPath('userData'), 'saves');
   mkdirSync(saveDir, { recursive: true });
-  sessions = new GameSessionManager({ stateStore, saveDir });
+  sessions = new GameSessionManager({ stateStore, saveDir, mappings });
   sessions.on('update', (ev) => {
     if (win && !win.isDestroyed()) win.webContents.send('session:update', ev);
   });

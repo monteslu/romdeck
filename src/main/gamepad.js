@@ -4,12 +4,36 @@
 //
 // Player processes do their own SDL input; this poller is UI-nav only.
 export class PadNav {
-  constructor(onEvent) {
+  constructor(onEvent, { onDevices = null, onRaw = null } = {}) {
     this.onEvent = onEvent;
+    this.onDevices = onDevices; // (pads[]) => void  — hotplug notifications
+    this.onRaw = onRaw; // (snapshot) => void — live view while binding
     this.timer = null;
     this.prev = new Map(); // gamepad index -> pressed-set
     this.repeat = new Map(); // action -> next repeat time
     this.getGamepads = null;
+    this.rawMode = false; // stream raw button/axis state for the remap UI
+    this._lastDeviceKeys = '';
+  }
+
+  setRawMode(on) {
+    this.rawMode = !!on;
+  }
+
+  /** Connected pads with the identity fields the mapping store keys on. */
+  devices() {
+    let pads = [];
+    try {
+      pads = (this.getGamepads?.() ?? []).filter(Boolean);
+    } catch { /* SDL hiccup */ }
+    return pads.map((p, i) => ({
+      port: i,
+      index: p.index,
+      id: p.id,
+      key: p._native?.guid || p.guid || p.id,
+      buttons: p.buttons?.length ?? 0,
+      axes: p.axes?.length ?? 0,
+    }));
   }
 
   async start() {
@@ -38,6 +62,33 @@ export class PadNav {
       return;
     }
     const now = Date.now();
+
+    // Hotplug detection: the set of device keys changing means connect/disconnect
+    if (this.onDevices) {
+      const devices = (pads ?? []).filter(Boolean).map((p) => p._native?.guid || p.guid || p.id);
+      const sig = devices.join('|');
+      if (sig !== this._lastDeviceKeys) {
+        const prevKeys = this._lastDeviceKeys ? this._lastDeviceKeys.split('|') : [];
+        this._lastDeviceKeys = sig;
+        this.onDevices({
+          devices: this.devices(),
+          added: devices.filter((k) => !prevKeys.includes(k)),
+          removed: prevKeys.filter((k) => !devices.includes(k)),
+        });
+      }
+    }
+
+    // Raw stream for the remap UI (live highlight + press-to-bind)
+    if (this.rawMode && this.onRaw) {
+      this.onRaw({
+        pads: (pads ?? []).filter(Boolean).map((p) => ({
+          key: p._native?.guid || p.guid || p.id,
+          id: p.id,
+          buttons: (p.buttons ?? []).map((b) => !!b?.pressed),
+          axes: [...(p.axes ?? [])].map((v) => Math.round(v * 100) / 100),
+        })),
+      });
+    }
     for (const pad of pads ?? []) {
       if (!pad) continue;
       const held = new Set();

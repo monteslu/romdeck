@@ -17,6 +17,7 @@
       <button id="scrapeall" title="Fetch box art for all games">🎨 Art</button>
       <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
       <button id="bios" title="Check BIOS files">BIOS</button>
+      <button id="pads" title="Controllers">🎮</button>
     </div>
     <div id="sessioncount" class="hidden">0 playing</div>
   </header>
@@ -58,6 +59,20 @@
       </div>
       <p class="dim">Place firmware files in <code id="biosdirs"></code>. Green = present with a known-good hash.</p>
       <table id="biostable"></table>
+    </div>
+  </div>
+
+  <div id="padmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Controllers</h2>
+        <button id="padclose">✕</button>
+      </div>
+      <div id="padlist"></div>
+      <div id="padnone" class="dim hidden">
+        No controllers detected. Plug one in — it appears here immediately.
+        Keyboard always works: arrows + Z/X/A/S, Enter, Right-Shift.
+      </div>
     </div>
   </div>
 
