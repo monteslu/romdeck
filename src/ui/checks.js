@@ -41,6 +41,7 @@ export async function runChecks(name, ctx) {
     case 'autoplay': return (await import('./checks-sessions.js')).autoplay(ctx);
     case 'devcheck': return (await import('./checks-sessions.js')).autoplay({ ...ctx, dev: true });
     case 'joincheck': return (await import('./checks-sessions.js')).joincheck(ctx);
+    case 'snapcheck': return snapcheck(ctx);
     default: throw new Error(`unknown check: ${name}`);
   }
 }
@@ -210,4 +211,68 @@ function paintStats(app) {
     width,
     height,
   };
+}
+
+// ── --snapcheck: video snaps actually decode ─────────────────────────
+/**
+ * Verify the WASM decoder against real files.
+ *
+ * Asserts on PIXELS, not on "it returned without throwing": a decoder that
+ * emits uniformly black frames passes every structural check and is useless.
+ */
+export async function snapcheck({ argAfter }) {
+  const r = makeReporter('SNAPCHECK');
+  const { SnapPlayer, decoderAvailable } = await import('./video/player.js');
+  const explicit = argAfter('snapcheck');
+  const candidates = explicit ? [explicit] : [
+    path.join(process.env.HOME ?? '', 'code/cliemu/node-sdl/examples/09-ffmpeg-video/assets/video.mp4'),
+    path.join(process.env.HOME ?? '', 'code/cliemu/three.js/examples/textures/pano.mp4'),
+  ];
+  const files = candidates.filter((f) => existsSync(f));
+
+  if (!decoderAvailable()) {
+    console.log('SKIP: decoder not built (scripts/build-video-decoder.sh)');
+    console.log('SNAPCHECK OK — absent decoder degrades to the static image');
+    return 0;
+  }
+  if (!files.length) {
+    console.log('SKIP: no sample videos on this machine');
+    return 0;
+  }
+
+  for (const file of files) {
+    const p = new SnapPlayer();
+    const loaded = await p.load(file);
+    const name = path.basename(file);
+    r.check(`${name}: demuxed and opened`, loaded);
+    if (!loaded) continue;
+
+    let frames = 0;
+    for (let i = 0; i < 40; i++) {
+      p.startedAt = Date.now() - i * 80;
+      if (p.tick()) frames++;
+    }
+    r.check(`${name}: decodes frames`, frames > 10, `${frames} frames`);
+    const f = p.frame;
+    r.check(`${name}: frame has dimensions`, !!f && f.width > 0 && f.height > 0,
+      f ? `${f.width}x${f.height}` : 'none');
+    if (f) {
+      // A black frame is what a broken colour conversion produces, and it
+      // passes every structural assertion.
+      let lit = 0;
+      for (let i = 0; i < f.data.length; i += 4) {
+        if (f.data[i] > 25 || f.data[i + 1] > 25 || f.data[i + 2] > 25) lit++;
+      }
+      r.check(`${name}: picture is not blank`, lit > f.width * f.height * 0.05,
+        `${lit} lit of ${f.width * f.height}`);
+    }
+    p.close();
+  }
+
+  // Absent files must degrade, never throw.
+  const missing = new SnapPlayer();
+  r.check('a missing file degrades quietly', (await missing.load('/nope/none.mp4')) === false);
+  r.check('a non-MP4 degrades quietly', (await missing.load('/etc/hostname')) === false);
+
+  return r.done('snaps decode to real pictures');
 }

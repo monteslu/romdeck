@@ -28,7 +28,9 @@ set -euo pipefail
 FFMPEG_REF="${FFMPEG_REF:-n6.1.1}"
 BUILD_DIR="${BUILD_DIR:-$HOME/.cache/romdeck-build}"
 SRC="$BUILD_DIR/ffmpeg"
-OUT="$(cd "$(dirname "$0")/.." && pwd)/src/ui/video/wasm"
+# Absolute, because this script cd's into the ffmpeg tree to build.
+ROMDECK="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROMDECK/src/ui/video/wasm"
 
 command -v emcc >/dev/null || {
   echo "FATAL: emcc not found. Activate emsdk first:" >&2
@@ -86,7 +88,7 @@ emmake make -j"$(nproc)" libavcodec/libavcodec.a libavutil/libavutil.a
 echo "Linking the decoder shim …"
 emcc -O3 \
   -I"$SRC" \
-  "$(dirname "$0")/../src/ui/video/decoder.c" \
+  "$ROMDECK/src/ui/video/decoder.c" \
   "$SRC/libavcodec/libavcodec.a" \
   "$SRC/libavutil/libavutil.a" \
   -o "$OUT/h264.js" \

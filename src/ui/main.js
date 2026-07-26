@@ -20,7 +20,7 @@ const romsDir = argv.find((a) => !a.startsWith('-') && existsSync(a)) ?? null;
 
 const CHECKS = [
   'smoke', 'padonly', 'viewcheck', 'realtheme', 'cartcheck',
-  'autoplay', 'devcheck', 'joincheck', 'pathcheck',
+  'autoplay', 'devcheck', 'joincheck', 'pathcheck', 'snapcheck',
 ];
 const check = CHECKS.find((c) => flag(c));
 
