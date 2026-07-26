@@ -537,10 +537,16 @@ async function doJoin(watch) {
   $('status').textContent = `${watch ? 'watching' : 'joining'} ${res.code}…`;
 }
 
-// Share codes read as XXXX-XXXX; insert the dash as they type.
+// Share codes are 9 base24 characters, grouped XXX-XXX-XXX for reading
+// aloud. Characters outside the alphabet can't appear in a real code, so
+// they're dropped as you type rather than failing later.
+const CODE_CHARS = '34679ACDEFGHJKMNPRTUVWXY';
 $('join-code').addEventListener('input', (ev) => {
-  const raw = ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-  ev.target.value = raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
+  const raw = [...ev.target.value.toUpperCase()]
+    .filter((c) => CODE_CHARS.includes(c)).join('').slice(0, 9);
+  ev.target.value = raw.length > 6 ? `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`
+    : raw.length > 3 ? `${raw.slice(0, 3)}-${raw.slice(3)}`
+    : raw;
 });
 $('join-code').addEventListener('keydown', (ev) => {
   ev.stopPropagation(); // don't let grid nav steal the keystrokes
