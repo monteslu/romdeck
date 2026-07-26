@@ -572,6 +572,88 @@ export async function shots({ romsDir, argAfter }) {
     app.stage.setLibrary(app.svc.library().roms);
   }
 
+  // Carousel transitions and texture filtering -- the last two audit entries
+  // with observable behaviour. The slide cannot show in a still, but the
+  // easing curve and its settling can be driven directly.
+  {
+    // The carousel is a SYSTEM-view element and this block runs after the
+    // check navigated into the gamelist, so look there explicitly rather than
+    // in the current view's element list.
+    const wasView = app.stage.view;
+    app.stage.view = 'system';
+    const car = app.stage.elements().find((e) => e.type === 'carousel');
+    if (car && app.stage.systems.length > 1) {
+      const from = app.stage.sysIndex;
+      app.stage.sysIndex = (from + 1) % app.stage.systems.length;
+      const started = app.stage.startCarouselSlide(from, false);
+      const at0 = app.stage.carouselOffset;
+      app.stage.tickCarousel(200);
+      const mid = app.stage.carouselOffset;
+      app.stage.tickCarousel(200);
+      const end = app.stage.carouselOffset;
+      r.check('carousel eases and settles',
+        started && Math.abs(at0) === 1 && Math.abs(mid) < 1 && Math.abs(mid) > 0 && end === 0,
+        `${at0} -> ${mid.toFixed(3)} -> ${end}`);
+      // "instant" must not animate at all.
+      const was = car.props.itemTransitions;
+      car.props.itemTransitions = 'instant';
+      r.check('itemTransitions instant does not animate',
+        app.stage.startCarouselSlide(from, false) === false);
+      car.props.itemTransitions = was;
+      app.stage.sysIndex = from;
+      app.stage.carouselOffset = 0;
+    }
+    app.stage.view = wasView;
+
+    // <interpolation> nearest vs linear must change scaled pixels.
+    // Only a SCALED image can show a filtering difference; a 1:1 blit is
+    // identical either way, and grading one would be asserting nothing.
+    let icon = null;
+    let img = null;
+    let ib = null;
+    for (const e of app.stage.elements()) {
+      if (e.type !== 'image' || typeof e.props.path !== 'string'
+        || e.props.path.includes('${')) continue;
+      // Skip the box.png / tiled-1x1 FILL idiom: it takes drawImage's early
+      // return and paints a solid rect, so filtering can never show there.
+      if (e.props.tile === 'true' || /(^|\/)box\.(png|svg)$/i.test(e.props.path)) continue;
+      const candidate = app.stage.img(app.stage.perSystem(e.props.path));
+      if (!candidate) continue;
+      const box = app.stage.box(e.props, candidate);
+      if (box.w <= 8 || Math.abs(box.w - candidate.width) <= 8) continue;
+      // The source must have DETAIL. slate's frame.png is a uniform 8x8 that
+      // scales to 768px identically under either filter, so grading it
+      // asserted nothing -- a flat source cannot show a filtering difference.
+      const probe = createCanvas(Math.min(32, candidate.width), Math.min(32, candidate.height));
+      const pctx = probe.getContext('2d');
+      pctx.drawImage(candidate, 0, 0, probe.width, probe.height);
+      const pd = pctx.getImageData(0, 0, probe.width, probe.height).data;
+      const seen = new Set();
+      for (let k = 0; k < pd.length; k += 4) seen.add((pd[k] << 16) | (pd[k + 1] << 8) | pd[k + 2]);
+      if (seen.size < 4) continue;
+      icon = e; img = candidate; ib = box; break;
+    }
+    if (!icon) {
+      console.log('SKIP: no scaled, detailed image in this view to filter');
+    } else {
+      {
+        const grab = () => {
+          app.invalidate();
+          return Uint8ClampedArray.from(readRect(app.render().getContext('2d'), ib)?.data ?? []);
+        };
+        const wasI = icon.props.interpolation;
+        icon.props.interpolation = 'linear';
+        const lin = grab();
+        icon.props.interpolation = 'nearest';
+        const near = grab();
+        let d = 0;
+        for (let i = 0; i < lin.length && i < near.length; i += 4) if (lin[i] !== near[i]) d++;
+        r.check('interpolation filters scaled images', d > 20, `${d} px differ`);
+        icon.props.interpolation = wasI;
+      }
+    }
+  }
+
   // <systemstatus>: battery / wifi / bluetooth from sysfs. The VALUES are
   // the machine's, so the assertion is that the element draws something when
   // there is something to report -- not that a specific icon appears.

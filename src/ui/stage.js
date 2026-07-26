@@ -189,6 +189,19 @@ function tickScroll(el, contentH, boxH, dt) {
   return st.pos !== before || st.atEnd > 0;
 }
 
+// Carousel item transition (CarouselComponent.h:1961). The selection slides
+// to its new place over 400ms with an ease-out quadratic, unless the theme
+// asks for <itemTransitions>instant. Duration shortens toward 200ms when the
+// user is scrolling fast, so holding a direction does not lag behind the input.
+const CAROUSEL_ANIM_MS = 400;
+const CAROUSEL_ANIM_MIN_MS = 200;
+
+/** ES-DE's easing: t = 1 - (1-t)^2. */
+function easeOutQuad(t) {
+  const c = Math.max(0, Math.min(1, t));
+  return 1 - (1 - c) * (1 - c);
+}
+
 /**
  * The themed view.
  *
@@ -207,6 +220,10 @@ export class Stage {
     this.allRoms = [];
     this.query = '';
     this.sysIndex = 0;
+    // Animated carousel offset, in ITEMS. 0 means settled on sysIndex; a
+    // non-zero value is the slide still in flight.
+    this.carouselOffset = 0;
+    this._carouselAnim = null;
     this.gameIndex = 0;
     // While editing a custom collection, every gamelist marks which games
     // are already in it (GamelistBase.cpp:900). Null when not editing.
@@ -316,6 +333,43 @@ export class Stage {
 
   /** @see tickScroll -- exposed so the app's animation tick can drive it. */
   tickScroll(el, contentH, boxH, dt) { return tickScroll(el, contentH, boxH, dt); }
+
+  /**
+   * Begin a carousel slide toward the current selection.
+   *
+   * Called by the app when sysIndex changes. "instant" themes skip it, and so
+   * does a headless render -- there is nobody to see a 400ms slide in a
+   * screenshot, and animating there would make every check time-dependent.
+   */
+  startCarouselSlide(fromIndex, fast = false) {
+    const el = this.elements().find((e) => e.type === 'carousel');
+    if (!el || el.props.itemTransitions === 'instant') { this.carouselOffset = 0; return false; }
+    const n = this.systems.length || 1;
+    // Shortest way round: a wrap from the last item to the first slides one
+    // step, not backwards through the whole list.
+    let delta = this.sysIndex - fromIndex;
+    if (delta > n / 2) delta -= n;
+    if (delta < -n / 2) delta += n;
+    if (!delta) return false;
+    this._carouselAnim = {
+      from: this.carouselOffset - delta,
+      elapsed: 0,
+      ms: fast ? CAROUSEL_ANIM_MIN_MS : CAROUSEL_ANIM_MS,
+    };
+    this.carouselOffset = this._carouselAnim.from;
+    return true;
+  }
+
+  /** Advance the slide. Returns true while it is still moving. */
+  tickCarousel(dt) {
+    const a = this._carouselAnim;
+    if (!a) return false;
+    a.elapsed += dt;
+    const t = Math.min(1, a.elapsed / a.ms);
+    this.carouselOffset = a.from * (1 - easeOutQuad(t));
+    if (t >= 1) { this.carouselOffset = 0; this._carouselAnim = null; }
+    return true;
+  }
 
   currentSystem() { return this.systems[this.sysIndex] ?? null; }
   currentGame() { return this.currentSystem()?.roms[this.gameIndex] ?? null; }
@@ -885,6 +939,7 @@ export class Stage {
     // Recompute with the image in hand: a one-dimension <size> needs the
     // aspect ratio before the origin offset can be right.
     const box = this.box(p, img);
+    const restoreInterp = withInterpolation(ctx, p.interpolation);
     // <saturation> is 1 = untouched, and <cornerRadius> rounds the image's own
     // corners (both clamped as ImageComponent.cpp clamps them).
     const sat = Number(p.saturation ?? p.imageSaturation ?? 1);
@@ -898,9 +953,11 @@ export class Stage {
       ctx.clip();
       drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
       ctx.restore();
+      restoreInterp();
       return;
     }
     drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
+    restoreInterp();
   }
 
   drawCarousel(ctx, el, b) {
@@ -951,7 +1008,7 @@ export class Stage {
       const scale = sel ? (p.itemScale ?? 1) : 1;
       const w = itemW * scale;
       const h = itemH * scale;
-      const cx = centerX + off * pitch - w / 2;
+      const cx = centerX + (off + this.carouselOffset) * pitch - w / 2;
       // <itemVerticalAlignment> is top | center | bottom
       // (CarouselComponent.h:1674); centre is the default.
       const vAlign = p.itemVerticalAlignment ?? 'center';
@@ -1008,6 +1065,7 @@ export class Stage {
         // <cornerRadius>, which rounds a plain image element).
         // <unfocusedItemSaturation> desaturates the items either side of the
         // selection (CarouselComponent.h:1038); 1 leaves them untouched.
+        const restoreItemInterp = withInterpolation(ctx, p.imageInterpolation);
         const itemSat = sel ? 1 : Number(p.unfocusedItemSaturation ?? 1);
         const shownImg = itemSat < 1
           ? saturateImage(img, w, h, Math.max(0, itemSat)) : img;
@@ -1024,6 +1082,7 @@ export class Stage {
           drawContain(ctx, shownImg, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
         }
         if (imgRadius > 0) ctx.restore();
+        restoreItemInterp();
         // Dimming is a black wash OVER the item, not a change to its alpha.
         if (!sel && p.unfocusedItemDimming !== undefined) {
           const dim = 1 - clamp01(p.unfocusedItemDimming, 0, 1);
@@ -1356,6 +1415,10 @@ export class Stage {
   }
 
   drawVideo(ctx, el, b) {
+    // A snap or its still fallback honours <interpolation> too -- a pixel-art
+    // screenshot scaled to a 16:9 plate is exactly the case "nearest" is for.
+    const restoreInterp = withInterpolation(ctx, el.props.interpolation
+      ?? el.props.imageInterpolation);
     // A decoded snap frame if one is ready, otherwise the game's static
     // image — which is exactly what ES-DE shows before a snap starts, so the
     // fallback is correct rather than merely safe.
@@ -1370,6 +1433,7 @@ export class Stage {
       this._snapCtx.putImageData(this._snapImage, 0, 0);
       pillarbox(ctx, this._snapCanvas, b, el.props);
       drawContain(ctx, this._snapCanvas, b, null, 1);
+      restoreInterp();
       return;
     }
     // Honour the element's own imageType for the still fallback, so a video
@@ -1381,7 +1445,8 @@ export class Stage {
     // (VideoComponent.cpp:51); the still fallback is a separate
     // mStaticImage that draws without one. Applying it to the still put
     // black bars around every cover in themes that never show video.
-    if (img) { drawContain(ctx, img, b, null, 1); return; }
+    if (img) { drawContain(ctx, img, b, null, 1); restoreInterp(); return; }
+    restoreInterp();
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
     ctx.fillRect(b.x, b.y, b.w, b.h);
   }
@@ -1493,6 +1558,24 @@ function pillarbox(ctx, src, area, props) {
     ctx.fillRect(area.x + (area.w - rectW) / 2, area.y + (area.h - rectH) / 2, rectW, rectH);
   }
   return fitted;
+}
+
+/**
+ * Apply <interpolation> / <imageInterpolation> for one draw.
+ *
+ * "nearest" is not a stylistic nicety here: pixel art scaled up with linear
+ * filtering turns to mush, which is exactly why a retro theme asks for it
+ * (ImageComponent.cpp:590). Canvas exposes it as imageSmoothingEnabled, so
+ * this IS a still-frame property -- it was misfiled as animation in the audit
+ * because of the name.
+ *
+ * @returns a restore function, so callers cannot leak the setting.
+ */
+function withInterpolation(ctx, mode) {
+  if (mode !== 'nearest' && mode !== 'linear') return () => {};
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = mode === 'linear';
+  return () => { ctx.imageSmoothingEnabled = prev; };
 }
 
 function drawCover(ctx, img, b, tint = null) {

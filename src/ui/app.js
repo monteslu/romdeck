@@ -200,8 +200,20 @@ export class App {
   navStage(action) {
     const st = this.stage;
     if (st.view === 'system') {
-      if (action === 'left') { st.sysIndex = (st.sysIndex - 1 + st.systems.length) % st.systems.length; st.gameIndex = 0; return true; }
-      if (action === 'right') { st.sysIndex = (st.sysIndex + 1) % st.systems.length; st.gameIndex = 0; return true; }
+      if (action === 'left' || action === 'right') {
+        const from = st.sysIndex;
+        st.sysIndex = action === 'left'
+          ? (st.sysIndex - 1 + st.systems.length) % st.systems.length
+          : (st.sysIndex + 1) % st.systems.length;
+        st.gameIndex = 0;
+        // Repeated presses inside the animation window mean the user is
+        // scrolling fast, so the slide shortens rather than queueing up.
+        const now = Date.now();
+        const fast = now - (this._lastNav ?? 0) < 250;
+        this._lastNav = now;
+        if (!this.headless && st.startCarouselSlide(from, fast)) this.startCarouselTimer();
+        return true;
+      }
       if (action === 'confirm') { st.view = 'gamelist'; return true; }
       return false;
     }
@@ -287,6 +299,31 @@ export class App {
    * permanent 30 Hz animation loop would quietly undo it -- on a handheld
    * that is battery, not just cycles.
    */
+  /**
+   * Drive the carousel slide.
+   *
+   * Third and last animation timer, same contract as the other two: it exists
+   * only while something moves and clears itself the moment it settles. A
+   * carousel that kept a 30 Hz timer after the slide finished would be a
+   * render loop wearing a different hat.
+   */
+  startCarouselTimer() {
+    if (this._carouselTimer) return;
+    let last = Date.now();
+    this._carouselTimer = setInterval(() => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      if (this.stage.tickCarousel(dt)) {
+        this.invalidate();
+      } else {
+        clearInterval(this._carouselTimer);
+        this._carouselTimer = null;
+      }
+    }, 16);
+    this._timers.push(this._carouselTimer);
+  }
+
   /** What the animation timers depend on: which game, in which view. */
   _animState() {
     return `${this.stage.view}:${this.stage.sysIndex}:${this.stage.gameIndex}`;
