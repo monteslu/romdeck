@@ -13,7 +13,9 @@ import { GameSessionManager } from './sessions.js';
 import { StateStore } from './statestore.js';
 import { GamelistStore } from './gamelist.js';
 import { ArtworkStore } from './artwork.js';
-import { shortnameOf } from './systems.js';
+import { Identifier } from './identify.js';
+import { BiosChecker } from './bios.js';
+import { shortnameOf, libretroNameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
 
@@ -30,6 +32,8 @@ let stateStore = null;
 let sessions = null;
 let gamelists = null;
 let artwork = null;
+let identifier = null;
+let biosChecker = null;
 
 // Custom scheme for artwork must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
@@ -54,7 +58,19 @@ function getLibrary() {
     rom.short = short;
     const meta = gamelists.metaFor(rom, short);
     rom.meta = meta;
+    // Cached identification only — network hashing happens via library:identify
+    const sysName = libretroNameOf(rom.system);
+    if (sysName && identifier.hasIndex(sysName)) {
+      const ident = identifier.identify(rom);
+      rom.crc = ident.crc;
+      rom.datName = ident.datName;
+      rom.verified = ident.verified;
+    } else {
+      rom.verified = false;
+    }
+    // name precedence: user gamelist name > CRC-verified DAT name > cleaned filename
     if (meta.displayName) rom.name = meta.displayName;
+    else if (rom.datName) rom.name = rom.datName;
     rom.art = artwork.hasCover(rom)
       ? 'romdeck-media://art/' + short + '/' + encodeURIComponent(path.basename(artwork.coverPath(rom)))
       : null;
@@ -126,6 +142,40 @@ ipcMain.handle('library:scrape', async (_ev, romPath) => {
   const status = await artwork.scrape(rom);
   return { status };
 });
+
+// Identify: download DATs for the systems present, then CRC-match everything.
+ipcMain.handle('library:identify', async () => {
+  const { roms } = getLibrary();
+  const sysNames = [...new Set(roms.map((r) => libretroNameOf(r.system)).filter(Boolean))];
+  const progress = (msg) => {
+    if (win && !win.isDestroyed()) win.webContents.send('library:changed', msg);
+  };
+  let datsFetched = 0;
+  for (const sysName of sysNames) {
+    if (identifier.hasIndex(sysName)) continue;
+    progress({ type: 'identify-progress', phase: 'dat', current: sysName });
+    try {
+      await identifier.fetchIndex(sysName);
+      datsFetched++;
+    } catch (err) {
+      progress({ type: 'identify-progress', phase: 'dat-failed', current: sysName, message: err.message });
+    }
+  }
+  identifier.invalidate();
+  let matched = 0;
+  let done = 0;
+  for (const rom of roms) {
+    const ident = identifier.identify(rom);
+    if (ident.verified) matched++;
+    done++;
+    if (done % 25 === 0 || done === roms.length) {
+      progress({ type: 'identify-progress', phase: 'hash', done, total: roms.length, matched });
+    }
+  }
+  return { total: roms.length, matched, datsFetched };
+});
+
+ipcMain.handle('bios:check', () => biosChecker.check(romsDir()));
 
 ipcMain.handle('library:scrapeAll', async () => {
   const { roms } = getLibrary();
@@ -336,6 +386,8 @@ app.whenReady().then(async () => {
   stateStore = new StateStore(app.getPath('userData'), app.getVersion());
   gamelists = new GamelistStore(app.getPath('userData'));
   artwork = new ArtworkStore(app.getPath('userData'));
+  identifier = new Identifier(app.getPath('userData'));
+  biosChecker = new BiosChecker(app.getPath('userData'));
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)

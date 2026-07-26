@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('romdeck', {
   setFavorite: (romPath, on) => ipcRenderer.invoke('library:setFavorite', romPath, on),
   scrape: (romPath) => ipcRenderer.invoke('library:scrape', romPath),
   scrapeAll: () => ipcRenderer.invoke('library:scrapeAll'),
+  identify: () => ipcRenderer.invoke('library:identify'),
+  biosCheck: () => ipcRenderer.invoke('bios:check'),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;

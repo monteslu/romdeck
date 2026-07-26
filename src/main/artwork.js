@@ -40,6 +40,7 @@ export class ArtworkStore {
 
     const candidates = [];
     const base = path.basename(rom.path).replace(/\.p8\.png$/i, '').replace(/\.[^.]+$/, '');
+    if (rom.datName) candidates.push(rom.datName); // CRC-verified DAT name — exact repo match
     candidates.push(base);
     if (rom.name && rom.name !== base) candidates.push(rom.name);
 

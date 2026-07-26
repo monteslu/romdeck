@@ -15,6 +15,8 @@
       <button id="choosedir">Change…</button>
       <button id="rescan" title="Rescan">⟳</button>
       <button id="scrapeall" title="Fetch box art for all games">🎨 Art</button>
+      <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
+      <button id="bios" title="Check BIOS files">BIOS</button>
     </div>
     <div id="sessioncount" class="hidden">0 playing</div>
   </header>
@@ -47,6 +49,18 @@
   </footer>
 
   <div id="toasts"></div>
+
+  <div id="biosmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>BIOS files</h2>
+        <button id="biosclose">✕</button>
+      </div>
+      <p class="dim">Place firmware files in <code id="biosdirs"></code>. Green = present with a known-good hash.</p>
+      <table id="biostable"></table>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

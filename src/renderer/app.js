@@ -98,6 +98,13 @@ function render() {
       fav.textContent = '★';
       tile.appendChild(fav);
     }
+    if (rom.verified) {
+      const v = document.createElement('div');
+      v.className = 'verified';
+      v.title = `CRC-verified: ${rom.datName}`;
+      v.textContent = '✓';
+      tile.appendChild(v);
+    }
     if (playingPaths.has(rom.path)) {
       const badge = document.createElement('div');
       badge.className = 'playing';
@@ -152,6 +159,7 @@ async function renderDetails() {
   panel.classList.remove('hidden');
   $('dt-name').textContent = rom.name;
   const bits = [rom.system];
+  if (rom.verified) bits.push('✓ verified');
   if (rom.meta?.playcount) bits.push(`played ${rom.meta.playcount}×`);
   if (rom.meta?.lastplayed) {
     const lp = rom.meta.lastplayed;
@@ -409,8 +417,45 @@ $('scrapeall').onclick = async () => {
 romdeck.on('library:changed', (ev) => {
   if (ev.type === 'scrape-progress') {
     $('status').textContent = `art: ${ev.done}/${ev.total} (${ev.ok} found) — ${ev.current}`;
+  } else if (ev.type === 'identify-progress') {
+    if (ev.phase === 'dat') $('status').textContent = `downloading database: ${ev.current}`;
+    else if (ev.phase === 'dat-failed') $('status').textContent = `no database for ${ev.current}`;
+    else if (ev.phase === 'hash') $('status').textContent = `identifying: ${ev.done}/${ev.total} (${ev.matched} matched)`;
   }
 });
+
+$('identify').onclick = async () => {
+  $('identify').disabled = true;
+  $('status').textContent = 'identifying library…';
+  const res = await romdeck.identify();
+  toast('Identification', `${res.matched} of ${res.total} ROMs verified (${res.datsFetched} databases fetched)`);
+  $('identify').disabled = false;
+  await reloadLibrary();
+};
+
+$('bios').onclick = async () => {
+  const rows = await romdeck.biosCheck();
+  $('biosdirs').textContent = `${state.romsDir ?? '<roms>'}/bios`;
+  const table = $('biostable');
+  table.replaceChildren();
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const icon = r.status === 'ok' ? '✅' : r.status === 'bad-hash' ? '⚠️' : '—';
+    const cls = r.status === 'ok' ? 'st-ok' : r.status === 'bad-hash' ? 'st-bad' : 'st-missing';
+    tr.innerHTML = `<td class="${cls}"></td><td></td><td></td><td></td><td></td>`;
+    const cells = tr.querySelectorAll('td');
+    cells[0].textContent = icon;
+    cells[1].textContent = r.file;
+    cells[2].textContent = r.system;
+    cells[3].textContent = r.desc;
+    cells[4].textContent = r.status === 'bad-hash' ? 'hash mismatch' : r.required && r.status === 'missing' ? 'required' : '';
+    if (r.required && r.status !== 'ok') cells[4].classList.add('req');
+    table.appendChild(tr);
+  }
+  $('biosmodal').classList.remove('hidden');
+};
+$('biosclose').onclick = () => $('biosmodal').classList.add('hidden');
+$('biosmodal').onclick = (ev) => { if (ev.target.id === 'biosmodal') $('biosmodal').classList.add('hidden'); };
 
 (async () => {
   await loadLibrary(await romdeck.getLibrary());
