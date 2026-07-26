@@ -11,6 +11,7 @@
 // project were invisible to green assertions and obvious in a screenshot.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { createCanvas } from '@napi-rs/canvas';
 import path from 'node:path';
 import { App } from './app.js';
 import { Services } from './services.js';
@@ -407,6 +408,53 @@ export async function shots({ romsDir, argAfter }) {
   // The two themed views. system -> gamelist is the navigation that the
   // Electron --bigshot exercised.
   const system = capture('system-view');
+
+  // System artwork must keep its COLOUR. ES-DE's <color>/<imageColor>
+  // MULTIPLIES -- white means unchanged -- and compositing it with source-in
+  // instead replaced every pixel, turning art-book-next's system panels into
+  // flat grey silhouettes. Every "not blank" test passed: a silhouette has
+  // pixels. Saturation is what tells them apart.
+  {
+    const sd = readRect(app.render().getContext('2d'),
+      { x: 0, y: STAGE_H * 0.15, w: STAGE_W, h: STAGE_H * 0.7 });
+    let saturated = 0;
+    let sampled = 0;
+    for (let i = 0; sd && i < sd.data.length; i += 4 * 17) {
+      const mx = Math.max(sd.data[i], sd.data[i + 1], sd.data[i + 2]);
+      const mn = Math.min(sd.data[i], sd.data[i + 1], sd.data[i + 2]);
+      sampled++;
+      if (mx > 40 && mx - mn > 30) saturated++;
+    }
+    const pct = sampled ? (saturated / sampled) * 100 : 0;
+    // Only meaningful where the SOURCE art is colour. romdeck-default's own
+    // logos are fill="currentColor" monochrome tinted with a grey token, so
+    // 0.5% saturation there is the theme rendering exactly as designed --
+    // asserting on it would be demanding colour the theme never had. Decide
+    // from the file on disk, not from the render being graded.
+    const carousel = app.stage.elements().find((e) => e.type === 'carousel');
+    const srcUrl = carousel && app.stage.perSystem(
+      carousel.props.staticImage ?? carousel.props.imagePath ?? carousel.props.path,
+      app.stage.currentSystem());
+    const srcImg = srcUrl ? app.stage.img(srcUrl) : null;
+    let srcColour = false;
+    if (srcImg) {
+      const probe = createCanvas(64, 64);
+      const pctx = probe.getContext('2d');
+      pctx.drawImage(srcImg, 0, 0, 64, 64);
+      const pd = pctx.getImageData(0, 0, 64, 64).data;
+      for (let i = 0; i < pd.length; i += 4) {
+        const mx = Math.max(pd[i], pd[i + 1], pd[i + 2]);
+        const mn = Math.min(pd[i], pd[i + 1], pd[i + 2]);
+        if (pd[i + 3] > 40 && mx > 40 && mx - mn > 30) { srcColour = true; break; }
+      }
+    }
+    if (srcColour) {
+      r.check('system artwork keeps its colour', pct > 2,
+        `${pct.toFixed(1)}% of sampled pixels are saturated`);
+    } else {
+      console.log(`SKIP: this theme's system art is monochrome (${pct.toFixed(1)}% saturated)`);
+    }
+  }
   app.dispatch('confirm');
   for (let i = 0; i < 2; i++) app.dispatch('down');
   const gamelist = capture('gamelist-view');

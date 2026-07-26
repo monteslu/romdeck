@@ -562,15 +562,29 @@ export class Stage {
   drawCarousel(ctx, el, b) {
     const p = el.props;
     if (!this.systems.length) return;
-    const count = Math.max(1, Math.min(p.maxItemCount ?? 5, this.systems.length));
-    const half = Math.floor(count / 2);
     const gap = (p.itemSpacing ?? 0.02) * STAGE_W;
-    const itemW = (b.w - gap * (count - 1)) / count;
+    // maxItemCount decides the PITCH -- how many items span the carousel, and
+    // it is fractional on purpose (art-book-next asks for 5.5, so the outer
+    // two are half-clipped at the screen edges). itemSize is the item's own
+    // proportions, NOT its pitch: reading it as the width made one system fill
+    // the whole stage and pushed every neighbour off-screen.
+    const span = p.maxItemCount ?? 5;
+    const itemW = (b.w - gap * (span - 1)) / span;
+    // itemSize is in NORMALIZED STAGE UNITS, like every other size in the
+    // format -- not a ratio relative to the pitch. art-book-next's 1x1 means
+    // "as tall as the stage", and the narrower pitch is what makes the items
+    // overlap into slanted panels. Deriving height from itemW collapsed each
+    // one into a thin strip.
+    const itemH = p.itemSize?.[1] ? p.itemSize[1] * STAGE_H : b.h * 0.74;
     // ES-DE's default itemStacking is CENTERED (CarouselComponent.h): the
     // SELECTED item sits at the middle of the carousel and neighbours flank
     // it, rather than items filling slots left-to-right. Getting this wrong
     // put the theme's own selection box a slot away from the selection.
     const centerX = b.x + b.w / 2;
+    // Draw out to the edges, not just the whole slots: a fractional span
+    // means the outermost items are half off-screen and still visible, and
+    // clamping the loop to the system count dropped them entirely.
+    const half = Math.ceil(span / 2);
 
     for (let off = -half; off <= half; off++) {
       const idx = (this.sysIndex + off + this.systems.length * 2) % this.systems.length;
@@ -579,16 +593,21 @@ export class Stage {
       const sel = off === 0;
       const scale = sel ? (p.itemScale ?? 1) : 1;
       const w = itemW * scale;
-      // Items sit INSIDE the carousel box rather than filling it, matching
-      // .te-caritem's height in the DOM renderer.
-      const h = b.h * 0.74 * scale;
+      const h = itemH * scale;
       const cx = centerX + off * (itemW + gap) - w / 2;
       const cy = b.y + b.h / 2 - h / 2;
 
-      roundRect(ctx, cx, cy, w, h, 14);
-      ctx.fillStyle = hex(sel ? p.selectedColor : p.color, '#1a1f2b');
-      ctx.fill();
-      if (sel && p.selectorColor) {
+      // A plate only when the theme asks for one. "00000000" is transparent,
+      // and art-book-next sets exactly that: painting the default slate behind
+      // full-bleed artwork put a grey card under every system image.
+      const plate = sel ? (p.selectedColor ?? p.color) : p.color;
+      if (plate && plate !== '00000000') {
+        roundRect(ctx, cx, cy, w, h, 14);
+        ctx.fillStyle = hex(plate, '#1a1f2b');
+        ctx.fill();
+      }
+      if (sel && p.selectorColor && p.selectorColor !== '00000000') {
+        roundRect(ctx, cx, cy, w, h, 14);
         ctx.strokeStyle = hex(p.selectorColor);
         ctx.lineWidth = 4;
         ctx.stroke();
@@ -599,7 +618,14 @@ export class Stage {
       if (!img) img = this.img(this.perSystem(p.defaultImage, sys));
       if (img) {
         const tint = sel ? (p.imageSelectedColor ?? p.imageColor) : p.imageColor;
-        drawContain(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
+        // Full-bleed items COVER their box; inset cards are contained with a
+        // margin. Letterboxing a 1x1 item left bars where the theme expects
+        // edge-to-edge artwork.
+        if (p.itemSize?.[0] >= 1 || p.itemSize?.[1] >= 1) {
+          drawCover(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null);
+        } else {
+          drawContain(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
+        }
       } else {
         ctx.fillStyle = hex(p.textColor, '#e8ecf4');
         ctx.font = fontStack(Math.round(h * 0.13));
@@ -823,6 +849,31 @@ function applyCase(text, letterCase) {
  * currentColor, so the browser needed a mask over a fill. On a canvas it is
  * source-in compositing on a scratch buffer — fewer moving parts.
  */
+/**
+ * Scale to COVER the box and clip the overflow.
+ *
+ * The counterpart to drawContain. A carousel item declaring <itemSize>1 1</>
+ * is edge-to-edge artwork, and containing it leaves bars where the theme
+ * expects none.
+ */
+function drawCover(ctx, img, b, tint = null) {
+  const scale = Math.max(b.w / img.width, b.h / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  const x = b.x + (b.w - w) / 2;
+  const y = b.y + (b.h - h) / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(b.x, b.y, b.w, b.h);
+  ctx.clip();
+  if (!tint) {
+    ctx.drawImage(img, x, y, w, h);
+  } else {
+    ctx.drawImage(tintImage(img, w, h, tint), x, y);
+  }
+  ctx.restore();
+}
+
 function drawContain(ctx, img, b, tint = null, pad = 1) {
   // A theme may set only one dimension (<size>0.2314 0</size>) and expect the
   // other to follow from the image's aspect ratio. Treating the zero as real
@@ -837,13 +888,33 @@ function drawContain(ctx, img, b, tint = null, pad = 1) {
   const x = b.x + (b.w - w) / 2;
   const y = b.y + (b.h - h) / 2;
   if (!tint) { ctx.drawImage(img, x, y, w, h); return; }
+  ctx.drawImage(tintImage(img, w, h, tint), x, y);
+}
+
+/**
+ * Apply an ES-DE <color> to an image.
+ *
+ * ES-DE MULTIPLIES: white leaves the image untouched, and a colour shades it.
+ * Compositing with source-in instead replaces every pixel, which turns art
+ * into a flat silhouette -- art-book-next tints its system panels ffffffdd
+ * (white, slightly transparent, i.e. "unchanged") and every one of them came
+ * out grey.
+ *
+ * A fully-opaque, fully-saturated tint on a SHAPE (an icon, a 1x1 rule) still
+ * wants the silhouette behaviour, and multiply gives that for free: a white
+ * glyph multiplied by the tint IS the tint.
+ */
+function tintImage(img, w, h, tint) {
   const buf = createCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
   const bctx = buf.getContext('2d');
   bctx.drawImage(img, 0, 0, w, h);
-  bctx.globalCompositeOperation = 'source-in';
+  bctx.globalCompositeOperation = 'multiply';
   bctx.fillStyle = tint;
   bctx.fillRect(0, 0, w, h);
-  ctx.drawImage(buf, x, y);
+  // multiply also hits the transparent margin, so restore the alpha channel.
+  bctx.globalCompositeOperation = 'destination-in';
+  bctx.drawImage(img, 0, 0, w, h);
+  return buf;
 }
 
 /** Trim to width with an ellipsis, the way text-overflow did in the DOM. */
