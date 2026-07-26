@@ -17,6 +17,9 @@ import { Identifier } from './identify.js';
 import { BiosChecker } from './bios.js';
 import { MappingStore, BUTTONS } from './inputmap.js';
 import { ThemeStore } from './themes.js';
+import { SettingsStore, SETTINGS } from './settings.js';
+import { CheatStore } from './cheats.js';
+import { CoreUpdates } from './coreupdates.js';
 import { shortnameOf, libretroNameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
@@ -25,6 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes('--smoke');
 const AUTOPLAY = process.argv.includes('--autoplay');
 const BIGSHOT = process.argv.includes('--bigshot');
+const UISHOT = process.argv.includes('--uishot');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -39,6 +43,9 @@ let identifier = null;
 let biosChecker = null;
 let mappings = null;
 let themes = null;
+let settings = null;
+let cheats = null;
+const coreUpdates = new CoreUpdates();
 
 // Custom schemes must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
@@ -203,6 +210,99 @@ ipcMain.handle('library:identify', async () => {
 });
 
 ipcMain.handle('bios:check', () => biosChecker.check(romsDir()));
+
+// ── settings / cheats / cores ────────────────────────────────────────
+ipcMain.handle('settings:get', (_ev, ctx = {}) => ({
+  settings: settings.resolveAll(ctx),
+  ctx,
+}));
+
+ipcMain.handle('settings:set', (_ev, key, value, layer) => {
+  try {
+    return { result: settings.set(key, value, layer || 'global') };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('cheats:list', (_ev, romPath) => {
+  const rom = findRom(romPath);
+  if (!rom) return [];
+  return cheats.list(stateStore.gameKey(rom));
+});
+
+ipcMain.handle('cheats:add', (_ev, romPath, entry) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  try {
+    const list = cheats.add(stateStore.gameKey(rom), entry);
+    pushCheatsToSession(rom);
+    return { codes: list };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('cheats:toggle', (_ev, romPath, index, enabled) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  const list = cheats.toggle(stateStore.gameKey(rom), index, enabled);
+  pushCheatsToSession(rom);
+  return { codes: list };
+});
+
+ipcMain.handle('cheats:remove', (_ev, romPath, index) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  const list = cheats.remove(stateStore.gameKey(rom), index);
+  pushCheatsToSession(rom);
+  return { codes: list };
+});
+
+ipcMain.handle('cheats:import', async (_ev, romPath) => {
+  const rom = findRom(romPath);
+  if (!rom) return { error: 'ROM not found' };
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Import RetroArch cheat file',
+    properties: ['openFile'],
+    filters: [{ name: 'RetroArch cheats', extensions: ['cht'] }],
+  });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  try {
+    const out = cheats.importCht(stateStore.gameKey(rom), readFileSync(res.filePaths[0], 'utf8'));
+    pushCheatsToSession(rom);
+    return out;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Live-apply cheats to a running session for this ROM, if any.
+function pushCheatsToSession(rom) {
+  const session = sessions.findByRom(rom.path);
+  if (!session) return;
+  const active = cheats.active(stateStore.gameKey(rom));
+  sessions.rpc(session.id, 'setCheats', { cheats: active }).catch(() => {});
+}
+
+ipcMain.handle('cores:check', () => coreUpdates.check());
+
+// Core options come from the live session (the core declares them)
+ipcMain.handle('cores:options', async (_ev, sessionId) => {
+  try {
+    return { result: await sessions.rpc(sessionId, 'listCoreOptions') };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('cores:setOption', async (_ev, sessionId, key, value) => {
+  try {
+    return { result: await sessions.rpc(sessionId, 'setCoreOption', { key, value }) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
 
 // ── themes / big-screen ──────────────────────────────────────────────
 ipcMain.handle('theme:list', () => themes.list().map(({ dir, ...rest }) => rest));
@@ -398,6 +498,29 @@ ipcMain.handle('states:delete', (_ev, romPath, name) => {
 });
 
 ipcMain.on('ui:ready', () => {
+  if (UISHOT) {
+    // --uishot: screenshot the settings + cheats panels for visual review.
+    (async () => {
+      const shoot = async (label) => {
+        const img = await win.webContents.capturePage();
+        writeFileSync(path.join('/tmp', `romdeck-${label}.png`), img.toPNG());
+        console.log(`UISHOT ${label}`);
+      };
+      await win.webContents.executeJavaScript('window.__romdeckTest.openSettings()');
+      await new Promise((r) => setTimeout(r, 2500)); // let the npm check land
+      await shoot('settings');
+      await win.webContents.executeJavaScript(
+        'document.getElementById("settingsmodal").classList.add("hidden"); window.__romdeckTest.openCheats()',
+      );
+      await new Promise((r) => setTimeout(r, 800));
+      await shoot('cheats');
+      setTimeout(() => app.exit(0), 300);
+    })().catch((err) => {
+      console.error('UISHOT FAIL:', err.message);
+      app.exit(1);
+    });
+    return;
+  }
   if (BIGSHOT) {
     // --bigshot: enter big-screen mode, capture both views, quit. Proves the
     // theme engine renders (and gives a screenshot to eyeball).
@@ -545,6 +668,8 @@ app.whenReady().then(async () => {
   biosChecker = new BiosChecker(app.getPath('userData'));
   mappings = new MappingStore(app.getPath('userData'));
   themes = new ThemeStore(app.getPath('userData'));
+  settings = new SettingsStore(app.getPath('userData'));
+  cheats = new CheatStore(app.getPath('userData'));
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)
@@ -569,7 +694,7 @@ app.whenReady().then(async () => {
   });
   const saveDir = path.join(app.getPath('userData'), 'saves');
   mkdirSync(saveDir, { recursive: true });
-  sessions = new GameSessionManager({ stateStore, saveDir, mappings });
+  sessions = new GameSessionManager({ stateStore, saveDir, mappings, settings, cheats });
   sessions.on('update', (ev) => {
     if (win && !win.isDestroyed()) win.webContents.send('session:update', ev);
   });

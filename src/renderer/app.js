@@ -189,6 +189,7 @@ async function renderDetails() {
     await romdeck.setFavorite(rom.path, !fav);
     await reloadLibrary();
   }, fav ? 'active' : '');
+  btn('🧬 Cheats', () => openCheats(rom));
 
   if (!live) {
     btn('▶ Play', () => launch(rom), 'primary');
@@ -377,6 +378,204 @@ async function toggleBigScreen() {
 
 $('bigscreenbtn').onclick = toggleBigScreen;
 
+// ── settings (with provenance) ───────────────────────────────────────
+// Scope follows the selection: with a game selected you can pin a setting to
+// that game or its platform; otherwise you're editing the global default.
+let settingsScope = 'global';
+
+async function openSettings() {
+  const rom = selectedRom();
+  const ctx = rom ? { platform: rom.short, gameKey: null } : {};
+  const { settings } = await romdeck.settingsGet(ctx);
+
+  $('settings-scope').textContent = rom
+    ? `Editing ${settingsScope === 'global' ? 'defaults for all games' : `${rom.system} games only`} — badges show where each value comes from.`
+    : 'Editing defaults for all games — badges show where each value comes from.';
+
+  const list = $('settingslist');
+  list.replaceChildren();
+
+  if (rom) {
+    const scopeRow = document.createElement('div');
+    scopeRow.className = 'setrow';
+    const info = document.createElement('div');
+    info.className = 'sinfo';
+    info.innerHTML = '<div class="slabel">Apply changes to</div>';
+    const sel = document.createElement('select');
+    for (const [v, label] of [['global', 'All games'], [`platform:${rom.short}`, `${rom.system} only`]]) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.value = settingsScope;
+    sel.onchange = () => { settingsScope = sel.value; openSettings(); };
+    scopeRow.append(info, sel);
+    list.appendChild(scopeRow);
+  }
+
+  for (const s of settings) {
+    const row = document.createElement('div');
+    row.className = 'setrow';
+    const info = document.createElement('div');
+    info.className = 'sinfo';
+    const lab = document.createElement('div');
+    lab.className = 'slabel';
+    lab.textContent = s.label;
+    const help = document.createElement('div');
+    help.className = 'shelp';
+    help.textContent = s.help;
+    info.append(lab, help);
+
+    const prov = document.createElement('span');
+    prov.className = `prov ${s.source}`;
+    prov.textContent = s.source === 'default' ? 'default' : s.source;
+    prov.title = `Value comes from the "${s.layer}" layer`;
+
+    let control;
+    if (s.type === 'bool') {
+      control = document.createElement('input');
+      control.type = 'checkbox';
+      control.checked = !!s.value;
+      control.onchange = async () => {
+        await romdeck.settingsSet(s.key, control.checked, settingsScope);
+        openSettings();
+      };
+    } else {
+      control = document.createElement('select');
+      for (const o of s.options ?? []) {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        control.appendChild(opt);
+      }
+      control.value = String(s.value);
+      control.onchange = async () => {
+        await romdeck.settingsSet(s.key, control.value, settingsScope);
+        openSettings();
+      };
+    }
+
+    row.append(info, prov, control);
+    // clearing a layer lets the value fall back through the cascade
+    if (s.source !== 'default') {
+      const clr = document.createElement('button');
+      clr.textContent = '↺';
+      clr.title = `Clear the ${s.layer} value and inherit again`;
+      clr.onclick = async () => {
+        await romdeck.settingsSet(s.key, null, s.layer);
+        openSettings();
+      };
+      row.appendChild(clr);
+    }
+    list.appendChild(row);
+  }
+
+  // core versions
+  const coreList = $('corelist');
+  coreList.textContent = 'Checking npm for core updates…';
+  romdeck.coresCheck().then((res) => {
+    coreList.replaceChildren();
+    if (!res.cores.length) {
+      coreList.textContent = 'No cores found.';
+      return;
+    }
+    for (const c of res.cores) {
+      const row = document.createElement('div');
+      row.className = 'corerow';
+      const nm = document.createElement('span');
+      nm.textContent = c.name.replace('romdev-core-', '');
+      const ver = document.createElement('span');
+      ver.className = 'cver';
+      ver.textContent = `v${c.version}`;
+      const stat = document.createElement('span');
+      stat.className = `cstat ${c.status}`;
+      stat.textContent = c.status === 'update' ? `→ v${c.latest} available`
+        : c.status === 'current' ? 'up to date'
+        : c.status === 'offline' ? 'offline' : '';
+      row.append(nm, ver, stat);
+      coreList.appendChild(row);
+    }
+    const note = document.createElement('div');
+    note.className = 'shelp';
+    note.textContent = res.updatesAvailable
+      ? `${res.updatesAvailable} core update(s) available — cores version independently of romdeck:`
+      : 'All cores are current. Cores version independently of romdeck.';
+    coreList.appendChild(note);
+    if (res.updatesAvailable) {
+      const cmd = document.createElement('div');
+      cmd.className = 'corecmd';
+      cmd.textContent = res.updateCommand;
+      coreList.appendChild(cmd);
+    }
+  });
+
+  $('settingsmodal').classList.remove('hidden');
+}
+
+$('settingsbtn').onclick = openSettings;
+$('settingsclose').onclick = () => $('settingsmodal').classList.add('hidden');
+$('settingsmodal').onclick = (ev) => { if (ev.target.id === 'settingsmodal') $('settingsmodal').classList.add('hidden'); };
+
+// ── cheats drawer ────────────────────────────────────────────────────
+let cheatRom = null;
+
+async function openCheats(rom) {
+  cheatRom = rom;
+  $('cheat-game').textContent = rom.name;
+  await renderCheats();
+  $('cheatmodal').classList.remove('hidden');
+}
+
+async function renderCheats() {
+  const codes = await romdeck.cheatsList(cheatRom.path);
+  const list = $('cheatlist');
+  list.replaceChildren();
+  if (!codes.length) {
+    const none = document.createElement('div');
+    none.className = 'shelp';
+    none.textContent = 'No cheats yet. Add a code below, or import a RetroArch .cht file.';
+    list.appendChild(none);
+  }
+  codes.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'cheatrow';
+    const on = document.createElement('input');
+    on.type = 'checkbox';
+    on.checked = !!c.enabled;
+    on.onchange = async () => { await romdeck.cheatsToggle(cheatRom.path, i, on.checked); renderCheats(); };
+    const desc = document.createElement('span');
+    desc.className = 'cdesc';
+    desc.textContent = c.desc;
+    const code = document.createElement('span');
+    code.className = 'ccode';
+    code.textContent = c.code;
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.onclick = async () => { await romdeck.cheatsRemove(cheatRom.path, i); renderCheats(); };
+    row.append(on, desc, code, del);
+    list.appendChild(row);
+  });
+}
+
+$('cheat-add-btn').onclick = async () => {
+  const desc = $('cheat-desc').value;
+  const code = $('cheat-code').value;
+  const res = await romdeck.cheatsAdd(cheatRom.path, { desc, code });
+  if (res.error) { toast('Cheat', res.error, true); return; }
+  $('cheat-desc').value = '';
+  $('cheat-code').value = '';
+  renderCheats();
+};
+$('cheat-import-btn').onclick = async () => {
+  const res = await romdeck.cheatsImport(cheatRom.path);
+  if (res.error) toast('Import failed', res.error, true);
+  else if (!res.canceled) toast('Cheats imported', `${res.added} codes`);
+  renderCheats();
+};
+$('cheatclose').onclick = () => $('cheatmodal').classList.add('hidden');
+$('cheatmodal').onclick = (ev) => { if (ev.target.id === 'cheatmodal') $('cheatmodal').classList.add('hidden'); };
+
 // ── theme picker ─────────────────────────────────────────────────────
 async function openThemes() {
   const [list, prefs] = await Promise.all([romdeck.themeList(), romdeck.themePrefs()]);
@@ -438,6 +637,8 @@ $('thememodal').onclick = (ev) => { if (ev.target.id === 'thememodal') $('themem
 window.__romdeckTest = {
   enterBigScreen: () => toggleBigScreen(),
   nav: (action) => nav(action),
+  openSettings: () => openSettings(),
+  openCheats: () => openCheats(selectedRom()),
   state: () => ({
     active: bigScreenActive(),
     elements: document.getElementById('bs-stage').children.length,

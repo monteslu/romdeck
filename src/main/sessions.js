@@ -34,13 +34,15 @@ function resolveNode() {
 }
 
 export class GameSessionManager extends EventEmitter {
-  constructor({ stateStore, saveDir, mappings } = {}) {
+  constructor({ stateStore, saveDir, mappings, settings, cheats } = {}) {
     super();
     this.sessions = new Map();
     this.nextId = 1;
     this.stateStore = stateStore ?? null;
     this.saveDir = saveDir ?? null; // shared SRAM/battery-save dir
     this.mappings = mappings ?? null; // MappingStore
+    this.settings = settings ?? null; // SettingsStore (cascade)
+    this.cheats = cheats ?? null; // CheatStore
   }
 
   /** Push the current controller config to every live session. */
@@ -73,18 +75,31 @@ export class GameSessionManager extends EventEmitter {
     return null;
   }
 
-  launch(rom, { fullscreen = false, resume = true, stateName = null } = {}) {
+  launch(rom, opts = {}) {
     const id = this.nextId++;
     const cli = resolveRetroemuCli();
     const { cmd, env } = resolveNode();
+    const gameKey = this.stateStore?.gameKey(rom) ?? null;
+    const ctx = { platform: rom.short ?? null, gameKey };
+
+    // Settings cascade supplies the defaults; explicit call options win.
+    const cfg = this.settings ? this.settings.launchOptions(ctx) : {};
+    const fullscreen = opts.fullscreen ?? cfg.fullscreen ?? false;
+    const resume = opts.resume ?? cfg.resume ?? true;
+    const stateName = opts.stateName ?? null;
+
     const args = [cli, rom.path, '--video', 'sdl', '--control'];
     if (fullscreen) args.push('--fullscreen');
+    if (cfg.videoFilter && cfg.videoFilter !== 'none') {
+      args.push('--video-filter', cfg.videoFilter);
+    }
+    if (this.cheats && gameKey) {
+      const active = this.cheats.active(gameKey);
+      if (active.length) args.push('--cheats', JSON.stringify(active));
+    }
     if (this.saveDir) args.push('--save-dir', this.saveDir);
     if (this.mappings) {
-      const map = this.mappings.playerConfig({
-        platform: rom.short ?? null,
-        gameKey: this.stateStore?.gameKey(rom) ?? null,
-      });
+      const map = this.mappings.playerConfig(ctx);
       if (Object.keys(map.devices).length || map.portOrder.length) {
         args.push('--input-map', JSON.stringify(map));
       }

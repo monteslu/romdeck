@@ -18,6 +18,7 @@
       <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
       <button id="bios" title="Check BIOS files">BIOS</button>
       <button id="pads" title="Controllers">🎮</button>
+      <button id="settingsbtn" title="Settings">⚙</button>
       <button id="themebtn" title="Theme">🎨𝗧</button>
       <button id="bigscreenbtn" title="Big-screen mode (F11)">📺</button>
     </div>
@@ -74,6 +75,39 @@
       <div id="padnone" class="dim hidden">
         No controllers detected. Plug one in — it appears here immediately.
         Keyboard always works: arrows + Z/X/A/S, Enter, Right-Shift.
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Settings</h2>
+        <button id="settingsclose">✕</button>
+      </div>
+      <p class="dim" id="settings-scope"></p>
+      <div id="settingslist"></div>
+      <h3 class="sec">Emulator cores</h3>
+      <div id="corelist" class="dim">Checking…</div>
+    </div>
+  </div>
+
+  <div id="cheatmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Cheats — <span id="cheat-game"></span></h2>
+        <button id="cheatclose">✕</button>
+      </div>
+      <p class="dim">
+        Game Genie, GameShark/PAR, or raw <code>address:value</code> codes — the
+        emulator core decodes them, so any format it supports works.
+      </p>
+      <div id="cheatlist"></div>
+      <div class="cheat-add">
+        <input id="cheat-desc" type="text" placeholder="Description (e.g. Infinite lives)" />
+        <input id="cheat-code" type="text" placeholder="Code" spellcheck="false" />
+        <button id="cheat-add-btn">Add</button>
+        <button id="cheat-import-btn">Import .cht</button>
       </div>
     </div>
   </div>

@@ -438,6 +438,101 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
+#settingsmodal, #cheatmodal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.modal h3.sec {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.setrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.setrow .sinfo { flex: 1; min-width: 0; }
+.setrow .slabel { font-weight: 600; }
+.setrow .shelp { color: var(--dim); font-size: 12px; }
+.setrow select, .setrow input[type=checkbox] { font: inherit; }
+.setrow select {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+/* provenance: the answer to RetroArch's config-scope trap */
+.prov {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.prov.global { color: var(--accent); border-color: var(--accent); }
+.prov.platform { color: var(--accent2); border-color: var(--accent2); }
+.prov.game { color: var(--danger); border-color: var(--danger); }
+
+.corerow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--text);
+}
+.corerow .cver { color: var(--dim); }
+.corerow .cstat.update { color: var(--accent2); font-weight: 700; }
+.corerow .cstat.current { color: var(--accent); }
+.corecmd {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  margin-top: 8px;
+  word-break: break-all;
+  color: var(--dim);
+}
+
+.cheatrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cheatrow .cdesc { flex: 1; }
+.cheatrow .ccode {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--dim);
+}
+.cheat-add { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.cheat-add input {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  padding: 6px 10px;
+  flex: 1;
+  min-width: 120px;
+}
+
 #thememodal {
   position: fixed;
   inset: 0;

@@ -36,6 +36,16 @@ contextBridge.exposeInMainWorld('romdeck', {
   themeSetPrefs: (p) => ipcRenderer.invoke('theme:setPrefs', p),
   themeLoad: (name, opts) => ipcRenderer.invoke('theme:load', name, opts),
   setFullscreen: (on) => ipcRenderer.invoke('window:fullscreen', on),
+  settingsGet: (ctx) => ipcRenderer.invoke('settings:get', ctx),
+  settingsSet: (key, value, layer) => ipcRenderer.invoke('settings:set', key, value, layer),
+  cheatsList: (romPath) => ipcRenderer.invoke('cheats:list', romPath),
+  cheatsAdd: (romPath, entry) => ipcRenderer.invoke('cheats:add', romPath, entry),
+  cheatsToggle: (romPath, i, on) => ipcRenderer.invoke('cheats:toggle', romPath, i, on),
+  cheatsRemove: (romPath, i) => ipcRenderer.invoke('cheats:remove', romPath, i),
+  cheatsImport: (romPath) => ipcRenderer.invoke('cheats:import', romPath),
+  coresCheck: () => ipcRenderer.invoke('cores:check'),
+  coreOptions: (sessionId) => ipcRenderer.invoke('cores:options', sessionId),
+  coreSetOption: (sessionId, key, value) => ipcRenderer.invoke('cores:setOption', sessionId, key, value),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;
