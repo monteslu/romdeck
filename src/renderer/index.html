@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: romdeck-media:" />
+  <!-- Theme assets are served by the path-jailed romdeck-theme: scheme, so it
+       must be allowed alongside romdeck-media: — real ES-DE themes are
+       image-driven (system logos, backgrounds) and are blocked without it.
+       font-src carries theme-side <fontPath> files. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: romdeck-media: romdeck-theme:; font-src 'self' romdeck-theme:; media-src 'self' romdeck-media: romdeck-theme:" />
   <title>romdeck</title>
   <link rel="stylesheet" href="style.css" />
 </head>

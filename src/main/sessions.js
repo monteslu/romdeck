@@ -97,6 +97,12 @@ export class GameSessionManager extends EventEmitter {
       const active = this.cheats.active(gameKey);
       if (active.length) args.push('--cheats', JSON.stringify(active));
     }
+    // The cascade resolves these too; passing them is what makes the Settings
+    // UI's fast-forward and rewind controls actually mean something.
+    if (Number.isFinite(cfg.fastForwardSpeed)) {
+      args.push('--ff-speed', String(cfg.fastForwardSpeed));
+    }
+    if (cfg.rewindEnabled === false) args.push('--no-rewind');
     if (this.saveDir) args.push('--save-dir', this.saveDir);
     if (this.mappings) {
       const map = this.mappings.playerConfig(ctx);

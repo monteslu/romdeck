@@ -278,17 +278,22 @@ async function renderDetails() {
       const r = await romdeck.screenshot(live.id);
       r.error ? toast('Screenshot failed', r.error, true) : toast('Screenshot', r.result.file);
     });
+    // Fast-forward uses the speed the settings cascade resolved, not a
+    // hardcoded multiplier — the player reports it back on getStatus.
     const ff = live.speed !== 1;
-    btn(ff ? '⏩ 4x' : '⏩', async () => {
-      const r = await romdeck.cmd(live.id, 'setSpeed', { x: ff ? 1 : 4 });
+    const ffTarget = live.ffSpeed ?? 4;
+    btn(ff ? `⏩ ${live.speed}x` : '⏩', async () => {
+      const r = await romdeck.cmd(live.id, 'setSpeed', { x: ff ? 1 : ffTarget });
       if (r.error) toast('Session', r.error, true);
       else state.playing.get(live.id).speed = r.result.speed;
       renderDetails();
     }, ff ? 'active' : '');
-    btn('⏪', async () => {
-      const r = await romdeck.cmd(live.id, 'rewind', { steps: 2 });
-      if (r.error) toast('Rewind', r.error, true);
-    });
+    if (live.rewindEnabled !== false) {
+      btn('⏪', async () => {
+        const r = await romdeck.cmd(live.id, 'rewind', { steps: 2 });
+        if (r.error) toast('Rewind', r.error, true);
+      });
+    }
     btn('⛶', async () => {
       const st = await romdeck.cmd(live.id, 'getStatus');
       const on = !(st.result?.fullscreen ?? false);
@@ -728,11 +733,27 @@ let settingsScope = 'global';
 
 async function openSettings() {
   const rom = selectedRom();
-  const ctx = rom ? { platform: rom.short, gameKey: null } : {};
-  const { settings } = await romdeck.settingsGet(ctx);
+  // Pass the ROM path so main can resolve the gameKey — without it the
+  // per-game layer exists in the store but nothing can ever write to it.
+  const ctx = rom ? { romPath: rom.path } : {};
+  const { settings, ctx: resolvedCtx } = await romdeck.settingsGet(ctx);
+  const gameScope = resolvedCtx?.gameKey ? `game:${resolvedCtx.gameKey}` : null;
+  // A stale per-game scope from a previous selection must not leak onto a
+  // different game (or onto the global layer when nothing is selected).
+  if (settingsScope.startsWith('game:') && settingsScope !== gameScope) {
+    settingsScope = 'global';
+  }
+  if (settingsScope.startsWith('platform:') && (!rom || settingsScope !== `platform:${rom.short}`)) {
+    settingsScope = 'global';
+  }
 
+  const scopeLabel = settingsScope === 'global'
+    ? 'defaults for all games'
+    : settingsScope.startsWith('game:')
+      ? `${rom?.name ?? 'this game'} only`
+      : `${rom?.system ?? 'this system'} games only`;
   $('settings-scope').textContent = rom
-    ? `Editing ${settingsScope === 'global' ? 'defaults for all games' : `${rom.system} games only`} — badges show where each value comes from.`
+    ? `Editing ${scopeLabel} — badges show where each value comes from.`
     : 'Editing defaults for all games — badges show where each value comes from.';
 
   const list = $('settingslist');
@@ -745,7 +766,9 @@ async function openSettings() {
     info.className = 'sinfo';
     info.innerHTML = '<div class="slabel">Apply changes to</div>';
     const sel = document.createElement('select');
-    for (const [v, label] of [['global', 'All games'], [`platform:${rom.short}`, `${rom.system} only`]]) {
+    const scopes = [['global', 'All games'], [`platform:${rom.short}`, `${rom.system} only`]];
+    if (gameScope) scopes.push([gameScope, `${rom.name} only`]);
+    for (const [v, label] of scopes) {
       const o = document.createElement('option');
       o.value = v;
       o.textContent = label;
@@ -1026,6 +1049,15 @@ romdeck.on('session:update', (ev) => {
     toast('Now playing', ev.name);
   } else if (ev.type === 'ready') {
     $('status').textContent = `${ev.name} running (${ev.core})`;
+    // Pull the player's resolved fast-forward speed / rewind availability so
+    // the session controls reflect the settings cascade rather than guessing.
+    romdeck.cmd(ev.id, 'getStatus').then((r) => {
+      const s = state.playing.get(ev.id);
+      if (!s || r.error || !r.result) return;
+      s.ffSpeed = r.result.ffSpeed ?? 4;
+      s.rewindEnabled = r.result.rewindEnabled !== false;
+      renderDetails();
+    });
     return; // no re-render needed yet; resume event may follow
   } else if (ev.type === 'resumed') {
     toast('Resumed', `${ev.name} — from ${new Date(ev.savedAt).toLocaleString()}`);

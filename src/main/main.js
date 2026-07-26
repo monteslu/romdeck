@@ -219,10 +219,20 @@ ipcMain.handle('library:identify', async () => {
 ipcMain.handle('bios:check', () => biosChecker.check(romsDir()));
 
 // ── settings / cheats / cores ────────────────────────────────────────
-ipcMain.handle('settings:get', (_ev, ctx = {}) => ({
-  settings: settings.resolveAll(ctx),
-  ctx,
-}));
+// The renderer knows a ROM path, not a gameKey — resolving it here is what
+// makes the per-game settings layer reachable from the UI.
+ipcMain.handle('settings:get', (_ev, ctx = {}) => {
+  const resolved = { ...ctx };
+  if (ctx.romPath) {
+    const rom = findRom(ctx.romPath);
+    if (rom) {
+      resolved.platform = rom.short;
+      resolved.gameKey = stateStore.gameKey(rom);
+    }
+    delete resolved.romPath;
+  }
+  return { settings: settings.resolveAll(resolved), ctx: resolved };
+});
 
 ipcMain.handle('settings:set', (_ev, key, value, layer) => {
   try {
