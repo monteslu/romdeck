@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the signed macOS build.
+
+  romdeck spawns a separate player process per game, and that player loads
+  WASM cores and native SDL/GL modules. The hardened runtime blocks all of
+  that by default, so each exception below exists for a specific reason
+  rather than being copied from a template.
+-->
+<plist version="1.0">
+<dict>
+    <!-- WASM cores are JIT-compiled by V8 in the player process. Without
+         this every core fails to instantiate under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- The player process is spawned as a child and loads native modules
+         (@kmamal/sdl, native-gles, gamepad-node) that ship their own
+         signatures; without this the library validation kills them. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Remote play is P2P over WebRTC; scraping and core updates are HTTPS. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- ROMs, saves and BIOS files live wherever the user keeps them. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

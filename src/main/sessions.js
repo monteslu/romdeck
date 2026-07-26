@@ -16,7 +16,14 @@ const RPC_TIMEOUT_MS = 15000;
 
 function resolveRetroemuCli() {
   const pkg = require.resolve('retroemu/package.json');
-  return path.join(path.dirname(pkg), 'bin', 'cli.js');
+  const cli = path.join(path.dirname(pkg), 'bin', 'cli.js');
+  // In a packaged build the app lives in app.asar, and a PLAIN NODE process
+  // cannot execute from inside an archive — only Electron's patched fs can
+  // read it. retroemu is listed in asarUnpack for exactly this reason, so
+  // redirect to the unpacked copy that actually exists on disk.
+  return cli.includes(`app.asar${path.sep}`)
+    ? cli.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
+    : cli;
 }
 
 // Prefer the system `node` from PATH (what npx users have by definition);

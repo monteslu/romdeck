@@ -9,7 +9,14 @@
   },
   "scripts": {
     "start": "electron .",
-    "smoke": "electron . --smoke"
+    "smoke": "electron . --smoke",
+    "logos": "node scripts/make-shelf-logos.mjs",
+    "themes": "node scripts/theme-conformance.mjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "keywords": [
     "emulator",
@@ -24,15 +31,87 @@
     "romdev",
     "retroemu"
   ],
-  "author": "monteslu",
+  "author": {
+    "name": "monteslu",
+    "email": "monteslu@gmail.com"
+  },
   "license": "GPL-3.0",
+  "homepage": "https://github.com/monteslu/romdeck",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monteslu/romdeck.git"
+  },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "electron": "^37.10.3",
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
     "retroemu": "file:../retroemu"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "dev.romdeck.app",
+    "productName": "romdeck",
+    "copyright": "Copyright © 2026 monteslu. GPL-3.0.",
+    "files": [
+      "src/**/*",
+      "bin/**/*",
+      "themes/**/*",
+      "feed/**/*",
+      "docs/**/*",
+      "README.md",
+      "!**/*.map",
+      "!**/node_modules/wasmcart/ports/**",
+      "!**/node_modules/retroemu/build/**",
+      "!**/node_modules/retroemu/saves/**",
+      "!**/node_modules/retroemu/test/**",
+      "!**/node_modules/*/{test,tests,__tests__,example,examples,docs,doc}/**",
+      "!**/node_modules/*/{.github,.vscode}/**",
+      "!**/node_modules/**/*.{markdown,map,ts,flow}",
+      "!**/*.{o,a,obj,pdb,lib,exp}"
+    ],
+    "extraMetadata": {
+      "main": "src/main/main.js"
+    },
+    "asar": true,
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/gamepad-node/**",
+      "**/node_modules/@napi-rs/**",
+      "node_modules/**"
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Game",
+      "synopsis": "Retro game library with crash-isolated players",
+      "desktop": {
+        "entry": {
+          "Name": "romdeck",
+          "Categories": "Game;Emulator;"
+        }
+      }
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.games",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "win": {
+      "target": ["nsis", "zip"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

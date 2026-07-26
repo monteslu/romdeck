@@ -6,8 +6,11 @@ themes and a 10-foot mode — with **every game running in its own
 crash-isolated window**.
 
 ```bash
-npx romdeck              # or: npx romdeck ~/ROMs
+git clone https://github.com/monteslu/romdeck && cd romdeck
+npm install && npm start -- ~/ROMs
 ```
+
+Or build an installer: `npm run dist:linux` / `dist:mac` / `dist:win`.
 
 Part of the [romdev](https://github.com/monteslu/romdev) family:
 **romdev** (build ROMs) · **retroemu** (play ROMs) · **retroterm** (terminal
@@ -115,16 +118,20 @@ cross-platform, on cores that update independently of the app.
 
 ## Install & run
 
-```bash
-npx romdeck                       # first run asks for your ROMs folder
-npx romdeck ~/ROMs                # or point it directly
-```
-
 From a checkout:
 
 ```bash
 npm install
 npm start -- ~/ROMs
+```
+
+Build installers for yourself:
+
+```bash
+npm run dist:linux     # AppImage + .deb
+npm run dist:mac       # dmg + zip   (signing needs an Apple Developer ID)
+npm run dist:win       # NSIS + zip
+npm run pack           # unpacked directory, for testing
 ```
 
 Requires Node ≥ 22. Cores, toolchains and the emulator all arrive as npm
@@ -178,6 +185,7 @@ rather than trapping the ring.
 | [docs/Themes.md](docs/Themes.md) | Theme format, supported subset, desktop tokens |
 | [docs/RemotePlay.md](docs/RemotePlay.md) | Wire protocol, share codes, bandwidth |
 | [docs/DeveloperMode.md](docs/DeveloperMode.md) | Memory viewer and how to hunt a variable |
+| [docs/Packaging.md](docs/Packaging.md) | Building installers, and the four traps that bite |
 
 Project planning, research, milestone history and the maintainer handoff live
 outside this repo in `internal-romdeck/` (not shipped with the app).
