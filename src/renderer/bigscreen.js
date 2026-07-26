@@ -293,6 +293,11 @@ export function bigScreenActive() {
   return bs.active;
 }
 
+/** The game the themed view has selected — what the per-game menu acts on. */
+export function bigScreenSelectedGame() {
+  return currentGame();
+}
+
 export function bigScreenRefresh(roms) {
   if (!bs.active) return;
   const grouped = new Map();

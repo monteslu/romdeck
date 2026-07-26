@@ -4,9 +4,11 @@
 
 import {
   enterBigScreen, exitBigScreen, bigScreenNav, bigScreenActive, bigScreenRefresh,
+  bigScreenSelectedGame,
 } from './bigscreen.js';
 import { focus } from './focus.js';
 import { openKeyboard, close as closeKeyboard, isOpen as keyboardOpen } from './osk.js';
+import { openMenu, closeMenu, closeAllMenus, menuOpen } from './menu.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -504,6 +506,16 @@ function nav(action) {
     return;
   }
 
+  // Start opens the main menu from ANYWHERE — the ES model, and the reason no
+  // feature needs a toolbar button to be reachable.
+  if (action === 'menu') { openMainMenu(); return; }
+  // The per-game menu (pad's X / Y) acts on whatever is selected.
+  if (action === 'options') {
+    const rom = bigScreenActive() ? bigScreenSelectedGame() : selectedRom();
+    openGameMenu(rom);
+    return;
+  }
+
   // System switching is a shoulder-button shortcut on every surface.
   if (action === 'prevSystem' || action === 'nextSystem') {
     const names = systems().map(([n]) => n);
@@ -537,9 +549,144 @@ document.addEventListener('keydown', (ev) => {
   const map = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     Enter: 'confirm', Backspace: 'back', '[': 'prevSystem', ']': 'nextSystem',
+    // Keyboard equivalents of the Start / options pad chords.
+    Tab: 'menu', ' ': 'options',
   };
   if (map[ev.key]) { ev.preventDefault(); nav(map[ev.key]); }
 });
+
+// ── menus (M7 Phase 2) ───────────────────────────────────────────────
+// The ES model: one button opens everything. Each entry reuses the feature's
+// existing implementation — only how you reach it changes.
+
+function openMainMenu() {
+  if (menuOpen()) { closeAllMenus(); return; }
+  openMenu({
+    title: 'romdeck',
+    subtitle: `${state.roms.length} games · ${state.playing.size} playing`,
+    items: [
+      { label: 'Settings', hint: 'picture, resume, rewind', action: () => { closeAllMenus(); openSettings(); } },
+      { label: 'Controllers', hint: 'remap, ports, deadzone', action: () => { closeAllMenus(); openPads(); } },
+      { label: 'Themes', action: () => { closeAllMenus(); openThemes(); } },
+      { label: 'BIOS files', action: () => { closeAllMenus(); $('bios').click(); } },
+      { label: 'Get box art', hint: 'scrape the whole library', action: () => { closeAllMenus(); $('scrapeall').click(); } },
+      { label: 'Identify ROMs', hint: 'CRC match against No-Intro', action: () => { closeAllMenus(); $('identify').click(); } },
+      { label: 'Homebrew', action: () => { closeAllMenus(); openFeed(); } },
+      { label: 'Join a game', hint: 'remote play', action: () => { closeAllMenus(); openJoin(); } },
+      { label: 'Developer mode', hint: 'live memory viewer', action: () => { closeAllMenus(); openDev(); } },
+      { label: 'Choose ROMs folder', action: () => { closeAllMenus(); $('choosedir').click(); } },
+      {
+        label: isFullscreen ? 'Leave fullscreen' : 'Fullscreen',
+        action: () => { closeAllMenus(); toggleFullscreen(); },
+      },
+      {
+        label: bigScreenActive() ? 'Desktop view' : 'Themed view',
+        action: () => { closeAllMenus(); toggleThemedView(); },
+      },
+      { label: 'Quit romdeck', action: () => { closeAllMenus(); romdeck.quit(); } },
+    ],
+  });
+}
+
+/** Per-game menu — the pad's route to everything the details panel offers. */
+function openGameMenu(rom) {
+  if (!rom) return;
+  const live = sessionFor(rom);
+  const fav = rom.meta?.favorite;
+  const items = [];
+
+  if (live) {
+    items.push({
+      label: live.paused ? 'Resume' : 'Pause',
+      action: async () => {
+        closeAllMenus();
+        await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
+        state.playing.get(live.id).paused = !live.paused;
+        renderDetails();
+      },
+    });
+    items.push({
+      label: 'Save state',
+      action: async () => {
+        closeAllMenus();
+        const name = `save-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
+        const r = await romdeck.saveState(live.id, name);
+        r.error ? toast('Save failed', r.error, true) : toast('State saved', name);
+        renderDetails();
+      },
+    });
+    items.push({
+      label: 'Screenshot',
+      action: async () => {
+        closeAllMenus();
+        const r = await romdeck.screenshot(live.id);
+        r.error ? toast('Screenshot failed', r.error, true) : toast('Screenshot', r.result.file);
+      },
+    });
+    items.push({
+      label: 'Invite to play',
+      hint: 'remote play',
+      action: async () => {
+        closeAllMenus();
+        const r = await romdeck.remoteHost(live.id);
+        if (r.error) { toast('Remote play', r.error, true); return; }
+        toast('Share this code', `${r.result.code}\n\nThey run:  npx retroemu --join ${r.result.code}`);
+      },
+    });
+    items.push({ label: 'Stop', action: () => { closeAllMenus(); romdeck.stopSession(live.id); } });
+  } else {
+    items.push({ label: 'Play', action: () => { closeAllMenus(); launch(rom); } });
+    items.push({ label: 'Play from start', action: () => { closeAllMenus(); launch(rom, { resume: false }); } });
+  }
+
+  items.push({ label: 'Save states…', action: () => { closeMenu(); openStatesMenu(rom); } });
+  items.push({ label: 'Cheats', action: () => { closeAllMenus(); openCheats(rom); } });
+  items.push({
+    label: fav ? 'Remove from favorites' : 'Add to favorites',
+    action: async () => {
+      closeAllMenus();
+      await romdeck.setFavorite(rom.path, !fav);
+      await reloadLibrary();
+    },
+  });
+  if (!rom.art) {
+    items.push({
+      label: 'Get box art',
+      action: async () => {
+        closeAllMenus();
+        const r = await romdeck.scrape(rom.path);
+        if (r.status === 'ok') { toast('Box art found', rom.name); await reloadLibrary(); }
+        else toast('No art match', 'Name not found in libretro-thumbnails');
+      },
+    });
+  }
+  items.push({ label: 'Game settings', hint: 'just this game', action: () => { closeAllMenus(); openSettings(); } });
+
+  const bits = [rom.system];
+  if (rom.verified) bits.push('✓ verified');
+  if (rom.meta?.playcount) bits.push(`played ${rom.meta.playcount}×`);
+  openMenu({ title: rom.name, subtitle: bits.join(' · '), items });
+}
+
+/** Save states with their thumbnails, pad-navigable. */
+async function openStatesMenu(rom) {
+  const list = await romdeck.statesList(rom.path);
+  const live = sessionFor(rom);
+  const items = list.length ? list.map((st) => ({
+    label: st.name === 'auto' ? 'Resume point' : st.name,
+    hint: st.savedAt ? new Date(st.savedAt).toLocaleString() : '',
+    action: async () => {
+      closeAllMenus();
+      if (live) {
+        const r = await romdeck.loadState(live.id, st.name);
+        r.error ? toast('Load failed', r.error, true) : toast('State loaded', st.name);
+      } else {
+        launch(rom, { resume: false, stateName: st.name });
+      }
+    },
+  })) : [{ label: 'No save states yet', disabled: true }];
+  openMenu({ title: 'Save states', subtitle: rom.name, items });
+}
 
 // ── the themed view + fullscreen ─────────────────────────────────────
 // The themed view is a VIEW, not a display mode (PLAN §16e Phase 3). The

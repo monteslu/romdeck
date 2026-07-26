@@ -102,7 +102,12 @@ export class PadNav {
       if (b[1]?.pressed) held.add('back');    // east
       if (b[4]?.pressed) held.add('prevSystem'); // LB
       if (b[5]?.pressed) held.add('nextSystem'); // RB
-      if (b[9]?.pressed) held.add('confirm'); // start
+      // Start opens the main menu (the ES model) and Select/West opens the
+      // per-game options menu — the two chords that make every feature
+      // reachable without a pointer.
+      if (b[9]?.pressed) held.add('menu');    // start
+      if (b[8]?.pressed) held.add('options'); // select/back
+      if (b[2]?.pressed) held.add('options'); // west (X)
 
       const prev = this.prev.get(pad.index) ?? new Set();
       for (const action of held) {

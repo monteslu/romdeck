@@ -434,8 +434,23 @@ ipcMain.handle('theme:load', (_ev, name, opts = {}) => {
 
 ipcMain.handle('window:fullscreen', (_ev, on) => {
   if (win && !win.isDestroyed()) win.setFullScreen(!!on);
+  prefs.set('fullscreen', !!on); // remembered across restarts (§16e Phase 3)
   return { fullscreen: !!on };
 });
+
+// Quitting has to be reachable from the menu — on a TV there is no window
+// chrome to close and no keyboard to Cmd-Q with.
+ipcMain.handle('app:quit', () => {
+  app.quit();
+  return { quitting: true };
+});
+
+ipcMain.handle('prefs:set', (_ev, key, value) => {
+  prefs.set(key, value);
+  return { ok: true };
+});
+
+ipcMain.handle('prefs:get', (_ev, key) => prefs.get(key) ?? null);
 
 // ── controllers ──────────────────────────────────────────────────────
 ipcMain.handle('pads:list', () => ({
@@ -799,6 +814,52 @@ async function runPadOnlyCheck() {
       check(`${label} closes with back`, closed.group === 'desktop', `→ ${closed.group}`);
     }
 
+    // The ES model: Start opens the main menu from anywhere, and every
+    // feature is reachable through it without touching a toolbar button.
+    await pad('menu');
+    await new Promise((r) => setTimeout(r, 500));
+    const mainMenu = await st();
+    check('Start opens the main menu', mainMenu.group === 'menu0' && mainMenu.count > 0,
+      `${mainMenu.count} entries`);
+    writeFileSync('/tmp/romdeck-menu.png', (await win.webContents.capturePage()).toPNG());
+    const menuLabels = await js(`[...document.querySelectorAll('.menu-item .mi-label')].map(n => n.textContent)`);
+    for (const needed of ['Settings', 'Controllers', 'Themes', 'Developer mode', 'Quit romdeck']) {
+      check(`main menu offers "${needed}"`, menuLabels.includes(needed));
+    }
+    await pad('back');
+    await new Promise((r) => setTimeout(r, 400));
+    check('main menu closes with back', (await st()).group === 'desktop');
+
+    // The per-game menu is how a pad reaches save states, cheats and
+    // favorites — all of which were details-panel-only before M7.
+    await pad('options');
+    await new Promise((r) => setTimeout(r, 500));
+    const gameMenu = await st();
+    check('options opens the per-game menu', gameMenu.group === 'menu0' && gameMenu.count > 0,
+      `${gameMenu.count} entries`);
+    const gameLabels = await js(`[...document.querySelectorAll('.menu-item .mi-label')].map(n => n.textContent)`);
+    for (const needed of ['Cheats', 'Save states…']) {
+      check(`game menu offers "${needed}"`, gameLabels.includes(needed));
+    }
+    // Nested menus must push and pop cleanly.
+    const statesIdx = gameLabels.indexOf('Save states…');
+    if (statesIdx >= 0) {
+      await js(`(() => { const g = window.__romdeckFocus.groups.get('menu0');
+        const live = g.live();
+        const i = live.findIndex(f => f.el.textContent.includes('Save states'));
+        if (i >= 0) { g.index = i; window.__romdeckFocus.paint(); } })()`);
+      await pad('confirm');
+      await new Promise((r) => setTimeout(r, 600));
+      const sub = await st();
+      const subTitle = await js(`document.querySelector('.menu-panel:last-child .menu-title')?.textContent ?? null`);
+      check('nested menu opens the save-state list', subTitle === 'Save states',
+        `title=${JSON.stringify(subTitle)} group=${sub.group} count=${sub.count}`);
+      await pad('back');
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    await pad('back');
+    await new Promise((r) => setTimeout(r, 400));
+
     // Text entry without a keyboard: the on-screen keyboard must open on the
     // search field and actually change the query.
     await js(`(() => { const g = window.__romdeckFocus.groups.get('desktop');
@@ -839,8 +900,10 @@ async function runPadOnlyCheck() {
     })()`);
     const total = Object.values(reach).reduce((a, b) => a + b, 0);
     const surfaceCount = Object.keys(reach).length;
-    check('every surface has a populated ring',
-      Object.entries(reach).every(([, n]) => n > 0),
+    // Menus are built on open and torn down on close, so only the persistent
+    // surfaces are asserted here; the menu checks above cover the rest.
+    check('every persistent surface has a populated ring',
+      Object.entries(reach).every(([name, n]) => n > 0 || name.startsWith('menu')),
       JSON.stringify(reach));
     check('pad reaches the whole app', total >= 80 && surfaceCount >= 8,
       `${total} controls across ${surfaceCount} surfaces`);
