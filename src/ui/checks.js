@@ -430,6 +430,46 @@ export async function shots({ romsDir, argAfter }) {
       `${lseen.size} colours in the list box`);
   }
 
+  // Every element the theme declares must actually put pixels somewhere, or
+  // be legitimately empty (no media, no metadata for this game). Comparing
+  // against art-book-next's own README screenshots is what surfaced these:
+  // the rating rail drew text stars instead of the theme's star SVGs, and the
+  // help row -- OPTIONS/MENU/SELECT along the bottom -- never drew at all
+  // because <helpsystem> carries no <text> and fell through the text branch.
+  // Art loads lazily on a cache miss, so give the first paint's fetches time
+  // to land BEFORE grading any pixels. Sampling first and waiting later read
+  // the rating rail while its star SVGs were still in flight and called a
+  // working element blank.
+  app.render();
+  await new Promise((res) => setTimeout(res, 2000));
+
+  for (const [type, label] of [['rating', 'rating rail'], ['helpsystem', 'help prompts']]) {
+    const els = app.stage.elements().filter((e) => e.type === type
+      && e.props.scope !== 'menu' && e.props.scope !== 'none');
+    if (!els.length) continue;
+    const eb = app.stage.box(els[0].props);
+    // Both are short rows whose <pos> is an ANCHOR, with <origin> deciding
+    // which way they extend -- modern's help row is right-anchored at x=1843,
+    // art-book-next's rating has w=0 until its star art loads. A fixed band
+    // hung off the raw box samples empty stage and reports a working element
+    // as blank, so centre the band on the anchor and let it reach both ways.
+    const bw = Math.max(eb.w, 420);
+    const bh = Math.max(eb.h, 56);
+    const [ox, oy] = els[0].props.origin ?? [0, 0];
+    const band = {
+      x: eb.x - (ox > 0.5 ? bw : ox > 0 ? bw / 2 : 0),
+      y: eb.y - (oy > 0.5 ? bh : oy > 0 ? bh / 2 : 0),
+      w: bw,
+      h: bh,
+    };
+    const bd = readRect(app.render().getContext('2d'), band);
+    const bseen = new Set();
+    for (let i = 0; bd && i < bd.data.length; i += 4 * 7) {
+      bseen.add((bd.data[i] << 16) | (bd.data[i + 1] << 8) | bd.data[i + 2]);
+    }
+    r.check(`${label} renders`, bseen.size > 3, `${bseen.size} colours`);
+  }
+
   // Box art for the SELECTED game, which is not the one selected at boot.
   // preload() warmed only the theme's assets plus the boot selection, so
   // every other game drew an empty plate -- a library frontend with no cover

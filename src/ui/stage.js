@@ -238,7 +238,10 @@ export class Stage {
     if (!this.theme) return;
     const urls = new Set();
     for (const el of this.elements()) {
-      for (const key of ['path', 'staticImage', 'defaultImage', 'default', 'imagePath']) {
+      // filledPath/unfilledPath are the rating element's star art. Leaving
+      // them out meant the first paint had no stars to draw with.
+      for (const key of ['path', 'staticImage', 'defaultImage', 'default', 'imagePath',
+        'filledPath', 'unfilledPath', 'iconPath']) {
         const v = el.props?.[key];
         if (typeof v !== 'string' || !v) continue;
         if (v.includes('${system.theme}')) {
@@ -431,11 +434,11 @@ export class Stage {
       case 'video': return this.drawVideo(ctx, el, b);
       case 'clock': return this.drawText(ctx, el, b, clockText());
       case 'rating': return this.drawRating(ctx, el, b);
+      case 'helpsystem': return this.drawHelp(ctx, el, b);
       case 'text':
       case 'datetime':
       case 'gamelistinfo':
-      case 'systemstatus':
-      case 'helpsystem': {
+      case 'systemstatus': {
         const key = el.props.metadata ?? el.props.systemdata;
         const text = key
           ? (this.meta(key) || el.props.defaultValue || '')
@@ -444,6 +447,58 @@ export class Stage {
       }
       default: return undefined;
     }
+  }
+
+  /**
+   * The themed help row: the button prompts along the bottom of a view.
+   *
+   * <helpsystem> carries no <text> and no <metadata>, so routing it through
+   * drawText produced nothing at all -- art-book-next's OPTIONS/MENU/SELECT
+   * row was simply absent from every render. The ENTRIES are the frontend's
+   * to supply (they describe what the buttons do here, not what the theme
+   * says); the theme supplies the placement and styling, which is what these
+   * properties are for.
+   *
+   * scope="menu" is ES-DE's help for its own menu, not for a view, so it is
+   * skipped rather than drawn over the library.
+   */
+  drawHelp(ctx, el, b) {
+    const p = el.props;
+    // scope="menu" is ES-DE's help for its own menu, not a view. scope="none"
+    // means DO NOT DISPLAY -- art-book-next declares one to switch the row off
+    // for a variant, and drawing it put a second prompt row in the top-left
+    // corner on top of the theme's real one.
+    if (p.scope === 'menu' || p.scope === 'none') return;
+    const entries = this.view === 'gamelist'
+      ? [['\u24B6', 'play'], ['\u24B7', 'back'], ['\u24CD', 'options'], ['\u24C2', 'menu']]
+      : [['\u2190\u2192', 'system'], ['\u24B6', 'open'], ['\u24C2', 'menu']];
+
+    const size = (p.fontSize ?? 0.022) * STAGE_H * Number(p.entryRelativeScale ?? 1);
+    const gap = size * 1.1;
+    ctx.font = fontStack(size, { family: p._family ?? null, weight: 700 });
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // <pos> is the anchor and <origin> says which corner of the row it names,
+    // so the row has to be measured before it can be placed.
+    let width = 0;
+    for (const [icon, label] of entries) {
+      width += ctx.measureText(`${icon} ${label}`).width + gap;
+    }
+    width -= gap;
+    const [ox, oy] = p.origin ?? [0, 0];
+    let x = b.x - ox * width;
+    const y = b.y - oy * size + size / 2;
+
+    for (const [icon, label] of entries) {
+      ctx.fillStyle = hex(p.iconColor, '#cccccc');
+      ctx.fillText(icon, x, y);
+      const iw = ctx.measureText(`${icon} `).width;
+      ctx.fillStyle = hex(p.textColor, '#cccccc');
+      ctx.fillText(label, x + iw, y);
+      x += ctx.measureText(`${icon} ${label}`).width + gap;
+    }
+    ctx.textBaseline = 'alphabetic';
   }
 
   drawText(ctx, el, b, text) {
@@ -676,12 +731,44 @@ export class Stage {
     }
   }
 
+  /**
+   * The five-star rating.
+   *
+   * A theme supplies its OWN star art via <filledPath>/<unfilledPath> (ES-DE's
+   * properties, and art-book-next ships SVGs for both). Drawing text stars and
+   * ignoring those meant the rating never matched the theme it was rendering
+   * in. Text is the fallback for themes that supply no art.
+   *
+   * The unfilled row draws unconditionally: ES-DE shows an empty five-star
+   * rail for an unrated game rather than nothing, which is also what makes the
+   * metadata column line up with the icons beneath it.
+   */
   drawRating(ctx, el, b) {
-    const game = this.currentGame();
-    const value = Number(game?.meta?.rating ?? 0);
+    const p = el.props;
+    const value = Math.max(0, Math.min(1, Number(this.currentGame()?.meta?.rating ?? 0)));
+    const filled = this.img(this.perSystem(p.filledPath));
+    const unfilled = this.img(this.perSystem(p.unfilledPath));
+    const size = b.h || (p.fontSize ?? 0.03) * STAGE_H;
+
+    if (filled || unfilled) {
+      // box() offsets by <origin> using the element's own width, which is 0
+      // for a rating (its size comes from the star art), so the row has to
+      // apply the origin itself against its REAL extent: five stars wide.
+      const [ox, oy] = p.origin ?? [0, 0];
+      const x0 = b.x - ox * size * 5;
+      const y0 = b.y - oy * size;
+      const whole = Math.round(value * 5);
+      for (let i = 0; i < 5; i++) {
+        const img = i < whole ? (filled ?? unfilled) : (unfilled ?? null);
+        if (!img) continue;
+        drawContain(ctx, img, { x: x0 + i * size, y: y0, w: size, h: size },
+          p.color ? hex(p.color) : null);
+      }
+      return;
+    }
+
     if (!value) return;
-    const size = b.h || (el.props.fontSize ?? 0.03) * STAGE_H;
-    ctx.fillStyle = hex(el.props.color, '#f6ad55');
+    ctx.fillStyle = hex(p.color, '#f6ad55');
     ctx.font = fontStack(size);
     ctx.textAlign = 'left';
     const stars = Math.round(value * 5);
