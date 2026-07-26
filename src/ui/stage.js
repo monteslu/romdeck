@@ -139,6 +139,56 @@ const AUTO_COLLECTIONS = [
   },
 ];
 
+// ES-DE's scrollable-container constants (ScrollableContainer.h:14). A long
+// description sits still for the start delay, creeps up one pixel at a time,
+// pauses at the bottom for the reset delay, then snaps back and repeats.
+const AUTO_SCROLL_DELAY = 4500;      // ms before scrolling starts
+const AUTO_SCROLL_RESET_DELAY = 7000; // ms held at the end
+const AUTO_SCROLL_SPEED = 4;          // ms per pixel, before modifiers
+
+/**
+ * Advance one scrolling container and report whether it moved.
+ *
+ * State lives on the element rather than in a component tree, because the
+ * stage rebuilds its element list on every theme change and a container that
+ * forgot its position on each repaint would never scroll at all.
+ */
+function tickScroll(el, contentH, boxH, dt) {
+  const p = el.props;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
+  const startDelay = p.containerStartDelay !== undefined
+    ? clamp(p.containerStartDelay, 0, 10) * 1000 : AUTO_SCROLL_DELAY;
+  // The accumulator starts NEGATIVE by the start delay
+  // (ScrollableContainer.cpp:67), which is what makes the text sit still and
+  // readable before it moves. Starting at zero scrolled immediately.
+  const st = el._scroll ?? (el._scroll = { pos: 0, acc: -startDelay, atEnd: 0 });
+  if (contentH <= boxH) { st.pos = 0; return false; }
+  const resetDelay = p.containerResetDelay !== undefined
+    ? clamp(p.containerResetDelay, 0, 20) * 1000 : AUTO_SCROLL_RESET_DELAY;
+  const perPixel = AUTO_SCROLL_SPEED / (p.containerScrollSpeed !== undefined
+    ? clamp(p.containerScrollSpeed, 0.1, 10) : 1);
+
+  if (st.atEnd) {                      // holding at the bottom
+    st.atEnd += dt;
+    if (st.atEnd >= resetDelay) { st.pos = 0; st.acc = -startDelay; st.atEnd = 0; }
+    return true;
+  }
+  st.acc += dt;
+  const before = st.pos;
+  // ES-DE scales the interval by rows-of-text; below 8 lines it accelerates.
+  // ES-DE scales the interval by how many text rows fit: under 8 rows it
+  // accelerates so a short blurb does not crawl (ScrollableContainer.cpp:195).
+  const rows = boxH / Math.max(1, contentH / Math.max(1, Math.round(contentH / boxH)));
+  const rowModifier = rows < 8 ? Math.max(0.2, rows / 8) : 1;
+  const interval = Math.max(1, perPixel * rowModifier * 8);
+  while (st.acc >= interval) {
+    st.pos += 1;
+    st.acc -= interval;
+  }
+  if (st.pos + boxH >= contentH) { st.pos = contentH - boxH; st.atEnd = 1; }
+  return st.pos !== before || st.atEnd > 0;
+}
+
 /**
  * The themed view.
  *
@@ -263,6 +313,9 @@ export class Stage {
     this.gameIndex = 0;
     this.regroup();
   }
+
+  /** @see tickScroll -- exposed so the app's animation tick can drive it. */
+  tickScroll(el, contentH, boxH, dt) { return tickScroll(el, contentH, boxH, dt); }
 
   currentSystem() { return this.systems[this.sysIndex] ?? null; }
   currentGame() { return this.currentSystem()?.roms[this.gameIndex] ?? null; }
@@ -660,7 +713,13 @@ export class Stage {
 
 
   drawText(ctx, el, b, text) {
-    if (!text) return;
+    if (!text) {
+      // Clear the measured height, or a container that HAD long text keeps
+      // claiming it overflows and its scroll timer never stops.
+      el._contentH = 0;
+      el._scroll = null;
+      return;
+    }
     const p = el.props;
     const size = (p.fontSize ?? 0.03) * STAGE_H;
     ctx.fillStyle = hex(p.color, '#e8ecf4');
@@ -699,21 +758,33 @@ export class Stage {
       ctx.beginPath();
       ctx.rect(b.x, b.y, b.w, b.h);
       ctx.clip();
+      // Lay the text out first: the scroll offset needs the full height.
       const words = String(shown).split(/\s+/).filter(Boolean);
+      const lines = [];
       let line = '';
-      let ly = b.y + size * 0.9;
       for (const word of words) {
         const test = line ? `${line} ${word}` : word;
-        if (ctx.measureText(test).width > b.w && line) {
-          ctx.fillText(line, tx, ly);
-          line = word;
-          ly += lineH;
-          if (ly > b.y + b.h) break;
-        } else {
-          line = test;
-        }
+        if (ctx.measureText(test).width > b.w && line) { lines.push(line); line = word; }
+        else line = test;
       }
-      if (line && ly <= b.y + b.h) ctx.fillText(line, tx, ly);
+      if (line) lines.push(line);
+
+      // <container> scrolls when the text overflows. The offset is advanced
+      // by the app's animation tick, not here -- a draw that moved things
+      // would scroll at whatever rate the app happened to repaint.
+      // <containerVerticalSnap> (default TRUE, ScrollableContainer.cpp:28)
+      // trims the box to whole lines so scrolling never leaves a half-row
+      // clipped at the bottom edge.
+      const snap = p.containerVerticalSnap !== 'false' && p.containerVerticalSnap !== false;
+      const usableH = snap ? Math.max(lineH, Math.floor(b.h / lineH) * lineH) : b.h;
+      const contentH = lines.length * lineH;
+      const offset = contentH > usableH ? (el._scroll?.pos ?? 0) : 0;
+      let ly = b.y + size * 0.9 - offset;
+      for (const l of lines) {
+        if (ly > b.y - lineH && ly < b.y + b.h + lineH) ctx.fillText(l, tx, ly);
+        ly += lineH;
+      }
+      el._contentH = contentH;
       ctx.restore();
       return;
     }
@@ -887,6 +958,11 @@ export class Stage {
         // edge-to-edge artwork.
         // <imageCornerRadius> rounds the ITEM's artwork (as distinct from
         // <cornerRadius>, which rounds a plain image element).
+        // <unfocusedItemSaturation> desaturates the items either side of the
+        // selection (CarouselComponent.h:1038); 1 leaves them untouched.
+        const itemSat = sel ? 1 : Number(p.unfocusedItemSaturation ?? 1);
+        const shownImg = itemSat < 1
+          ? saturateImage(img, w, h, Math.max(0, itemSat)) : img;
         const imgRadius = Math.max(0, Math.min(0.5,
           Number(p.imageCornerRadius ?? 0))) * STAGE_W;
         if (imgRadius > 0) {
@@ -895,9 +971,9 @@ export class Stage {
           ctx.clip();
         }
         if (p.itemSize?.[0] >= 1 || p.itemSize?.[1] >= 1) {
-          drawCover(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null);
+          drawCover(ctx, shownImg, { x: cx, y: cy, w, h }, tint ? hex(tint) : null);
         } else {
-          drawContain(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
+          drawContain(ctx, shownImg, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
         }
         if (imgRadius > 0) ctx.restore();
         // Dimming is a black wash OVER the item, not a change to its alpha.
@@ -1065,8 +1141,11 @@ export class Stage {
       const game = sys.roms[i];
       const cx = b.x + marginX + (n % cols) * cellW + pad;
       const cy = b.y + marginY + Math.floor(n / cols) * cellH + pad;
-      const cw = itemW - pad * 2;
-      const ch = itemH - pad * 2;
+      // <imageRelativeScale> shrinks the artwork inside its cell, leaving a
+      // margin the theme can colour (GridComponent.h:1058).
+      const relScale = Math.max(0.2, Math.min(1, Number(p.imageRelativeScale ?? 1)));
+      const cw = (itemW - pad * 2) * relScale;
+      const ch = (itemH - pad * 2) * relScale;
       // <imageFit> is contain | fill | cover (GridComponent.h:1066).
       const fit = p.imageFit ?? 'contain';
       const sel = i === this.gameIndex;

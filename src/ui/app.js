@@ -256,6 +256,15 @@ export class App {
   render() {
     if (!this.presenter) return null;
     this._dirty = false;
+    // Animation timers are (re)evaluated on the frame after a selection or
+    // view change, which is the only thing that can start or stop them.
+    // updateSnap had NO callers at all -- video snaps never started in the
+    // real app, only in the check that drove them by hand.
+    if (this._animKey !== this._animState()) {
+      this._animKey = this._animState();
+      this.updateSnap?.();
+      this.updateScroll?.();
+    }
     const canvas = this.stage.paint();
     const ctx = this.stage.ctx;
     // Overlays draw in the order they stack, so a keyboard opened from a menu
@@ -267,6 +276,62 @@ export class App {
     this.onOverlay?.(ctx);
     this.presenter.present(canvas);
     return canvas;
+  }
+
+  /**
+   * Drive scrolling containers.
+   *
+   * Same contract as the snap timer: this runs ONLY while something is
+   * actually scrolling, and stops the moment nothing is. The event-driven
+   * repaint policy is the reason an idle library costs no CPU, and a
+   * permanent 30 Hz animation loop would quietly undo it -- on a handheld
+   * that is battery, not just cycles.
+   */
+  /** What the animation timers depend on: which game, in which view. */
+  _animState() {
+    return `${this.stage.view}:${this.stage.sysIndex}:${this.stage.gameIndex}`;
+  }
+
+  updateScroll() {
+    const wants = this.stage.elements().some((e) => {
+      const p = e.props;
+      return e.type === 'text'
+        && (p.container === 'true' || p.container === true
+          || (p.metadata === 'description' && p.container !== 'false'))
+        && (e._contentH ?? 0) > this.stage.box(p).h;
+    });
+    if (!wants) {
+      if (this._scrollTimer) { clearInterval(this._scrollTimer); this._scrollTimer = null; }
+      return;
+    }
+    // NOT an early return before the `wants` test above: if the timer is
+    // already running and nothing overflows any more, it has to be cleared.
+    if (this._scrollTimer) return;
+    let last = Date.now();
+    this._scrollTimer = setInterval(() => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      let moved = false;
+      let stillWants = false;
+      for (const el of this.stage.elements()) {
+        if (!el._contentH) continue;
+        const h = this.stage.box(el.props).h;
+        if (el._contentH <= h) continue;
+        stillWants = true;
+        if (this.stage.tickScroll(el, el._contentH, h, dt)) moved = true;
+      }
+      // A shorter description (or a selection change) can leave nothing to
+      // scroll. The timer has to notice and stop itself, or it outlives what
+      // it was animating and quietly reinstates a render loop.
+      if (!stillWants) {
+        clearInterval(this._scrollTimer);
+        this._scrollTimer = null;
+        return;
+      }
+      if (moved) this.invalidate();
+    }, 33);
+    this._timers.push(this._scrollTimer);
   }
 
   /**

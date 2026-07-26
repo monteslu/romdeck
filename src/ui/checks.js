@@ -572,6 +572,39 @@ export async function shots({ romsDir, argAfter }) {
     app.stage.setLibrary(app.svc.library().roms);
   }
 
+  // Scrolling containers. The animation cannot show in a still, but the
+  // MECHANISM can be driven directly: text sits still for the start delay,
+  // then advances, then holds at the end. Also guards the repaint policy --
+  // the timer must not exist when nothing overflows.
+  {
+    const el = app.stage.elements().find((e) => e.props.metadata === 'description');
+    if (el) {
+      const game = app.stage.currentGame();
+      const descBefore = game?.meta?.desc;
+      if (game) game.meta.desc = 'word '.repeat(400);
+      app.invalidate();
+      app.render();
+      const boxH = app.stage.box(el.props).h;
+      if ((el._contentH ?? 0) > boxH) {
+        const delay = Number(el.props.containerStartDelay ?? 4.5) * 1000;
+        app.stage.tickScroll(el, el._contentH, boxH, delay - 500);
+        const held = el._scroll.pos;
+        app.stage.tickScroll(el, el._contentH, boxH, 4000);
+        const moved = el._scroll.pos;
+        r.check('container holds, then scrolls', held === 0 && moved > 0,
+          `${held}px during the delay, ${Math.round(moved)}px after`);
+        el._scroll = null;
+      } else {
+        console.log('SKIP: description does not overflow its box');
+      }
+      if (game) game.meta.desc = descBefore;
+      app.invalidate();
+      app.render();
+      app.updateScroll();
+      r.check('no scroll timer when nothing scrolls', !app._scrollTimer);
+    }
+  }
+
   // Custom collections: created, persisted in ES-DE's .cfg format, and shown
   // as a system. The editing mode is what collectionIndicators marks.
   {
