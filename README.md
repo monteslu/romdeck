@@ -133,6 +133,14 @@ packages — **nothing is installed system-wide**.
 | **F11** | Big-screen mode |
 | Start+Select or ESC *(in game)* | Overlay menu |
 
+> ⚠️ **Gamepad coverage is currently incomplete.** A controller can browse the
+> library, switch systems and launch games — and, in big-screen mode, navigate
+> the carousel and gamelist. Everything else (settings, cheats, save states,
+> controller remapping, themes, remote play, and even *entering* big-screen
+> mode) needs a mouse or keyboard today. This is a known design error, not a
+> missing feature: the app was meant to be gamepad-first like
+> EmulationStation. See PLAN.md §16d.
+
 ## Where things live
 
 ```
