@@ -85,6 +85,26 @@ export function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// ES-DE's per-component default z-index (GuiComponent subclasses set these in
+// their constructors). A theme that declares <zIndex> on one element and not
+// the rest is relying on exactly these numbers.
+const DEFAULT_Z = {
+  image: 30,
+  video: 30,
+  animation: 35,
+  badges: 35,
+  text: 40,
+  datetime: 40,
+  gamelistinfo: 40,
+  rating: 45,
+  textlist: 50,
+  carousel: 50,
+  grid: 50,
+  clock: 55,
+  systemstatus: 55,
+  helpsystem: 60,
+};
+
 /**
  * The themed view.
  *
@@ -172,6 +192,40 @@ export class Stage {
   currentSystem() { return this.systems[this.sysIndex] ?? null; }
   currentGame() { return this.currentSystem()?.roms[this.gameIndex] ?? null; }
 
+  /**
+   * The media file for an ES-DE <imageType>, or null.
+   *
+   * ES-DE themes ask for specific artwork -- cover, marquee, screenshot,
+   * titlescreen, fanart -- and a theme commonly places SEVERAL of them in one
+   * view. Answering every request with the box art made modern-es-de draw the
+   * same cover twice, once in its marquee slot (a wide logo strip) and once
+   * in its image slot, overlapping. Only covers and videos are scraped, so
+   * anything else must resolve to nothing and let the element stay empty,
+   * which is what ES-DE does for missing media.
+   */
+  artFor(type) {
+    const game = this.currentGame();
+    if (!game) return null;
+    switch (type) {
+      case 'cover':
+      case 'image':      // ES-DE's generic "the game's image"
+      case 'boxcover':
+      case 'box2d':
+      case 'box3d':      return game.art ?? null;
+      case 'video':      return game.video ?? null;
+      // Real media types we simply do not scrape. Returning the cover here is
+      // worse than returning nothing: it puts a box shot in a logo slot.
+      case 'marquee':
+      case 'screenshot':
+      case 'titlescreen':
+      case 'fanart':
+      case 'physicalmedia':
+      case 'miximage':
+      case 'backcover':  return null;
+      default:           return null;
+    }
+  }
+
   // ── images ─────────────────────────────────────────────────────────
   /**
    * Load every image the current view can reference, once.
@@ -215,8 +269,31 @@ export class Stage {
     }
   }
 
+  /**
+   * A loaded image, or null.
+   *
+   * On a MISS this kicks off a load and repaints when it lands. preload()
+   * only ever warmed the theme's own assets plus the art of whichever game
+   * was selected at boot, so moving the selection showed an empty plate for
+   * every other game: paint asked for a URL that was never fetched, got null,
+   * and drew nothing. Nothing was wrong with the path, the theme or the file.
+   *
+   * Painting stays synchronous (it must). The frame that misses draws without
+   * the image and a later frame has it, which for a cover plate is the right
+   * trade -- navigation never blocks on disk.
+   */
   img(url) {
-    return url ? (this._images.get(url) ?? null) : null;
+    if (!url) return null;
+    if (this._images.has(url)) return this._images.get(url);
+    if (!this._pending) this._pending = new Set();
+    if (!this._pending.has(url)) {
+      this._pending.add(url);
+      this._load(url).then((img) => {
+        this._pending.delete(url);
+        if (img) this.onImageLoaded?.();
+      });
+    }
+    return null;
   }
 
   perSystem(template, sys = null) {
@@ -286,7 +363,13 @@ export class Stage {
    */
   box(props, img = null) {
     const [x, y] = props.pos ?? [0, 0];
-    let [w, h] = props.size ?? props.maxSize ?? [0, 0];
+    // cropSize and imageMaxSize are real ES-DE size properties, not aliases we
+    // can skip: art-book-next sizes its cover and every metadata icon with
+    // them and declares no <size> at all. Ignoring them left w = 0 on each,
+    // so a whole theme's imagery drew at zero width -- visible as blank slots
+    // while element counts and "not blank" assertions all passed.
+    let [w, h] = props.size ?? props.maxSize ?? props.cropSize
+      ?? props.imageMaxSize ?? props.imageSize ?? [0, 0];
     if (img && (!w || !h)) {
       const ratio = img.width / img.height;
       if (w && !h) h = (w * STAGE_W / ratio) / STAGE_H;
@@ -315,9 +398,18 @@ export class Stage {
     ctx.fillStyle = hex(this.theme?.desktop?.bg, '#0d0f14');
     ctx.fillRect(0, 0, STAGE_W, STAGE_H);
 
-    const els = [...this.elements()].sort(
-      (a, b) => (a.props.zIndex ?? 0) - (b.props.zIndex ?? 0),
-    );
+    // Sort by zIndex, defaulting PER ELEMENT TYPE the way ES-DE does rather
+    // than to 0 for everything.
+    //
+    // This is not a nicety. A theme only declares <zIndex> where it needs to
+    // override the default, so modern-es-de sets `zIndex 0` on its background
+    // image and says nothing about anything else -- expecting the defaults to
+    // put content on top. Defaulting everything to 0 made the background TIE
+    // with the game list, and ties fall back to document order, so the
+    // background painted over it: a gamelist view with no games in it, while
+    // "33 elements, renders fine" and every count-based assertion passed.
+    const z = (el) => el.props.zIndex ?? DEFAULT_Z[el.type] ?? 50;
+    const els = [...this.elements()].sort((a, b) => z(a) - z(b));
     for (const el of els) {
       if (el.props.visible === 'false') continue;
       ctx.save();
@@ -401,7 +493,7 @@ export class Stage {
     }
     let url = null;
     if (p.metadata) url = this.meta(p.metadata);
-    else if (p.imageType) url = this.currentGame()?.art ?? null;
+    else if (p.imageType) url = this.artFor(p.imageType);
     else url = this.perSystem(p.path);
     let img = this.img(url);
     if (!img && p.default) img = this.img(this.perSystem(p.default));
@@ -481,8 +573,17 @@ export class Stage {
       const sel = i === this.gameIndex;
       const y = b.y + row * lh + size;
       if (sel && p.selectorColor && p.selectorColor !== '00000000') {
+        // <selectorWidth> is a WIDTH, not a flag. modern-es-de asks for
+        // 0.0035 -- a thin marker bar down the edge of the row -- and painting
+        // the full row width instead filled it with the same colour as
+        // selectedColor, so the selected game became a solid green slab with
+        // its own name invisible on top. Absent means "the whole row", which
+        // is what themes without a marker expect.
+        const selW = p.selectorWidth ? Number(p.selectorWidth) * STAGE_W : b.w;
+        const selX = b.x + (p.selectorHorizontalOffset
+          ? Number(p.selectorHorizontalOffset) * STAGE_W : 0);
         ctx.fillStyle = hex(p.selectorColor, 'rgba(255,255,255,0.08)');
-        ctx.fillRect(b.x, y - size * 0.95, b.w, lh);
+        ctx.fillRect(selX, y - size * 0.95, Number.isFinite(selW) ? selW : b.w, lh);
       }
       ctx.fillStyle = hex(sel ? (p.selectedColor ?? p.color) : (p.primaryColor ?? p.color), sel ? '#ffffff' : '#8b94a7');
       const label = (sys.roms[i].meta?.favorite ? '★ ' : '') + sys.roms[i].name;
@@ -603,7 +704,11 @@ export class Stage {
       drawContain(ctx, this._snapCanvas, b, null, 1);
       return;
     }
-    const img = this.img(this.currentGame()?.art);
+    // Honour the element's own imageType for the still fallback, so a video
+    // slot asking for a marquee does not fall back to the box art.
+    const img = this.img(el.props.imageType
+      ? this.artFor(el.props.imageType)
+      : this.currentGame()?.art);
     if (img) { drawContain(ctx, img, b, null, 1); return; }
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
     ctx.fillRect(b.x, b.y, b.w, b.h);

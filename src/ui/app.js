@@ -20,6 +20,10 @@ export class App {
   constructor({ romsDir = null, headless = false } = {}) {
     this.svc = new Services({ romsDir });
     this.stage = new Stage(this.svc);
+    // Art is fetched lazily on a cache miss (see Stage.img), so a late arrival
+    // has to ask for the repaint that shows it. Without this the cover appears
+    // only on the next unrelated input.
+    this.stage.onImageLoaded = () => this.invalidate();
     this.headless = headless;
     this.window = null;
     this.presenter = null;

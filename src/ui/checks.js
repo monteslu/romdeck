@@ -9,13 +9,14 @@
 // a real theme, a real core — and asserts observable behaviour. Anything
 // visual also gets written to /tmp for eyeballing, because five bugs in this
 // project were invisible to green assertions and obvious in a screenshot.
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { App } from './app.js';
 import { Services } from './services.js';
 import { userDataDir } from './paths.js';
-import { HeadlessPresenter } from './present.js';
+import { HeadlessPresenter, STAGE_W, STAGE_H } from './present.js';
+import { focus } from './focus.js';
 
 const req = createRequire(import.meta.url);
 
@@ -45,6 +46,7 @@ export async function runChecks(name, ctx) {
     case 'devcheck': return (await import('./checks-sessions.js')).autoplay({ ...ctx, dev: true });
     case 'joincheck': return (await import('./checks-sessions.js')).joincheck(ctx);
     case 'snapcheck': return snapcheck(ctx);
+    case 'shots': return shots(ctx);
     default: throw new Error(`unknown check: ${name}`);
   }
 }
@@ -294,6 +296,211 @@ function paintStats(app) {
     width,
     height,
   };
+}
+
+// ── --shots: every surface renders, and is looked at ─────────────────
+/**
+ * Capture and ASSERT ON every visual surface.
+ *
+ * Replaces the Electron build's --bigshot / --themeshot / --uishot, which
+ * wrote PNGs and asserted nothing: they proved a capture succeeded, not that
+ * anything was drawn. Three defects shipped past green assertions and were
+ * caught only by a human opening the file (a white stage from a tinted 1x1
+ * box.png, literal ${system.fullName} printed three times, the focus ring
+ * and details panel describing different games). The pixels were always the
+ * evidence; nothing was checking them.
+ *
+ * Two things this does that paintStats alone cannot:
+ *   - It composites like App.render does, so MENUS, THE KEYBOARD, THE FILE
+ *     BROWSER and TOASTS are in the captured frame. paintStats re-paints the
+ *     stage only, so no check has ever asserted a single menu pixel.
+ *   - It compares surfaces to each other. "Not blank" is weak; a menu that
+ *     opens but paints nothing is IDENTICAL to the view behind it, and only
+ *     a difference test catches that.
+ *
+ * PNGs still land in the output dir, because the lesson from those three
+ * defects is that someone should be able to look.
+ */
+export async function shots({ romsDir, argAfter }) {
+  const r = makeReporter('SHOTS');
+  // Only treat the next argument as an output dir if it is NOT the ROMs
+  // folder -- that one is also a bare argument, and swallowing it here would
+  // silently scatter PNGs into the user's library.
+  const next = argAfter('shots');
+  const outDir = next && next !== romsDir ? next : '/tmp/romdeck-shots';
+  mkdirSync(outDir, { recursive: true });
+
+  const app = new App({ romsDir, headless: true });
+  await app.start();
+  // --shots --theme <name> renders these surfaces under a REAL community
+  // theme. Without it every run used whatever is in prefs, so three "runs
+  // against different themes" silently produced byte-identical numbers.
+  const themeArg = argAfter('theme');
+  if (themeArg) {
+    // setTheme, not loadTheme: loadTheme returns { theme } and silently falls
+    // back to the bundled theme when one is missing, which would report a
+    // community theme's name while rendering Shelf.
+    await app.setTheme(themeArg, {});
+    if (app.stage.theme?.name !== themeArg) {
+      console.log(`SKIP: theme ${themeArg} is not installed (got ${app.stage.theme?.name})`);
+      app.svc.shutdown();
+      return 0;
+    }
+  }
+  await app.stage.preload();
+  console.log(`SHOTS theme: ${app.stage.theme?.displayName ?? '(none)'}`);
+
+  const shot = (label) => {
+    // app.render() composites stage + menus + browser + keyboard + toasts,
+    // which is the whole point: capture what the user would see.
+    const canvas = app.render();
+    const png = canvas.toBuffer('image/png');
+    const file = path.join(outDir, `${label}.png`);
+    writeFileSync(file, png);
+    const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+    const counts = new Map();
+    for (let i = 0; i < data.length; i += 4 * 7) {
+      const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let top = 0; let total = 0;
+    for (const n of counts.values()) { total += n; if (n > top) top = n; }
+    return { label, file, png, colors: counts.size, dominance: top / Math.max(1, total) };
+  };
+
+
+  // getImageData throws if the rect leaves the canvas, and a theme is free to
+  // place an element partly off-stage (art-book-next does). Clamp rather than
+  // let a legitimate layout crash the check.
+  const readRect = (ctx2, bx) => {
+    const x0 = Math.max(0, Math.round(bx.x));
+    const y0 = Math.max(0, Math.round(bx.y));
+    const x1 = Math.min(STAGE_W, Math.round(bx.x + bx.w));
+    const y1 = Math.min(STAGE_H, Math.round(bx.y + bx.h));
+    if (x1 <= x0 || y1 <= y0) return null;
+    return ctx2.getImageData(x0, y0, x1 - x0, y1 - y0);
+  };
+
+  const captured = [];
+  const capture = (label) => {
+    const s = shot(label);
+    captured.push(s);
+    r.check(`${label} renders`, s.colors >= 3 && s.dominance <= 0.985,
+      `${s.colors} colours, ${((1 - s.dominance) * 100).toFixed(1)}% non-background`);
+    return s;
+  };
+
+  // The two themed views. system -> gamelist is the navigation that the
+  // Electron --bigshot exercised.
+  const system = capture('system-view');
+  app.dispatch('confirm');
+  for (let i = 0; i < 2; i++) app.dispatch('down');
+  const gamelist = capture('gamelist-view');
+  r.check('gamelist differs from system view',
+    Buffer.compare(system.png, gamelist.png) !== 0);
+
+  // The game list itself must have games in it. modern-es-de declares
+  // `zIndex 0` on its background and nothing on anything else, relying on
+  // ES-DE's PER-TYPE defaults; defaulting everything to 0 let the background
+  // tie with the list and paint over it. The view was a full gamelist screen
+  // with no game names on it, and every count-based assertion passed.
+  const list = app.stage.elements().find((e) => e.type === 'textlist');
+  if (list) {
+    const lb = app.stage.box(list.props);
+    const ld = readRect(app.render().getContext('2d'), lb);
+    const lseen = new Set();
+    for (let i = 0; ld && i < ld.data.length; i += 4 * 13) {
+      lseen.add((ld.data[i] << 16) | (ld.data[i + 1] << 8) | ld.data[i + 2]);
+    }
+    r.check('game list has games in it', lseen.size >= 5,
+      `${lseen.size} colours in the list box`);
+  }
+
+  // Box art for the SELECTED game, which is not the one selected at boot.
+  // preload() warmed only the theme's assets plus the boot selection, so
+  // every other game drew an empty plate -- a library frontend with no cover
+  // art, passing every assertion because the element existed and the stage
+  // was not blank. Assert on the plate's PIXELS: flat means nothing loaded.
+  const coverUrl = app.stage.meta('game.cover');
+  // Find the theme's OWN cover element rather than hardcoding the default
+  // theme's plate position -- against a community theme those coordinates
+  // land on empty background, so the check silently graded the wrong pixels.
+  // …and pick the element that shows THE COVER, not merely the first one with
+  // an imageType. modern-es-de's first match is its marquee slot, which is
+  // correctly empty (no marquees are scraped), so grading that box reported a
+  // blank cover on a theme that renders one perfectly.
+  const COVER_TYPES = new Set(['cover', 'image', 'boxcover', 'box2d', 'box3d']);
+  const coverEl = app.stage.elements().find((e) => (e.type === 'image' || e.type === 'video')
+    && (e.props.metadata === 'game.cover' || COVER_TYPES.has(e.props.imageType)));
+  if (coverUrl && coverEl) {
+    app.render();                                  // miss starts the fetch
+    await new Promise((res) => setTimeout(res, 2000));
+    shot('gamelist-cover');
+    const b = app.stage.box(coverEl.props, app.stage.img(coverUrl));
+    const px = readRect(app.render().getContext('2d'), b);
+    const seen = new Set();
+    for (let i = 0; px && i < px.data.length; i += 4 * 11) {
+      seen.add((px.data[i] << 16) | (px.data[i + 1] << 8) | px.data[i + 2]);
+    }
+    r.check('selected game cover renders', seen.size > 40,
+      `${seen.size} colours in the cover plate`);
+  } else {
+    console.log('SKIP: no cover art in this library');
+  }
+
+  // Overlay surfaces. Each must CHANGE the frame -- a menu that opens and
+  // paints nothing passes every "not blank" test on the view behind it.
+  const base = shot('_base');
+  for (const [label, open] of [
+    ['menu', () => app.dispatch('menu')],
+    ['keyboard', () => app.keyboard.open({ title: 'Search', value: '', onCommit() {} })],
+    ['browser', () => app.browser.open({ start: romsDir, onPick() {} })],
+  ]) {
+    open();
+    const s = capture(label);
+    r.check(`${label} changes the frame`, Buffer.compare(base.png, s.png) !== 0);
+
+    // …and the surface must be READABLE over whatever is behind it. Widgets
+    // fill unfocused rows with rgba(255,255,255,0.03), so bright box art read
+    // straight through the key caps and half the keyboard was illegible. A
+    // scrim cannot fix that. Sample the surface's own area: if the content
+    // behind it is bleeding through, the pixels there are not near-neutral.
+    // Only the keyboard lays out bare widgets over the stage; the menu and
+    // browser draw their own opaque panels, so there is nothing to sample.
+    const widgets = label === 'keyboard' ? app.keyboard.keys : [];
+    if (widgets.length) {
+      const ctx2 = app.render().getContext('2d');
+      // The FOCUSED cap is skipped: its fill is the theme's accent, and a
+      // light theme (Modern) paints it near-white on purpose. Judging it by
+      // "a cap is dark" flags correct rendering as bleed-through.
+      const kbGroup = focus.groups.get(app.keyboard.name);
+      const kbLive = kbGroup?.live() ?? [];
+      const kbFocused = kbLive[Math.min(kbGroup?.index ?? 0, Math.max(0, kbLive.length - 1))];
+      let bleed = 0;
+      for (const w of widgets) {
+        if (w === kbFocused) continue;
+        // Sample the cap's INNER CORNER, not its centre: the wide action keys
+        // ("Delete", "Space", "Done", "Cancel") have their label text through
+        // the middle, and light grey glyph pixels look exactly like bleed to a
+        // saturation test. The corner is padding on every key.
+        const d = ctx2.getImageData(Math.round(w.x + 6), Math.round(w.y + 6), 1, 1).data;
+        // A key cap is a dark neutral. Saturated or bright means art behind.
+        const max = Math.max(d[0], d[1], d[2]);
+        const min = Math.min(d[0], d[1], d[2]);
+        if (max - min > 28 || max > 120) bleed++;
+      }
+      r.check(`${label} is opaque over content`, bleed === 0,
+        bleed ? `${bleed}/${widgets.length} cells show what is behind them` : `${widgets.length} cells solid`);
+    }
+    // Close it again so the next surface opens over a clean frame.
+    while (app.menus.depth) app.dispatch('back');
+    app.keyboard.close?.();
+    app.browser.close?.();
+  }
+
+  console.log(`SHOTS wrote ${captured.length} PNGs to ${outDir}`);
+  app.svc.shutdown();
+  return r.done(`${captured.length} surfaces captured and asserted`);
 }
 
 // ── --snapcheck: video snaps actually decode ─────────────────────────

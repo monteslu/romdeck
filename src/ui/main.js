@@ -15,12 +15,31 @@ const argAfter = (name) => {
   return i >= 0 ? argv[i + 1] : null;
 };
 
-// The first bare argument that exists on disk is the ROMs folder.
-const romsDir = argv.find((a) => !a.startsWith('-') && existsSync(a)) ?? null;
+// Flags that CONSUME the next argument. Everything else is boolean, so the
+// bare word after it is still a candidate for the ROMs folder.
+const VALUED = new Set(['shots', 'theme', 'realtheme', 'joincheck', 'snapcheck', 'cartcheck']);
+
+// The first bare argument that exists on disk is the ROMs folder -- but NOT
+// one that is a valued flag's value. `--shots <dir> <roms>` puts a bare word
+// right after a flag, and once that word names something on disk (an output
+// dir the check itself just created) it was silently taken as the library.
+// The symptom is not an error: the app scans the wrong folder and every check
+// quietly reports on an empty one.
+const bare = argv.filter((a) => !a.startsWith('-') && existsSync(a));
+const romsDir = argv.find((a, i) => {
+  if (a.startsWith('-') || !existsSync(a)) return false;
+  const prev = i > 0 ? argv[i - 1] : '';
+  const isFlagValue = prev.startsWith('--') && VALUED.has(prev.slice(2));
+  // A valued flag only claims the next path when there is ANOTHER one left to
+  // be the library. `--shots <roms>` and `--cartcheck <roms>` pass the folder
+  // and no value; treating it as the flag's value left romsDir null and the
+  // check scanning nothing.
+  return !isFlagValue || bare.length === 1;
+}) ?? null;
 
 const CHECKS = [
   'smoke', 'padonly', 'viewcheck', 'realtheme', 'cartcheck',
-  'autoplay', 'devcheck', 'joincheck', 'pathcheck', 'snapcheck',
+  'autoplay', 'devcheck', 'joincheck', 'pathcheck', 'snapcheck', 'shots',
 ];
 const check = CHECKS.find((c) => flag(c));
 
@@ -39,6 +58,7 @@ Self-checks (no display required for the render ones):
   --viewcheck    launch behaviour and view persistence
   --cartcheck    ROM, wasmcart and jsgame all play
   --snapcheck    video snaps decode (WASM h264)
+  --shots [dir]  capture AND assert every visual surface (PNGs for review)
   --autoplay     full session surface against a real core
   --devcheck     memory read/write against a live game
   --joincheck <CODE>   join a live remote-play host

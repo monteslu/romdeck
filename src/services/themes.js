@@ -140,7 +140,11 @@ const ASSET_PROPS = [
 ];
 
 // props that carry "x y" pairs
-const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'itemSize']);
+// cropSize/imageMaxSize/imageSize are ES-DE size properties in their own
+// right, and art-book-next uses them INSTEAD of <size>. Left out of this set
+// they parse as strings, so every element sized that way computed a zero box.
+const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'itemSize',
+  'cropSize', 'imageMaxSize', 'imageSize', 'imageCropSize']);
 const NUM_PROPS = new Set([
   'rotation', 'opacity', 'zIndex', 'fontSize', 'lineSpacing', 'itemScale',
   'itemSpacing', 'maxItemCount', 'textRelativeScale', 'unfocusedItemOpacity',

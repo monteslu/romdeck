@@ -265,6 +265,28 @@ export class Keyboard {
     ctx.fillStyle = hex(tokens.ink, '#e8ecf4');
     ctx.fillText(this.value || ' ', STAGE_W / 2, 280);
 
+    // An OPAQUE plate behind the keys.
+    //
+    // Widget.draw fills an unfocused key with rgba(255,255,255,0.03), which is
+    // effectively transparent, so whatever is behind the keyboard reads
+    // straight through the key caps. A scrim does not fix that: against bright
+    // box art the letters on the right-hand half were unreadable, and darkening
+    // the scrim enough to hide 400x560 of full-colour artwork would black out
+    // the whole screen. The keys need something solid to sit on.
+    if (this.keys.length) {
+      const pad = 18;
+      const x0 = Math.min(...this.keys.map((k) => k.x)) - pad;
+      const y0 = Math.min(...this.keys.map((k) => k.y)) - pad;
+      const x1 = Math.max(...this.keys.map((k) => k.x + k.w)) + pad;
+      const y1 = Math.max(...this.keys.map((k) => k.y + k.h)) + pad;
+      roundRect(ctx, x0, y0, x1 - x0, y1 - y0, 14);
+      ctx.fillStyle = hex(tokens.bg, '#0d0f14');
+      ctx.fill();
+      ctx.strokeStyle = hex(tokens.line, '#262d3d');
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
     const g = focus.groups.get(this.name);
     const live = g?.live() ?? [];
     const focused = live[Math.min(g?.index ?? 0, Math.max(0, live.length - 1))];
