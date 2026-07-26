@@ -79,8 +79,12 @@ cross-platform, on cores that update independently of the app.
 
 ### Themes & the ES view
 - **EmulationStation / ES-DE XML themes**, reimplemented in browser tech —
-  including real community themes like `modern-es-de` and `slate-es-de`,
+  including real community themes like Art Book Next, Modern and Slate,
   verified by a conformance harness on every change.
+- **Download themes from the picker.** romdeck bundles one first-party theme
+  (*Shelf* — art-forward, a few KB) and fetches the rest on request, showing
+  each one's author, licence and size first. Community themes are
+  CC-BY-NC-SA and up to 220 MB, so they're downloaded rather than shipped.
 - The themed view is **the interface**: romdeck launches into it, windowed,
   and fullscreen is a toggle rather than a separate mode. System carousel with
   real theme logos → gamelist → launch, with menus carrying every feature.

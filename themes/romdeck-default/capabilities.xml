@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <themeCapabilities>
-    <themeName>romdeck</themeName>
+    <themeName>Shelf</themeName>
 
     <aspectRatio>16:9</aspectRatio>
     <aspectRatio>16:10</aspectRatio>
@@ -18,5 +18,8 @@
     </colorScheme>
     <colorScheme name="amber">
         <label>Amber CRT</label>
+    </colorScheme>
+    <colorScheme name="paper">
+        <label>Paper</label>
     </colorScheme>
 </themeCapabilities>

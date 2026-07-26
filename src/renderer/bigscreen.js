@@ -47,6 +47,23 @@ function place(node, props) {
   node.style.top = `${y * 100}%`;
   if (w) node.style.width = `${w * 100}%`;
   if (h) node.style.height = `${h * 100}%`;
+  // <maxSize> is a BOX the content fits inside while keeping its aspect
+  // ratio — the difference between a cover displayed correctly and one
+  // stretched to a fixed rectangle. Real themes use it for exactly that
+  // (marquees, box art), so it can't just be parsed and ignored.
+  const [mw, mh] = props.maxSize ?? [0, 0];
+  if (mw || mh) {
+    if (mw) node.style.maxWidth = `${mw * 100}%`;
+    if (mh) node.style.maxHeight = `${mh * 100}%`;
+    // Without an explicit size, the box IS the size and the image scales
+    // down to fit inside it.
+    if (!w && mw) node.style.width = `${mw * 100}%`;
+    if (!h && mh) node.style.height = `${mh * 100}%`;
+    node.dataset.fit = 'contain';
+  }
+  const [minW, minH] = props.minSize ?? [0, 0];
+  if (minW) node.style.minWidth = `${minW * 100}%`;
+  if (minH) node.style.minHeight = `${minH * 100}%`;
   const tx = -ox * 100;
   const ty = -oy * 100;
   const rot = props.rotation ? ` rotate(${props.rotation}deg)` : '';
@@ -286,6 +303,10 @@ function paint() {
         const img = document.createElement('img');
         img.src = src;
         node.appendChild(img);
+        // Clear any placeholder left from a game that had no art — without
+        // this the empty-slot box stays painted behind real cover art.
+        node.style.background = '';
+        node.style.borderRadius = '';
       } else {
         node.style.background = 'rgba(255,255,255,0.05)';
         node.style.borderRadius = '10px';
@@ -316,6 +337,13 @@ function paintCarousel(node, el) {
     item.className = 'te-caritem' + (off === 0 ? ' sel' : '');
     item.style.background = hex(off === 0 ? el.props.selectedColor : el.props.color, '#1a1f2b');
     item.style.color = hex(el.props.textColor, '#e8ecf4');
+    // A theme can mark the selection with a border instead of a fill, which
+    // is what an art-forward layout wants: a flat slab of accent colour reads
+    // badly when the card has no logo to sit on.
+    if (off === 0 && el.props.selectorColor) {
+      item.style.outline = `3px solid ${hex(el.props.selectorColor)}`;
+      item.style.outlineOffset = '-1px';
+    }
     if (off === 0 && el.props.itemScale) item.style.transform = `scale(${el.props.itemScale})`;
 
     // Real ES-DE themes are IMAGE-driven: the carousel shows a per-system

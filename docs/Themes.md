@@ -23,8 +23,20 @@ npx electron . --realtheme modern-es-de <roms>
 which asserts no unresolved `${…}` bindings reach the screen, no images are
 broken, and that carousel items actually show their system logos.
 
-Drop a theme folder in `<userData>/themes/<name>/` and it appears in the theme
-picker. Bundled themes live in the app's `themes/` directory.
+## Getting themes
+
+The theme picker (**Start → Themes**) downloads community themes on request —
+Art Book Next, Modern and Slate — showing each one's author, licence and size
+before anything is fetched. They are **downloaded rather than bundled**: every
+one is CC-BY-NC-SA, so shipping them would make romdeck a redistributor of
+other people's artwork, and Art Book Next alone is 220 MB against an app that
+is otherwise about one.
+
+romdeck bundles exactly one theme, **Shelf** — first-party, a few KB of XML,
+art-forward — so a fresh install is never blank and never encumbered.
+
+You can also drop any theme folder in `<userData>/themes/<name>/` and it
+appears in the picker.
 
 ```
 <theme>/
@@ -141,8 +153,11 @@ matches the palette.
 </theme>
 ```
 
-`themes/romdeck-default/` is the reference implementation — the shipped theme is
-authored in this same format, so the engine is always dogfooding it.
+`themes/romdeck-default/` (**Shelf**) is the reference implementation — the
+shipped theme is authored in this same format, so the engine is always
+dogfooding it. It is a coffee-table-book layout: cover art large and centred,
+metadata small and quiet, one hairline of chrome, three colour schemes
+(Midnight, Amber CRT, Paper).
 
 ## Metadata bindings, the ES-DE names
 
