@@ -274,6 +274,15 @@ export class Services {
     return { deviceKey: key };
   }
 
+  /** Persist a screenshot from a live session. */
+  saveScreenshot(rom, pngB64) {
+    const dir = path.join(this.userData, 'screenshots');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${rom.name.replace(/[^\w-]+/g, '_')}-${Date.now()}.png`);
+    writeFileSync(file, Buffer.from(pngB64, 'base64'));
+    return file;
+  }
+
   importCht(rom, file) {
     const out = this.cheats.importCht(this.gameKey(rom), readFileSync(file, 'utf8'));
     this.pushCheats(rom);

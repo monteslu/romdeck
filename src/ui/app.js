@@ -8,9 +8,13 @@
 // always, and a frontend that burns a core drawing a static carousel is a
 // defect on a handheld. Frames happen when something changed.
 import { Stage } from './stage.js';
-import { createPresenter, fitRect } from './present.js';
+import { createPresenter, fitRect, STAGE_W, STAGE_H } from './present.js';
 import { Services } from './services.js';
 import { PadNav } from '../main/gamepad.js';
+import { focus } from './focus.js';
+import { MenuStack, Keyboard, FileBrowser } from './menus.js';
+import { Toasts } from './widgets.js';
+import { installMenus } from './app-menus.js';
 
 export class App {
   constructor({ romsDir = null, headless = false } = {}) {
@@ -24,7 +28,19 @@ export class App {
     this._dirty = true;
     this._timers = [];
     this.overlay = null; // debug overlay (§11), set by --debug
-    this.onNav = null;   // set by the interaction layer in M8.2
+    this.menus = new MenuStack(this);
+    this.keyboard = new Keyboard(this);
+    this.browser = new FileBrowser(this);
+    this.toasts = new Toasts();
+    this.focus = focus;
+  }
+
+  toast(title, body = '', opts = {}) {
+    this.toasts.push(title, body, opts);
+    this.invalidate();
+    // Toasts expire on their own, so one wake-up per toast keeps the frame
+    // honest without a render loop.
+    setTimeout(() => this.invalidate(), (opts.ms ?? 4000) + 50);
   }
 
   async start() {
@@ -130,14 +146,35 @@ export class App {
    */
   dispatch(action) {
     if (action === 'fullscreen') { this.toggleFullscreen(); return true; }
-    if (this.onNav) {
-      const handled = this.onNav(action);
+
+    // Overlays float above every view and take input FIRST — otherwise `back`
+    // inside a menu would navigate the view behind it.
+    if (this.keyboard.active || this.browser.active || this.menus.open) {
+      const handled = this._navFocus(action);
       this.invalidate();
       return handled;
     }
+
+    if (action === 'menu') { this.openMainMenu(); return true; }
+    if (action === 'options') { this.openGameMenu(this.stage.currentGame()); return true; }
+
     const handled = this.navStage(action);
     this.invalidate();
     return handled;
+  }
+
+  /** Focus-ring navigation, shared by every overlay surface. */
+  _navFocus(action) {
+    if (action === 'confirm') return focus.activate();
+    if (action === 'back') return focus.back();
+    if ((action === 'left' || action === 'right') && focus.adjustable()) {
+      return focus.adjust(action === 'right' ? 1 : -1);
+    }
+    if (action === 'up') return focus.step(-1);
+    if (action === 'down') return focus.step(1);
+    if (action === 'left' || action === 'right') return focus.move(action);
+    if (action === 'menu') { this.menus.closeAll(); return true; }
+    return false;
   }
 
   /** Default navigation, used until the interaction layer takes over. */
@@ -201,7 +238,14 @@ export class App {
     if (!this.presenter) return null;
     this._dirty = false;
     const canvas = this.stage.paint();
-    this.onOverlay?.(this.stage.ctx);
+    const ctx = this.stage.ctx;
+    // Overlays draw in the order they stack, so a keyboard opened from a menu
+    // sits above it.
+    this.menus.draw(ctx);
+    this.browser.draw(ctx);
+    this.keyboard.draw(ctx);
+    this.toasts.draw(ctx, { stageW: STAGE_W, stageH: STAGE_H, tokens: this.stage.theme?.desktop ?? {} });
+    this.onOverlay?.(ctx);
     this.presenter.present(canvas);
     return canvas;
   }
@@ -240,3 +284,6 @@ export class App {
     return { x: (px - r.x) / r.scale, y: (py - r.y) / r.scale };
   }
 }
+
+// Menu content lives in its own module so app.js stays about the shell.
+installMenus(App);
