@@ -1,0 +1,37 @@
+{
+  "name": "romdeck",
+  "version": "0.1.0",
+  "description": "A beautiful cross-platform retro game library. Every game runs in its own crash-isolated player window, powered by retroemu's libretro WASM cores.",
+  "type": "module",
+  "main": "src/main/main.js",
+  "bin": {
+    "romdeck": "bin/romdeck.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke"
+  },
+  "keywords": [
+    "emulator",
+    "retro",
+    "libretro",
+    "frontend",
+    "electron",
+    "nes",
+    "snes",
+    "genesis",
+    "gameboy",
+    "romdev",
+    "retroemu"
+  ],
+  "author": "monteslu",
+  "license": "GPL-3.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "electron": "^37.10.3",
+    "gamepad-node": "^1.5.0",
+    "retroemu": "file:../retroemu"
+  }
+}

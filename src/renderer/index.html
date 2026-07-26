@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>romdeck</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div id="logo">rom<span>deck</span></div>
+    <div id="dirchip" title="ROMs folder">
+      <span id="dirpath">no folder selected</span>
+      <button id="choosedir">Change…</button>
+      <button id="rescan" title="Rescan">⟳</button>
+    </div>
+    <div id="sessioncount" class="hidden">0 playing</div>
+  </header>
+
+  <main id="layout">
+    <nav id="systems"></nav>
+    <section id="gridwrap">
+      <div id="empty" class="hidden">
+        <h2>No games found</h2>
+        <p>Pick your ROMs folder to build your library.</p>
+        <button id="choosedir2" class="big">Choose ROMs folder</button>
+      </div>
+      <div id="grid"></div>
+    </section>
+  </main>
+
+  <footer id="hints">
+    <span><b>↑↓←→</b> browse</span>
+    <span><b>Enter / Ⓐ</b> play</span>
+    <span><b>LB/RB</b> system</span>
+    <span><b>double-click</b> play</span>
+    <span class="right" id="status">ready</span>
+  </footer>
+
+  <div id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
