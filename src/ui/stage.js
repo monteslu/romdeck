@@ -852,7 +852,14 @@ export class Stage {
         ctx.fillRect(selX, y - size * 0.95, Number.isFinite(selW) ? selW : b.w, lh);
       }
       ctx.fillStyle = hex(sel ? (p.selectedColor ?? p.color) : (p.primaryColor ?? p.color), sel ? '#ffffff' : '#8b94a7');
-      const label = (sys.roms[i].meta?.favorite ? '★ ' : '') + sys.roms[i].name;
+      // <indicators> is symbols | ascii | none (TextListComponent.h:676) and
+      // marks a favorite in the list. ES-DE's symbol is U+F005, a Font Awesome
+      // private-use codepoint from a font it ships and we do not -- it would
+      // render as tofu here, so the symbols mode uses a real star instead.
+      const ind = p.indicators ?? 'symbols';
+      const mark = !sys.roms[i].meta?.favorite || ind === 'none' ? ''
+        : ind === 'ascii' ? '* ' : '★ ';
+      const label = mark + sys.roms[i].name;
       const margin = b.w * (p.horizontalMargin ?? 0.02);
       const tx = ctx.textAlign === 'center' ? b.x + b.w / 2 : b.x + margin;
       // Clipping alone leaves a name sliced mid-glyph at the edge, which
@@ -1069,6 +1076,7 @@ export class Stage {
       }
       this._snapImage.data.set(f.data);
       this._snapCtx.putImageData(this._snapImage, 0, 0);
+      pillarbox(ctx, this._snapCanvas, b, el.props);
       drawContain(ctx, this._snapCanvas, b, null, 1);
       return;
     }
@@ -1077,7 +1085,7 @@ export class Stage {
     const img = this.img(el.props.imageType
       ? this.artFor(el.props.imageType)
       : this.currentGame()?.art);
-    if (img) { drawContain(ctx, img, b, null, 1); return; }
+    if (img) { pillarbox(ctx, img, b, el.props); drawContain(ctx, img, b, null, 1); return; }
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
     ctx.fillRect(b.x, b.y, b.w, b.h);
   }
@@ -1130,6 +1138,46 @@ function applyCase(text, letterCase) {
  * is edge-to-edge artwork, and containing it leaves bars where the theme
  * expects none.
  */
+/**
+ * The black frame behind a video, expanded into pillarboxes/letterboxes.
+ *
+ * ES-DE fills the unused part of the video AREA with black, but only when the
+ * gap is worth filling: narrow bars look worse than none, so it compares the
+ * fitted size against the area and skips unless the ratio is under
+ * <pillarboxThreshold> (VideoFFmpegComponent.cpp:1095, default 0.85 x / 0.90 y).
+ *
+ * @returns the rect the media should be drawn into.
+ */
+function pillarbox(ctx, src, area, props) {
+  const scale = Math.min(area.w / src.width, area.h / src.height);
+  const w = src.width * scale;
+  const h = src.height * scale;
+  const fitted = { x: area.x + (area.w - w) / 2, y: area.y + (area.h - h) / 2, w, h };
+
+  const draw = props.pillarboxes === undefined
+    ? true                                  // ES-DE's mDrawPillarboxes default
+    : !(props.pillarboxes === 'false' || props.pillarboxes === false);
+  if (!draw) return fitted;
+
+  const [tx, ty] = props.pillarboxThreshold ?? [0.85, 0.9];
+  const thX = Math.max(0.2, Math.min(1, Number(tx)));
+  const thY = Math.max(0.2, Math.min(1, Number(ty)));
+
+  let rectW = w;
+  let rectH = h;
+  if (w > h) {                              // landscape
+    if (h < area.h && h / area.h < thY) rectH = area.h;
+    if (w < area.w && w / area.w < thX) rectW = area.w;
+  } else {                                  // portrait or square
+    if (w <= area.w && w / area.w < thX) rectW = area.w;
+  }
+  if (rectW > w || rectH > h) {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(area.x + (area.w - rectW) / 2, area.y + (area.h - rectH) / 2, rectW, rectH);
+  }
+  return fitted;
+}
+
 function drawCover(ctx, img, b, tint = null) {
   const scale = Math.max(b.w / img.width, b.h / img.height);
   const w = img.width * scale;

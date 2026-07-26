@@ -161,7 +161,7 @@ const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'item
   // Padding pairs are (before, after) on one axis -- both expressed as a
   // fraction of SCREEN WIDTH, even the vertical one (HelpComponent.cpp:160).
   'backgroundHorizontalPadding', 'backgroundVerticalPadding',
-  'selectedBackgroundMargins', 'selectedItemMargins', 'itemMargin']);
+  'selectedBackgroundMargins', 'selectedItemMargins', 'itemMargin', 'pillarboxThreshold']);
 const NUM_PROPS = new Set([
   'rotation', 'opacity', 'zIndex', 'fontSize', 'lineSpacing', 'itemScale',
   'itemSpacing', 'maxItemCount', 'textRelativeScale', 'unfocusedItemOpacity',
