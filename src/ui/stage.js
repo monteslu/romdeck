@@ -460,9 +460,13 @@ export class Stage {
       case 'gamelistinfo':
       case 'systemstatus': {
         const key = el.props.metadata ?? el.props.systemdata;
-        const text = key
+        let text = key
           ? (this.meta(key) || el.props.defaultValue || '')
           : this.bind(el.props.text ?? '');
+        // A <datetime> holds an ES-DE timestamp (19990801T000000) and the
+        // theme's <format> says how to print it. Without this the raw stamp
+        // went on screen verbatim.
+        if (el.type === 'datetime') text = formatDate(text, el.props.format);
         return this.drawText(ctx, el, b, text);
       }
       default: return undefined;
@@ -863,6 +867,25 @@ export class Stage {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
+/**
+ * ES-DE date formatting.
+ *
+ * Values are stored as %Y%m%dT%H%M%S (MetaData.cpp) and themes print them
+ * through a <format> string; DateTimeComponent's default is "%Y-%m-%d" and
+ * TimeUtil::timeToString understands %Y %m %d %H %M %S. 19700101T000000 is
+ * ES-DE's "unset" sentinel and renders as nothing rather than as 1970.
+ */
+export function formatDate(value, format = '%Y-%m-%d') {
+  const s = String(value ?? '');
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(s);
+  if (!m) return s;                       // already formatted, or not a date
+  if (s.startsWith('19700101')) return '';
+  const [, Y, mo, d, H, Mi, S] = m;
+  return String(format || '%Y-%m-%d')
+    .replace(/%Y/g, Y).replace(/%m/g, mo).replace(/%d/g, d)
+    .replace(/%H/g, H).replace(/%M/g, Mi).replace(/%S/g, S);
+}
+
 function clockText() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

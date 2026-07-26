@@ -17,6 +17,7 @@ import { App } from './app.js';
 import { Services } from './services.js';
 import { userDataDir } from './paths.js';
 import { HeadlessPresenter, STAGE_W, STAGE_H } from './present.js';
+import { formatDate } from './stage.js';
 import { focus } from './focus.js';
 
 const req = createRequire(import.meta.url);
@@ -516,6 +517,29 @@ export async function shots({ romsDir, argAfter }) {
       bseen.add((bd.data[i] << 16) | (bd.data[i + 1] << 8) | bd.data[i + 2]);
     }
     r.check(`${label} renders`, bseen.size > 3, `${bseen.size} colours`);
+  }
+
+  // Metadata must actually reach the themes. Every theme has developer /
+  // publisher / genre / release-date fields and NOTHING ever populated them,
+  // so all four rendered a column of "Unknown" while every assertion passed.
+  // Dates additionally need formatting: they are stored as ES-DE timestamps
+  // (19990801T000000) and went on screen verbatim.
+  {
+    const lib = app.svc.library().roms;
+    const withMeta = lib.filter((r) => r.meta?.developer || r.meta?.genre
+      || r.meta?.publisher || r.meta?.releasedate);
+    if (withMeta.length) {
+      r.check('library has scraped metadata', true,
+        `${withMeta.length}/${lib.length} games`);
+      const dated = lib.find((rom) => rom.meta?.releasedate);
+      if (dated) {
+        const shown = formatDate(dated.meta.releasedate, undefined);
+        r.check('release dates are formatted, not raw', /^\d{4}-\d{2}-\d{2}$/.test(shown),
+          `${dated.meta.releasedate} -> ${shown}`);
+      }
+    } else {
+      console.log('SKIP: no scraped metadata in this library');
+    }
   }
 
   // Box art for the SELECTED game, which is not the one selected at boot.

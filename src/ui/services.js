@@ -29,6 +29,7 @@ import { HomebrewFeed } from '../services/feed.js';
 import { RetroAchievements } from '../services/retroachievements.js';
 import { ScreenScraper } from '../services/screenscraper.js';
 import { shortnameOf, libretroNameOf } from '../services/systems.js';
+import { MetadataStore } from '../services/metadata.js';
 import { Prefs } from '../services/prefs.js';
 import { userDataDir, ensureUserData, appVersion } from './paths.js';
 
@@ -43,6 +44,7 @@ export class Services {
     this.gamelists = new GamelistStore(ud);
     this.artwork = new ArtworkStore(ud);
     this.identifier = new Identifier(ud);
+    this.metadata = new MetadataStore(ud, libretroNameOf);
     this.bios = new BiosChecker(ud);
     this.mappings = new MappingStore(ud);
     this.themes = new ThemeStore(ud);
@@ -106,6 +108,22 @@ export class Services {
         rom.datName = ident.datName;
         rom.verified = ident.verified;
         rom.serial = ident.serial ?? null;
+        // libretro-database metadata, keyed by the CRC we just resolved. The
+        // gamelist.xml layer WINS: a value the user edited or another
+        // frontend scraped is authoritative, and this only fills the gaps.
+        // Without it every theme's metadata column read "Unknown".
+        const scraped = this.metadata.forRom(rom);
+        if (scraped) {
+          // Spreading gamelist over scraped does NOT work: metaFor returns an
+          // explicit null for every unset field, so those nulls would win and
+          // erase everything just fetched. Only a field the gamelist actually
+          // HAS a value for may override.
+          for (const [k, v] of Object.entries(scraped)) {
+            if (rom.meta[k] === null || rom.meta[k] === undefined || rom.meta[k] === '') {
+              rom.meta[k] = v;
+            }
+          }
+        }
       } else {
         rom.verified = false;
       }
