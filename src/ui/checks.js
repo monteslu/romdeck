@@ -654,6 +654,53 @@ export async function shots({ romsDir, argAfter }) {
     }
   }
 
+  // The last four audit entries. All time-based, so they are driven directly
+  // rather than photographed: a still frame cannot show a 325ms fade.
+  {
+    // <fastScrolling> picks a scroll TIER; the tables are ES-DE's (IList.h:60).
+    const slow = [0, 600, 2000].map((t) => app.stage.scrollInterval(t, false));
+    const fast = [0, 600, 2000].map((t) => app.stage.scrollInterval(t, true));
+    r.check('fastScrolling ramps faster',
+      slow.join() === '500,200,200' && fast.join() === '500,180,80',
+      `slow ${slow.join('/')} vs fast ${fast.join('/')}`);
+
+    // <iterationCount> + <onIterationsDone> image: the snap stops after N
+    // loops and the still takes over.
+    const vid = app.stage.elements().find((e) => e.type === 'video');
+    if (vid) {
+      const wasCount = vid.props.iterationCount;
+      const wasDone = vid.props.onIterationsDone;
+      const wasSnap = app.stage.snap;
+      const W = 32;
+      const data = new Uint8ClampedArray(W * W * 4);
+      for (let i = 0; i < W * W; i++) {
+        data[i * 4] = 255; data[i * 4 + 2] = 255; data[i * 4 + 3] = 255;
+      }
+      app.stage.snap = { loops: 0, frame: { width: W, height: W, data } };
+      vid.props.iterationCount = '2';
+      vid.props.onIterationsDone = 'image';
+      app.stage.markSnapDelay(Date.now() - 99999);
+      const vb = app.stage.box(vid.props);
+      const snapPx = () => {
+        app.invalidate();
+        const d = readRect(app.render().getContext('2d'), vb);
+        let n = 0;
+        for (let i = 0; d && i < d.data.length; i += 4) {
+          if (d.data[i] > 200 && d.data[i + 1] < 60 && d.data[i + 2] > 200) n++;
+        }
+        return n;
+      };
+      const looping = snapPx();
+      app.stage.snap.loops = 2;
+      const stopped = snapPx();
+      r.check('iterationCount stops the snap', looping > 100 && stopped === 0,
+        `${looping} px looping, ${stopped} after ${vid.props.iterationCount} loops`);
+      vid.props.iterationCount = wasCount;
+      vid.props.onIterationsDone = wasDone;
+      app.stage.snap = wasSnap;
+    }
+  }
+
   // <systemstatus>: battery / wifi / bluetooth from sysfs. The VALUES are
   // the machine's, so the assertion is that the element draws something when
   // there is something to report -- not that a specific icon appears.

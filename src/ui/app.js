@@ -208,9 +208,18 @@ export class App {
         st.gameIndex = 0;
         // Repeated presses inside the animation window mean the user is
         // scrolling fast, so the slide shortens rather than queueing up.
+        // <fastScrolling> picks the scroll TIER: holding a direction
+        // accelerates through 500/180/80ms per item instead of 500/200
+        // (IList.h:60). The held duration decides which tier applies.
         const now = Date.now();
-        const fast = now - (this._lastNav ?? 0) < 250;
+        const gap = now - (this._lastNav ?? 0);
+        const held = gap < 400 ? (this._heldMs ?? 0) + gap : 0;
+        this._heldMs = held;
         this._lastNav = now;
+        const car = st.elements().find((e) => e.type === 'carousel');
+        const fastTier = car?.props.fastScrolling === 'true'
+          || car?.props.fastScrolling === true;
+        const fast = st.scrollInterval(held, fastTier) < 300;
         if (!this.headless && st.startCarouselSlide(from, fast)) this.startCarouselTimer();
         return true;
       }

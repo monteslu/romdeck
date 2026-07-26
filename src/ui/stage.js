@@ -202,6 +202,29 @@ function easeOutQuad(t) {
   return 1 - (1 - c) * (1 - c);
 }
 
+// Selection fade-in (GamelistView.cpp:17). An element with <scrollFadeIn>
+// starts at half opacity when the selection changes and fades to full over
+// 325ms, so scrolling a list does not strobe fresh artwork at full brightness.
+const FADE_IN_START_OPACITY = 0.5;
+const FADE_IN_TIME = 325;
+
+// Carousel scroll tiers (IList.h:60). <fastScrolling> swaps the default slow
+// pair -- 500ms then 200ms per item -- for the medium three-tier ramp, so
+// holding a direction accelerates instead of plodding.
+const SCROLL_TIERS_SLOW = [[500, 500], [0, 200]];
+const SCROLL_TIERS_MEDIUM = [[500, 500], [1100, 180], [0, 80]];
+
+/** Milliseconds per item after `heldMs` of holding a direction. */
+export function scrollInterval(heldMs, fast) {
+  const tiers = fast ? SCROLL_TIERS_MEDIUM : SCROLL_TIERS_SLOW;
+  let elapsed = 0;
+  for (const [duration, interval] of tiers) {
+    if (duration === 0 || heldMs < elapsed + duration) return interval;
+    elapsed += duration;
+  }
+  return tiers[tiers.length - 1][1];
+}
+
 /**
  * The themed view.
  *
@@ -341,6 +364,9 @@ export class Stage {
    * does a headless render -- there is nobody to see a 400ms slide in a
    * screenshot, and animating there would make every check time-dependent.
    */
+  /** @see scrollInterval -- exposed so the app can pick a scroll tier. */
+  scrollInterval(heldMs, fast) { return scrollInterval(heldMs, fast); }
+
   /** Reset the video start-delay clock; the app calls this on selection change. */
   markSnapDelay(now = Date.now()) { this._snapShownAt = now; }
 
@@ -943,6 +969,17 @@ export class Stage {
     // aspect ratio before the origin offset can be right.
     const box = this.box(p, img);
     const restoreInterp = withInterpolation(ctx, p.interpolation);
+    // <scrollFadeIn>: ramp opacity from 0.5 to 1 over 325ms after the
+    // selection moved, rather than snapping new artwork in at full strength.
+    const prevAlpha = ctx.globalAlpha;
+    if (p.scrollFadeIn === 'true' || p.scrollFadeIn === true) {
+      const since = Date.now() - (this._snapShownAt ?? 0);
+      if (since < FADE_IN_TIME) {
+        const t = since / FADE_IN_TIME;
+        ctx.globalAlpha = prevAlpha
+          * (FADE_IN_START_OPACITY + (1 - FADE_IN_START_OPACITY) * t);
+      }
+    }
     // <saturation> is 1 = untouched, and <cornerRadius> rounds the image's own
     // corners (both clamped as ImageComponent.cpp clamps them).
     const sat = Number(p.saturation ?? p.imageSaturation ?? 1);
@@ -956,10 +993,12 @@ export class Stage {
       ctx.clip();
       drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
       ctx.restore();
+      ctx.globalAlpha = prevAlpha;
       restoreInterp();
       return;
     }
     drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
+    ctx.globalAlpha = prevAlpha;
     restoreInterp();
   }
 
@@ -1446,6 +1485,19 @@ export class Stage {
     // A decoded snap frame if one is ready, otherwise the game's static
     // image — which is exactly what ES-DE shows before a snap starts, so the
     // fallback is correct rather than merely safe.
+    // <iterationCount> stops the snap after N loops (0 = forever, clamped to
+    // 10), and <onIterationsDone> says what to show afterwards: "nothing"
+    // leaves the last frame up, "image" falls back to the still. Without this
+    // a snap loops for as long as the game stays selected, which on a
+    // handheld is a video decoder running until the user moves.
+    const iterations = Math.max(0, Math.min(10, Number(el.props.iterationCount ?? 0)));
+    const done = iterations > 0 && (this.snap?.loops ?? 0) >= iterations;
+    if (done && el.props.onIterationsDone === 'image') {
+      const still = this.img(el.props.imageType
+        ? this.artFor(el.props.imageType) : this.currentGame()?.art);
+      if (still) { drawContain(ctx, still, b, null, 1); restoreInterp(); return; }
+    }
+
     const f = this.snap?.frame;
     if (f) {
       if (!this._snapCanvas || this._snapCanvas.width !== f.width || this._snapCanvas.height !== f.height) {
