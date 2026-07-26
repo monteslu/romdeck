@@ -378,6 +378,16 @@ export class Stage {
       if (w && !h) h = (w * STAGE_W / ratio) / STAGE_H;
       else if (h && !w) w = (h * STAGE_H * ratio) / STAGE_W;
     }
+    // <maxSize> is a BOUNDING BOX, not a size: the image fits inside it
+    // preserving aspect, so the real box is usually smaller in one axis. Using
+    // the cap verbatim inflates the element and, because <origin> offsets by
+    // the box's own size, shifts it -- slate's bottom-anchored console and
+    // logo (origin 0 1 / 1 1) were pushed up off their row and clipped.
+    if (img && !props.size && (props.maxSize || props.imageMaxSize) && w && h) {
+      const s = Math.min((w * STAGE_W) / img.width, (h * STAGE_H) / img.height);
+      w = (img.width * s) / STAGE_W;
+      h = (img.height * s) / STAGE_H;
+    }
     const [ox, oy] = props.origin ?? [0, 0];
     return {
       x: x * STAGE_W - ox * w * STAGE_W,
