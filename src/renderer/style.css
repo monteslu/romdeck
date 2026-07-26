@@ -769,6 +769,15 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
   max-height: 78%;
   object-fit: contain;
 }
+/* A tinted logo draws through a CSS mask, so the image's OWN pixels must not
+   show through underneath — the shape comes from the mask, the colour from
+   the background. Sized explicitly because a transparent img still needs a
+   box for the mask to fill. */
+.te-caritem img[data-tinted] {
+  width: 88%;
+  height: 78%;
+  content-visibility: hidden;
+}
 .te-textlist { overflow: hidden; }
 .te-row {
   padding: 4px 14px;

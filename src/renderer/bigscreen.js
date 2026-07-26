@@ -355,15 +355,54 @@ function paintCarousel(node, el) {
       const img = document.createElement('img');
       img.src = logo;
       img.alt = sys.name;
-      // Themes ship logos for systems a given library may not have; falling
-      // back to the name is better than an empty slot.
-      img.onerror = () => { img.remove(); item.textContent = sys.name; };
+      // Themes ship logos for systems a given library may not have. Try the
+      // theme's own <defaultImage> first, then the plain name — an empty card
+      // is the one outcome worth avoiding.
+      const fallback = el.props.defaultImage ?? el.props.default ?? null;
+      img.onerror = () => {
+        if (fallback && img.getAttribute('src') !== fallback) { img.src = fallback; return; }
+        img.remove();
+        item.textContent = sys.name;
+      };
+      // <imageColor> tints a monochrome logo to the palette. An <img> can't
+      // inherit currentColor, so the SVG becomes a mask over a solid fill —
+      // one asset then serves every colour scheme.
+      const tint = off === 0
+        ? (el.props.imageSelectedColor ?? el.props.imageColor)
+        : el.props.imageColor;
+      if (tint) applyTint(img, logo, hex(tint));
       item.appendChild(img);
     } else {
       item.textContent = sys.name;
     }
     node.appendChild(item);
   }
+}
+
+/**
+ * Tint a monochrome logo to a theme colour.
+ *
+ * ES-DE's <imageColor> recolours artwork. An <img> can't inherit
+ * currentColor, so the image is used as a CSS mask over a solid fill: the
+ * shape comes from the SVG, the colour from the theme. One asset then serves
+ * every colour scheme instead of shipping a copy per palette.
+ *
+ * Only applied where the theme asks for it — masking a full-colour cover
+ * would flatten it to a silhouette.
+ */
+function applyTint(img, url, color) {
+  img.style.backgroundColor = color;
+  img.style.webkitMaskImage = `url("${url}")`;
+  img.style.maskImage = `url("${url}")`;
+  img.style.webkitMaskRepeat = 'no-repeat';
+  img.style.maskRepeat = 'no-repeat';
+  img.style.webkitMaskPosition = 'center';
+  img.style.maskPosition = 'center';
+  img.style.webkitMaskSize = 'contain';
+  img.style.maskSize = 'contain';
+  // The pixels are now supplied by the mask, so hide the image's own.
+  img.style.opacity = '1';
+  img.dataset.tinted = '1';
 }
 
 /**

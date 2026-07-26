@@ -102,7 +102,12 @@
 
         <!-- Cards stay in the panel colour; the ACCENT marks the selection as
              a border rather than a fill, so a selected card without art isn't
-             a flat slab of colour with text floating on it. -->
+             a flat slab of colour with text floating on it.
+
+             staticImage points at Shelf's own wordmarks, tinted through
+             <imageColor> — a system Shelf has no wordmark for falls back to
+             _default, and then to its plain name, so a library full of
+             unusual systems still reads. -->
         <carousel name="systemCarousel">
             <pos>0.5 0.42</pos>
             <size>0.94 0.46</size>
@@ -111,6 +116,10 @@
             <selectedColor>${panel}</selectedColor>
             <selectorColor>${accent}</selectorColor>
             <textColor>${ink}</textColor>
+            <staticImage>./logos/${system.theme}.svg</staticImage>
+            <defaultImage>./logos/_default.svg</defaultImage>
+            <imageColor>${dim}</imageColor>
+            <imageSelectedColor>${ink}</imageSelectedColor>
             <itemScale>1.12</itemScale>
             <itemSpacing>0.025</itemSpacing>
             <maxItemCount>5</maxItemCount>

@@ -799,6 +799,13 @@ ipcMain.on('ui:ready', () => {
       if (st1.elements === 0 || st2.elements === 0) problems.push('an empty view');
       console.log(`REALTHEME ${name}: carousel ${carousel.withLogo}/${carousel.items} items show a logo`);
 
+      // The bundled theme has a wordmark for every system romdeck knows, so
+      // an empty carousel item means the logo path broke — the kind of thing
+      // that renders "fine" while looking wrong.
+      if (name === 'romdeck-default' && carousel.items > 0 && carousel.withLogo < carousel.items) {
+        problems.push(`${carousel.items - carousel.withLogo} carousel items have no logo`);
+      }
+
       const ok = problems.length === 0;
       console.log(ok
         ? `REALTHEME OK — ${name} renders`
