@@ -30,10 +30,30 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   parseTagValue: false,
-  isArray: (name) => ['view', 'variant', 'colorScheme', 'aspectRatio', 'include'].includes(name),
+  isArray: (name) => [
+    'view', 'variant', 'colorScheme', 'aspectRatio', 'fontSize', 'include',
+    'language', 'variables',
+  ].includes(name),
 });
 
-const ELEMENT_TYPES = new Set(['image', 'text', 'carousel', 'textlist', 'rating', 'datetime', 'video', 'grid']);
+const ELEMENT_TYPES = new Set([
+  'image', 'text', 'carousel', 'textlist', 'rating', 'datetime', 'video', 'grid',
+  // Real themes lean on these constantly; parsing them (even when the renderer
+  // only handles some) keeps element counts honest and layouts intact.
+  'gamelistinfo', 'badges', 'helpsystem', 'clock', 'systemstatus', 'gameselector',
+  'animation', 'gridtile', 'gamelist',
+]);
+
+// Wrapper elements that carry a CONDITION and nest content inside themselves.
+// This is the shape §16f missed: real themes put their views inside
+// <variant>/<aspectRatio>/<fontSize>/<colorScheme> blocks and reach them via
+// <include> at every depth, rather than flattening conditions onto attributes.
+const WRAPPER_TAGS = {
+  variant: 'variant',
+  colorScheme: 'colorScheme',
+  aspectRatio: 'aspectRatio',
+  fontSize: 'fontSize',
+};
 
 // romdeck extension: ES-DE's format has no desktop/mouse view, so a theme can
 // declare <view name="desktop"> with a <colors> block (and a few layout hints)
@@ -55,6 +75,13 @@ const TOKEN_ALIASES = {
   accent2: ['accent2', 'accentSecondary', 'warning', 'highlight2'],
   danger: ['danger', 'error', 'errorColor', 'alert'],
 };
+
+// Props naming a file inside the theme. Real themes are image-driven, so
+// these carry most of what a theme actually looks like.
+const ASSET_PROPS = [
+  'path', 'defaultPath', 'imagePath', 'backgroundImage', 'staticImage',
+  'fontPath', 'filledPath', 'unfilledPath', 'defaultImage', 'iconPath',
+];
 
 // props that carry "x y" pairs
 const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'itemSize']);
@@ -96,6 +123,7 @@ export class ThemeStore {
           variants: caps.variants,
           colorSchemes: caps.colorSchemes,
           aspectRatios: caps.aspectRatios,
+          fontSizes: caps.fontSizes,
         });
       }
     }
@@ -108,20 +136,27 @@ export class ThemeStore {
 
   capabilities(themeDir) {
     const file = path.join(themeDir, 'capabilities.xml');
-    const empty = { themeName: null, variants: [], colorSchemes: [], aspectRatios: [] };
+    const empty = {
+      themeName: null, variants: [], colorSchemes: [], aspectRatios: [], fontSizes: [],
+    };
     if (!existsSync(file)) return empty;
     try {
       const doc = parser.parse(readFileSync(file, 'utf8'))?.themeCapabilities ?? {};
       const mapNamed = (arr) =>
         (arr ?? []).map((v) => ({
           name: v['@_name'] ?? String(v),
-          label: v.label ?? v['@_name'] ?? String(v),
+          label: typeof v.label === 'string' ? v.label : v['@_name'] ?? String(v),
         }));
+      const plain = (arr) => (arr ?? [])
+        .map((a) => (typeof a === 'string' ? a : a['#text'] ?? ''))
+        .filter(Boolean);
       return {
-        themeName: doc.themeName ?? null,
+        themeName: typeof doc.themeName === 'string' ? doc.themeName : null,
         variants: mapNamed(doc.variant),
         colorSchemes: mapNamed(doc.colorScheme),
-        aspectRatios: (doc.aspectRatio ?? []).map((a) => (typeof a === 'string' ? a : a['#text'] ?? '')),
+        aspectRatios: plain(doc.aspectRatio),
+        // ES-DE's fontSize capability gates whole <variables> blocks.
+        fontSizes: plain(doc.fontSize),
       };
     } catch {
       return empty;
@@ -132,7 +167,7 @@ export class ThemeStore {
    * Parse a theme into a render model for the given selection.
    * @returns {{name, displayName, variables, views:{system:Element[], gamelist:Element[]}}}
    */
-  load(name, { variant = null, colorScheme = null, aspectRatio = null } = {}) {
+  load(name, { variant = null, colorScheme = null, aspectRatio = null, fontSize = null } = {}) {
     const theme = this.find(name);
     if (!theme) throw new Error(`no such theme: ${name}`);
     // ES-DE semantics: when the user hasn't chosen, the theme's FIRST declared
@@ -142,6 +177,10 @@ export class ThemeStore {
       variant: variant ?? theme.variants[0]?.name ?? null,
       colorScheme: colorScheme ?? theme.colorSchemes[0]?.name ?? null,
       aspectRatio: aspectRatio ?? theme.aspectRatios[0] ?? null,
+      // Real themes gate their font-size variables on this; without a
+      // selection those <variables> blocks never apply and every fontSize
+      // resolves to a literal ${name}.
+      fontSize: fontSize ?? theme.fontSizes[0] ?? null,
     };
     const variables = {};
     const views = { system: [], gamelist: [], desktop: [] };
@@ -149,7 +188,7 @@ export class ThemeStore {
 
     // resolve ${var} everywhere now that all variables are collected
     for (const list of Object.values(views)) {
-      for (const el of list) this._substitute(el, variables);
+      for (const el of list) this._substitute(el, variables, theme.dir);
     }
     return {
       name: theme.name,
@@ -197,59 +236,127 @@ export class ThemeStore {
   }
 
   _loadFile(file, themeDir, ctx, variables, views, depth) {
-    if (depth > 8 || !existsSync(file)) return;
+    if (depth > 16 || !existsSync(file)) return;
     let doc;
     try {
       doc = parser.parse(readFileSync(file, 'utf8'))?.theme ?? {};
     } catch {
       return;
     }
+    this._walk(doc, file, themeDir, ctx, variables, views, depth);
+  }
 
-    // variables — a theme may declare several blocks (a base one plus
-    // variant/colorScheme-specific overrides); later matching blocks win
-    const varBlocks = Array.isArray(doc.variables)
-      ? doc.variables
-      : doc.variables
-        ? [doc.variables]
-        : [];
-    for (const block of varBlocks) {
+  /**
+   * Walk a theme node, descending through conditional wrappers.
+   *
+   * This is the §16f fix. Real ES-DE themes are a TREE of conditional
+   * wrappers, not a flat list:
+   *
+   *   <theme>
+   *     <fontSize name="medium"><variables>…</variables></fontSize>
+   *     <variant name="all">
+   *       <aspectRatio name="16:9">
+   *         <include>./aspect-ratio-16-9.xml</include>   ← views live here
+   *       </aspectRatio>
+   *       <view name="system, gamelist">…</view>
+   *     </variant>
+   *   </theme>
+   *
+   * The old parser only read <view>/<include> at the top level of <theme>, so
+   * the files holding every view were never opened and the result was zero
+   * elements. Each wrapper's condition applies to everything inside it, and
+   * includes are followed at every depth.
+   */
+  _walk(node, file, themeDir, ctx, variables, views, depth) {
+    if (!node || typeof node !== 'object') return;
+
+    // <variables> — a theme declares several blocks (a base one plus
+    // variant/colorScheme/fontSize-specific overrides); later matches win.
+    for (const block of node.variables ?? []) {
       if (!this._matches(block, ctx)) continue;
       for (const [k, v] of Object.entries(block)) {
         if (k.startsWith('@_')) continue;
         if (typeof v === 'string') variables[k] = v;
-        else if (v && typeof v === 'object' && typeof v['#text'] === 'string') variables[k] = v['#text'];
+        else if (v && typeof v === 'object' && typeof v['#text'] === 'string') {
+          variables[k] = v['#text'];
+        }
       }
     }
 
-    // includes, relative to the including file
-    for (const inc of doc.include ?? []) {
+    // <include> — relative to the INCLUDING file, at any depth.
+    for (const inc of node.include ?? []) {
       const rel = typeof inc === 'string' ? inc : inc['#text'];
       if (!rel) continue;
-      this._loadFile(path.resolve(path.dirname(file), rel), themeDir, ctx, variables, views, depth + 1);
+      if (inc && typeof inc === 'object' && !this._matches(inc, ctx)) continue;
+      this._loadFile(
+        path.resolve(path.dirname(file), rel),
+        themeDir, ctx, variables, views, depth + 1,
+      );
     }
 
-    for (const view of doc.view ?? []) {
+    // <view> — may name several views at once: <view name="system, gamelist">
+    for (const view of node.view ?? []) {
       if (!this._matches(view, ctx)) continue;
       const names = String(view['@_name'] ?? '').split(',').map((s) => s.trim());
       for (const viewName of names) {
         if (!views[viewName]) continue;
-        for (const [tag, value] of Object.entries(view)) {
-          if (!ELEMENT_TYPES.has(tag)) continue;
-          const entries = Array.isArray(value) ? value : [value];
-          for (const raw of entries) {
-            if (!this._matches(raw, ctx)) continue;
-            const el = this._element(tag, raw, themeDir);
-            // same-named element in a later file overrides the earlier one
-            const idx = views[viewName].findIndex((e) => e.name === el.name && e.type === el.type);
-            if (idx >= 0) views[viewName][idx] = { ...views[viewName][idx], ...el };
-            else views[viewName].push(el);
+        this._collectElements(view, views[viewName], ctx, themeDir);
+      }
+    }
+
+    // Conditional wrappers: descend, but only when their condition holds. The
+    // wrapper's own condition is checked here rather than being pushed into
+    // ctx, because ES-DE semantics are "this block applies when selected",
+    // and everything inside inherits that by virtue of not being visited.
+    for (const tag of Object.keys(WRAPPER_TAGS)) {
+      const blocks = node[tag];
+      if (!blocks) continue;
+      for (const block of Array.isArray(blocks) ? blocks : [blocks]) {
+        if (!block || typeof block !== 'object') continue;
+        if (!this._matchesWrapper(tag, block, ctx)) continue;
+        this._walk(block, file, themeDir, ctx, variables, views, depth + 1);
+      }
+    }
+  }
+
+  /** Pull element tags out of a <view> block into that view's element list. */
+  _collectElements(view, list, ctx, themeDir) {
+    for (const [tag, value] of Object.entries(view)) {
+      if (!ELEMENT_TYPES.has(tag)) continue;
+      const entries = Array.isArray(value) ? value : [value];
+      for (const raw of entries) {
+        if (!raw || typeof raw !== 'object') continue;
+        if (!this._matches(raw, ctx)) continue;
+        // An element can also name several targets at once, and real themes
+        // rely on redeclaring a name later to layer properties onto it.
+        const names = String(raw['@_name'] ?? tag).split(',').map((s) => s.trim());
+        for (const name of names) {
+          const el = this._element(tag, raw, themeDir, name);
+          const idx = list.findIndex((e) => e.name === el.name && e.type === el.type);
+          if (idx >= 0) {
+            // Later declarations MERGE onto earlier ones (ES-DE semantics):
+            // themes routinely set shared properties once and then refine a
+            // single element by redeclaring just the property that differs.
+            list[idx] = { ...list[idx], ...el, props: { ...list[idx].props, ...el.props } };
+          } else {
+            list.push(el);
           }
         }
       }
     }
   }
 
-  /** variant / colorScheme / aspectRatio filtering on a node. */
+  /** A wrapper element's condition lives in its `name` attribute. */
+  _matchesWrapper(tag, block, ctx) {
+    const selected = ctx[WRAPPER_TAGS[tag]];
+    const spec = block['@_name'];
+    if (!spec) return true;
+    const list = String(spec).split(',').map((s) => s.trim());
+    if (list.includes('all')) return true;
+    return selected ? list.includes(selected) : false;
+  }
+
+  /** variant / colorScheme / aspectRatio filtering on a node's ATTRIBUTES. */
   _matches(node, ctx) {
     const check = (attr, selected) => {
       const spec = node[attr];
@@ -267,8 +374,8 @@ export class ThemeStore {
     );
   }
 
-  _element(type, raw, themeDir) {
-    const el = { type, name: raw['@_name'] ?? type, props: {} };
+  _element(type, raw, themeDir, name = null) {
+    const el = { type, name: name ?? raw['@_name'] ?? type, props: {} };
     for (const [key, value] of Object.entries(raw)) {
       if (key.startsWith('@_') || key === '#text') continue;
       const v = typeof value === 'object' ? value['#text'] ?? '' : value;
@@ -276,23 +383,45 @@ export class ThemeStore {
       else if (NUM_PROPS.has(key)) el.props[key] = Number(v);
       else el.props[key] = String(v);
     }
-    // asset paths become protocol URLs the renderer can fetch
-    for (const key of ['path', 'defaultPath', 'imagePath', 'backgroundImage']) {
+    // Asset paths become protocol URLs the renderer can fetch. Paths holding
+    // a ${variable} are left for _substitute(), which runs once every file has
+    // contributed its <variables> — rewriting them here would bake in a name
+    // that hasn't been resolved yet.
+    for (const key of ASSET_PROPS) {
       const p = el.props[key];
-      if (typeof p === 'string' && p && !p.startsWith('$') && !/^\w+:/.test(p)) {
-        el.props[key] = 'romdeck-theme://' + path.basename(themeDir) + '/' + p.replace(/^\.\//, '');
+      if (typeof p === 'string' && p && !p.includes('${') && !/^\w+:/.test(p)) {
+        el.props[key] = this._assetUrl(themeDir, p);
       }
     }
     return el;
   }
 
-  _substitute(el, variables) {
+  _assetUrl(themeDir, rel) {
+    return 'romdeck-theme://' + path.basename(themeDir) + '/' + rel.replace(/^\.\//, '');
+  }
+
+  _substitute(el, variables, themeDir) {
     const sub = (s) =>
       String(s).replace(/\$\{([\w.-]+)\}/g, (m, key) =>
         variables[key] !== undefined ? variables[key] : m,
       );
     for (const [k, v] of Object.entries(el.props)) {
-      if (typeof v === 'string' && v.includes('${')) el.props[k] = sub(v);
+      if (typeof v === 'string' && v.includes('${')) {
+        const resolved = sub(v);
+        // A path built from variables (./${artDirectory}/${system.theme}.webp)
+        // can only become a URL once its variables are known — which is why
+        // this runs after every file has contributed its <variables>.
+        // A path can still hold ${system.theme} — that one is per-system and
+        // only the renderer knows it. Convert to a URL anyway so the renderer
+        // just substitutes the system name into an already-valid URL, rather
+        // than having to know where the theme lives on disk.
+        el.props[k] = ASSET_PROPS.includes(k) && !/^\w+:/.test(resolved)
+          ? this._assetUrl(themeDir, resolved)
+          : resolved;
+        // Numeric props declared through a variable arrive as strings.
+        if (NUM_PROPS.has(k)) el.props[k] = Number(el.props[k]);
+        else if (PAIR_PROPS.has(k)) el.props[k] = parsePair(el.props[k]);
+      }
     }
   }
 

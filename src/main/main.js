@@ -36,6 +36,7 @@ const THEMESHOT = process.argv.includes('--themeshot');
 const JOINCHECK = process.argv.includes('--joincheck');
 const PADONLY = process.argv.includes('--padonly');
 const VIEWCHECK = process.argv.includes('--viewcheck');
+const REALTHEME = process.argv.includes('--realtheme');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -458,7 +459,8 @@ ipcMain.handle('prefs:get', (_ev, key) => prefs.get(key) ?? null);
 ipcMain.handle('app:selfCheck', () =>
   // --viewcheck deliberately does NOT opt out: it exists to verify the
   // launch-into-themed-view behaviour a real user gets.
-  SMOKE || AUTOPLAY || BIGSHOT || UISHOT || DEVCHECK || THEMESHOT || JOINCHECK || PADONLY);
+  SMOKE || AUTOPLAY || BIGSHOT || UISHOT || DEVCHECK || THEMESHOT || JOINCHECK
+  || PADONLY || REALTHEME);
 
 // ── controllers ──────────────────────────────────────────────────────
 ipcMain.handle('pads:list', () => ({
@@ -694,6 +696,71 @@ ipcMain.on('ui:ready', () => {
       console.error('UISHOT FAIL:', err.message);
       app.exit(1);
     });
+    return;
+  }
+  if (REALTHEME) {
+    // --realtheme <name>: render a REAL community theme and screenshot it.
+    // §16f's lesson was that parsing is not rendering: the engine reported
+    // capabilities correctly while producing a blank screen. This looks.
+    (async () => {
+      const name = process.argv[process.argv.indexOf('--realtheme') + 1];
+      const shot = async (label) => {
+        const img = await win.webContents.capturePage();
+        writeFileSync(`/tmp/romdeck-real-${name}-${label}.png`, img.toPNG());
+        console.log(`REALTHEME ${name} ${label}`);
+      };
+      await win.webContents.executeJavaScript(
+        `window.__romdeckTest.setTheme(${JSON.stringify(name)})`);
+      await new Promise((r) => setTimeout(r, 1500));
+      await win.webContents.executeJavaScript('window.__romdeckTest.enterBigScreen()');
+      await new Promise((r) => setTimeout(r, 1800));
+      await shot('system');
+      const st1 = await win.webContents.executeJavaScript('window.__romdeckTest.state()');
+      // The carousel only exists in the SYSTEM view, so it has to be measured
+      // here — before navigating into the gamelist.
+      const carousel = await win.webContents.executeJavaScript(`(() => ({
+        items: document.querySelectorAll('#bs-stage .te-caritem').length,
+        withLogo: document.querySelectorAll('#bs-stage .te-caritem img').length,
+        unresolved: [...document.querySelectorAll('#bs-stage .te-text')]
+          .map(n => n.textContent).filter(t => t && t.includes('\${')),
+      }))()`);
+      await win.webContents.executeJavaScript('window.__romdeckTest.nav("confirm")');
+      await new Promise((r) => setTimeout(r, 1200));
+      await shot('gamelist');
+      const st2 = await win.webContents.executeJavaScript('window.__romdeckTest.state()');
+      const imgs = await win.webContents.executeJavaScript(
+        `(() => { const all=[...document.querySelectorAll('#bs-stage img')];
+          return { total: all.length, loaded: all.filter(i=>i.complete && i.naturalWidth>0).length }; })()`);
+      console.log(`REALTHEME ${name}: system=${st1.elements} gamelist=${st2.elements} images=${imgs.loaded}/${imgs.total} loaded`);
+
+      // Element counts alone said "renders" while the screen was a white
+      // rectangle with ${system.fullName} printed three times on top of
+      // itself. These check what the pixels actually show.
+      const health = await win.webContents.executeJavaScript(`(() => {
+        const texts = [...document.querySelectorAll('#bs-stage .te-text')].map(n => n.textContent);
+        return {
+          unresolved: texts.filter(t => t && t.includes('\${')),
+          carouselImages: document.querySelectorAll('#bs-stage .te-caritem img').length,
+          carouselItems: document.querySelectorAll('#bs-stage .te-caritem').length,
+          brokenImages: [...document.querySelectorAll('#bs-stage img')]
+            .filter(i => i.complete && i.naturalWidth === 0).length,
+        };
+      })()`);
+      const problems = [];
+      const unresolved = [...carousel.unresolved, ...health.unresolved];
+      if (unresolved.length) {
+        problems.push(`unresolved bindings on screen: ${JSON.stringify(unresolved.slice(0, 3))}`);
+      }
+      if (health.brokenImages) problems.push(`${health.brokenImages} broken images`);
+      if (st1.elements === 0 || st2.elements === 0) problems.push('an empty view');
+      console.log(`REALTHEME ${name}: carousel ${carousel.withLogo}/${carousel.items} items show a logo`);
+
+      const ok = problems.length === 0;
+      console.log(ok
+        ? `REALTHEME OK — ${name} renders`
+        : `REALTHEME FAIL — ${name}: ${problems.join('; ')}`);
+      setTimeout(() => app.exit(ok ? 0 : 1), 300);
+    })().catch((e) => { console.error('REALTHEME FAIL:', e.message); app.exit(1); });
     return;
   }
   if (BIGSHOT) {

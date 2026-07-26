@@ -55,6 +55,13 @@ function place(node, props) {
   if (props.zIndex !== undefined) node.style.zIndex = String(props.zIndex);
   if (props.fontSize) node.style.fontSize = `${props.fontSize * STAGE_H}px`;
   if (props.horizontalAlignment) node.style.textAlign = props.horizontalAlignment;
+  const family = fontFamilyFor(props);
+  if (family) node.style.fontFamily = family;
+  if (props.lineSpacing) node.style.lineHeight = String(props.lineSpacing);
+  if (props.letterCase === 'capitalize') node.style.textTransform = 'capitalize';
+  else if (props.letterCase === 'uppercase') node.style.textTransform = 'uppercase';
+  else if (props.letterCase === 'lowercase') node.style.textTransform = 'lowercase';
+  if (props.visible === 'false') node.style.display = 'none';
 }
 
 // ── data the theme's <metadata> tags resolve against ─────────────────
@@ -69,11 +76,31 @@ function metaValue(key) {
   const sys = currentSystem();
   const game = currentGame();
   switch (key) {
+    // romdeck's own binding names…
     case 'system.fullName': return sys?.name ?? '';
     case 'system.gameCount': return sys ? `${sys.roms.length} games` : '';
     case 'game.name': return game?.name ?? '';
     case 'game.cover': return game?.art ?? '';
     case 'game.video': return '';
+    // …and the ones REAL ES-DE themes actually use.
+    // system.fullName has collection-scoped siblings: a theme declares all
+    // three at the same position and ES-DE shows whichever applies. romdeck
+    // has no collections, so only the plain one resolves and the others
+    // deliberately come back empty rather than stacking on top of it.
+    case 'system.fullName.noCollections': return sys?.name ?? '';
+    case 'system.fullName.autoCollections': return '';
+    case 'system.fullName.customCollections': return '';
+    case 'gamecount': return sys ? `${sys.roms.length} games` : '';
+    case 'name': return game?.name ?? '';
+    case 'description': return game?.meta?.desc ?? '';
+    case 'genre': return game?.meta?.genre ?? '';
+    case 'developer': return game?.meta?.developer ?? '';
+    case 'publisher': return game?.meta?.publisher ?? '';
+    case 'players': return game?.meta?.players ?? '';
+    case 'releasedate': return game?.meta?.releasedate ?? '';
+    case 'rating': return game?.meta?.rating ? String(game.meta.rating) : '';
+    case 'playcount': return String(game?.meta?.playcount ?? 0);
+    case 'playtime': return '';
     case 'game.detail': {
       if (!game) return '';
       const bits = [];
@@ -86,17 +113,47 @@ function metaValue(key) {
   }
 }
 
+/**
+ * Resolve a <text> body's ${…} bindings.
+ *
+ * These are NOT theme variables — those were substituted in the main process.
+ * What survives is runtime data (`${system.fullName}`), which only the
+ * renderer knows. An unresolved binding becomes empty rather than being shown
+ * as literal `${…}` on screen, which is what real themes expect: they declare
+ * several collection-scoped variants at one position and rely on the
+ * inapplicable ones staying blank.
+ */
+function bindText(text) {
+  if (typeof text !== 'string') return '';
+  if (!text.includes('${')) return text;
+  return text.replace(/\$\{([\w.]+)\}/g, (_m, key) => metaValue(key) ?? '');
+}
+
 // ── element builders ─────────────────────────────────────────────────
 function buildImage(el) {
   const node = document.createElement('div');
   node.className = 'te-image';
   place(node, el.props);
-  if (el.props.color && !el.props.path && !el.props.metadata) {
-    node.style.background = hex(el.props.color);
+  const p = el.props;
+
+  // Real themes use a 1x1 white box.png tinted with <color> as a solid fill —
+  // backgrounds, separator lines, panels. Rendering it as an untinted <img>
+  // painted the whole stage white and buried everything behind it.
+  const isFill = typeof p.path === 'string' && p.color
+    && (p.tile === 'true' || /box\.(png|svg)$/i.test(p.path));
+  if (isFill) {
+    node.style.background = hex(p.color);
+    return node;
   }
-  if (el.props.path) {
+  if (p.color && !p.path && !p.metadata && !p.imageType) {
+    node.style.background = hex(p.color);
+  }
+  if (p.path) {
     const img = document.createElement('img');
-    img.src = el.props.path;
+    img.src = p.path;
+    // A theme referencing art for a system/game we don't have shouldn't leave
+    // a broken-image glyph on the stage.
+    img.onerror = () => img.remove();
     node.appendChild(img);
   }
   return node;
@@ -140,7 +197,34 @@ const BUILDERS = {
   video: buildVideo,
   rating: buildText,
   datetime: buildText,
+  // Real-theme element types. Rendering them as positioned text keeps a
+  // theme's layout intact instead of leaving holes where these sit; the ones
+  // romdeck has no data for simply come out empty rather than misplacing
+  // everything around them.
+  gamelistinfo: buildText,
+  clock: buildClock,
+  systemstatus: buildText,
+  helpsystem: buildText,
+  badges: buildBadges,
 };
+
+function buildClock(el) {
+  const node = buildText(el);
+  const tick = () => {
+    if (!node.isConnected) return;
+    node.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setTimeout(tick, 20000);
+  };
+  tick();
+  return node;
+}
+
+function buildBadges(el) {
+  const node = document.createElement('div');
+  node.className = 'te-badges';
+  place(node, el.props);
+  return node;
+}
 
 // ── rendering ────────────────────────────────────────────────────────
 function buildView(viewName) {
@@ -162,11 +246,21 @@ function buildView(viewName) {
 function paint() {
   for (const [, { node, el } ] of bs.els) {
     const p = el.props;
-    if (el.type === 'text' || el.type === 'rating' || el.type === 'datetime') {
-      node.textContent = p.metadata ? metaValue(p.metadata) : (p.text ?? '');
-    } else if (el.type === 'image' && p.metadata) {
+    if (el.type === 'clock') {
+      // self-updating; leave it alone
+    } else if (el.type === 'text' || el.type === 'rating' || el.type === 'datetime'
+      || el.type === 'gamelistinfo' || el.type === 'systemstatus' || el.type === 'helpsystem') {
+      // Real themes bind through <metadata> OR <systemdata>; a literal <text>
+      // is the fallback, and <defaultValue> covers "nothing for this game".
+      const key = p.metadata ?? p.systemdata;
+      node.textContent = key
+        ? (metaValue(key) || p.defaultValue || '')
+        : bindText(p.text);
+    } else if (el.type === 'image' && (p.metadata || p.imageType)) {
       node.replaceChildren();
-      const src = metaValue(p.metadata);
+      // <imageType>marquee|image|cover</imageType> is how real themes ask for
+      // per-game art; romdeck has one cover per game, so they all resolve to it.
+      const src = p.metadata ? metaValue(p.metadata) : (currentGame()?.art ?? '');
       if (src) {
         const img = document.createElement('img');
         img.src = src;
@@ -202,9 +296,52 @@ function paintCarousel(node, el) {
     item.style.background = hex(off === 0 ? el.props.selectedColor : el.props.color, '#1a1f2b');
     item.style.color = hex(el.props.textColor, '#e8ecf4');
     if (off === 0 && el.props.itemScale) item.style.transform = `scale(${el.props.itemScale})`;
-    item.textContent = sys.name;
+
+    // Real ES-DE themes are IMAGE-driven: the carousel shows a per-system
+    // logo, resolved through ${system.theme} (the ES-DE shortname). Drawing
+    // text boxes instead was the second half of §16f — a fixed parser alone
+    // would still have looked wrong.
+    const logo = systemLogoUrl(el, sys);
+    if (logo) {
+      const img = document.createElement('img');
+      img.src = logo;
+      img.alt = sys.name;
+      // Themes ship logos for systems a given library may not have; falling
+      // back to the name is better than an empty slot.
+      img.onerror = () => { img.remove(); item.textContent = sys.name; };
+      item.appendChild(img);
+    } else {
+      item.textContent = sys.name;
+    }
     node.appendChild(item);
   }
+}
+
+/**
+ * Resolve a carousel item's image for one system.
+ *
+ * ES-DE themes write `./${artDirectory}/${system.theme}.webp`. Everything but
+ * `${system.theme}` is already substituted by the time the model arrives, so
+ * the per-system part is filled in here, where the system is known.
+ */
+function systemLogoUrl(el, sys) {
+  const template = el.props.staticImage ?? el.props.imagePath ?? el.props.path;
+  if (typeof template !== 'string' || !template) return null;
+  if (!template.includes('${system.theme}')) {
+    return template.includes('${') ? null : template;
+  }
+  const short = sys.short ?? shortnameOf(sys.name);
+  return short ? template.replace(/\$\{system\.theme\}/g, short) : null;
+}
+
+/**
+ * ES-DE shortname for a system display name. The rom records carry `short`
+ * already (main.js sets it from systems.js), so this is only a fallback for
+ * groups built before that lands.
+ */
+function shortnameOf(displayName) {
+  const rom = bs.allRoms.find((r) => r.system === displayName && r.short);
+  return rom?.short ?? null;
 }
 
 function paintTextlist(node, el) {
@@ -223,6 +360,46 @@ function paintTextlist(node, el) {
     row.textContent = (sys.roms[i].meta?.favorite ? '★ ' : '') + sys.roms[i].name;
     node.appendChild(row);
   }
+}
+
+/**
+ * Register the theme's own fonts (§16f blocker 3).
+ *
+ * Themes ship .ttf/.otf files and name them per element via <fontPath>. Each
+ * distinct file becomes an @font-face whose family is derived from the URL,
+ * so elements can reference it by the same path they declared.
+ */
+function installThemeFonts(theme) {
+  const style = document.getElementById('bs-fonts') ?? (() => {
+    const s = document.createElement('style');
+    s.id = 'bs-fonts';
+    document.head.appendChild(s);
+    return s;
+  })();
+
+  const paths = new Set();
+  for (const list of Object.values(theme?.views ?? {})) {
+    for (const el of list) {
+      const p = el.props?.fontPath;
+      if (typeof p === 'string' && p.startsWith('romdeck-theme://')) paths.add(p);
+    }
+  }
+
+  const rules = [];
+  bs.fontFamilies = new Map();
+  let i = 0;
+  for (const p of paths) {
+    const family = `themefont${i++}`;
+    bs.fontFamilies.set(p, family);
+    rules.push(`@font-face{font-family:"${family}";src:url("${p}");font-display:swap;}`);
+  }
+  style.textContent = rules.join('\n');
+}
+
+/** The CSS family for an element's declared fontPath, if the theme shipped one. */
+function fontFamilyFor(props) {
+  const p = props?.fontPath;
+  return p && bs.fontFamilies?.get(p) ? `"${bs.fontFamilies.get(p)}"` : null;
 }
 
 function fitStage() {
@@ -283,7 +460,9 @@ function regroup(roms) {
     grouped.get(rom.system).push(rom);
   }
   bs.systems = [...grouped.entries()]
-    .map(([name, l]) => ({ name, roms: l }))
+    // `short` is the ES-DE shortname, which is how themes name their logo
+    // files — carry it through so the carousel can resolve ${system.theme}.
+    .map(([name, l]) => ({ name, roms: l, short: l[0]?.short ?? null }))
     .sort((a, b) => a.name.localeCompare(b.name));
   if (bs.sysIndex >= bs.systems.length) bs.sysIndex = Math.max(0, bs.systems.length - 1);
 }
@@ -299,6 +478,7 @@ export async function enterBigScreen({
   const res = await romdeck.themeLoad(themeName, { variant, colorScheme });
   if (res.error) return res;
   bs.theme = res.theme;
+  installThemeFonts(res.theme);
   bs.active = true;
   bs.view = 'system';
   bs.sysIndex = 0;

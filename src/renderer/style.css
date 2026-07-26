@@ -745,6 +745,12 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
 }
 .te-caritem.sel { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25), 0 10px 40px rgba(0, 0, 0, 0.6); }
+/* Real themes put a system LOGO here, not a text box (§16f). */
+.te-caritem img {
+  max-width: 88%;
+  max-height: 78%;
+  object-fit: contain;
+}
 .te-textlist { overflow: hidden; }
 .te-row {
   padding: 4px 14px;
