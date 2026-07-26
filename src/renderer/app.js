@@ -59,7 +59,7 @@ function render() {
   $('empty').classList.toggle('hidden', state.roms.length > 0);
   $('dirpath').textContent = state.romsDir ?? 'no folder selected';
 
-  const playingPaths = new Set(state.playing.values());
+  const playingPaths = new Set([...state.playing.values()].map((s) => s.romPath));
   state.filtered.forEach((rom, i) => {
     const tile = document.createElement('div');
     tile.className = 'tile' + (i === state.selected ? ' selected' : '');
@@ -81,7 +81,7 @@ function render() {
       stop.textContent = 'stop';
       stop.onclick = (ev) => {
         ev.stopPropagation();
-        for (const [id, p] of state.playing) if (p === rom.path) romdeck.stopSession(id);
+        for (const [id, s] of state.playing) if (s.romPath === rom.path) romdeck.stopSession(id);
       };
       tile.appendChild(stop);
     }
@@ -93,17 +93,138 @@ function render() {
   const n = state.playing.size;
   $('sessioncount').classList.toggle('hidden', n === 0);
   $('sessioncount').textContent = `${n} playing`;
+
+  renderDetails(); // async; renders the side panel for the selection
 }
 
 function selectedRom() {
   return state.filtered[state.selected] ?? null;
 }
 
-async function launch(rom) {
+async function launch(rom, opts = {}) {
   if (!rom) return;
   $('status').textContent = `launching ${rom.name}…`;
-  const res = await romdeck.launch(rom.path, {});
+  const res = await romdeck.launch(rom.path, opts);
   if (res?.error) toast('Launch failed', res.error, true);
+}
+
+// ── details panel (selected game + live session controls + states) ───
+function sessionFor(rom) {
+  if (!rom) return null;
+  for (const [id, s] of state.playing) if (s.romPath === rom.path) return { id, ...s };
+  return null;
+}
+
+async function renderDetails() {
+  const rom = selectedRom();
+  const panel = $('details');
+  if (!rom) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+  $('dt-name').textContent = rom.name;
+  $('dt-system').textContent = rom.system;
+
+  const live = sessionFor(rom);
+  const actions = $('dt-actions');
+  actions.replaceChildren();
+  const btn = (label, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    actions.appendChild(b);
+    return b;
+  };
+
+  if (!live) {
+    btn('▶ Play', () => launch(rom), 'primary');
+    btn('Play from start', () => launch(rom, { resume: false }));
+  } else {
+    btn(live.paused ? '▶ Resume' : '⏸ Pause', async () => {
+      const r = await romdeck.cmd(live.id, live.paused ? 'resume' : 'pause');
+      if (r.error) toast('Session', r.error, true);
+      else state.playing.get(live.id).paused = !live.paused;
+      renderDetails();
+    });
+    btn('💾 Save', async () => {
+      const name = `save-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
+      const r = await romdeck.saveState(live.id, name);
+      r.error ? toast('Save failed', r.error, true) : toast('State saved', name);
+      renderDetails();
+    });
+    btn('📷', async () => {
+      const r = await romdeck.screenshot(live.id);
+      r.error ? toast('Screenshot failed', r.error, true) : toast('Screenshot', r.result.file);
+    });
+    const ff = live.speed !== 1;
+    btn(ff ? '⏩ 4x' : '⏩', async () => {
+      const r = await romdeck.cmd(live.id, 'setSpeed', { x: ff ? 1 : 4 });
+      if (r.error) toast('Session', r.error, true);
+      else state.playing.get(live.id).speed = r.result.speed;
+      renderDetails();
+    }, ff ? 'active' : '');
+    btn('⏪', async () => {
+      const r = await romdeck.cmd(live.id, 'rewind', { steps: 2 });
+      if (r.error) toast('Rewind', r.error, true);
+    });
+    btn('⛶', async () => {
+      const st = await romdeck.cmd(live.id, 'getStatus');
+      const on = !(st.result?.fullscreen ?? false);
+      await romdeck.cmd(live.id, 'setFullscreen', { on });
+    });
+    btn('✕ Stop', () => romdeck.stopSession(live.id), 'danger');
+  }
+
+  // states list
+  const list = await romdeck.statesList(rom.path);
+  const wrap = $('dt-states');
+  wrap.replaceChildren();
+  if (!list.length) {
+    const none = document.createElement('div');
+    none.className = 'none';
+    none.textContent = 'No save states yet.';
+    wrap.appendChild(none);
+  }
+  for (const st of list) {
+    const card = document.createElement('div');
+    card.className = 'state-card';
+    const img = document.createElement('img');
+    if (st.screenshotDataUrl) img.src = st.screenshotDataUrl;
+    card.appendChild(img);
+    const meta = document.createElement('div');
+    meta.className = 'st-meta';
+    const nm = document.createElement('div');
+    nm.className = 'st-name';
+    nm.textContent = st.name === 'auto' ? 'Resume point' : st.name;
+    const tm = document.createElement('div');
+    tm.className = 'st-time';
+    tm.textContent = st.savedAt ? new Date(st.savedAt).toLocaleString() : '';
+    const row = document.createElement('div');
+    row.className = 'st-actions';
+    const loadB = document.createElement('button');
+    loadB.textContent = live ? 'Load' : 'Play from here';
+    loadB.onclick = async () => {
+      if (live) {
+        const r = await romdeck.loadState(live.id, st.name);
+        r.error ? toast('Load failed', r.error, true) : toast('State loaded', nm.textContent);
+      } else {
+        launch(rom, { resume: false, stateName: st.name });
+      }
+    };
+    const delB = document.createElement('button');
+    delB.className = 'danger';
+    delB.textContent = 'Delete';
+    delB.onclick = async () => {
+      await romdeck.statesDelete(rom.path, st.name);
+      renderDetails();
+    };
+    row.append(loadB, delB);
+    meta.append(nm, tm, row);
+    card.appendChild(meta);
+    wrap.appendChild(card);
+  }
 }
 
 function toast(title, body, isCrash = false, actions = []) {
@@ -172,9 +293,18 @@ romdeck.on('pad:nav', (ev) => nav(ev.action));
 // ── sessions ─────────────────────────────────────────────────────────
 romdeck.on('session:update', (ev) => {
   if (ev.type === 'started') {
-    state.playing.set(ev.id, ev.romPath);
+    state.playing.set(ev.id, { romPath: ev.romPath, paused: false, speed: 1 });
     $('status').textContent = `${ev.name} running (session ${ev.id})`;
     toast('Now playing', ev.name);
+  } else if (ev.type === 'ready') {
+    $('status').textContent = `${ev.name} running (${ev.core})`;
+    return; // no re-render needed yet; resume event may follow
+  } else if (ev.type === 'resumed') {
+    toast('Resumed', `${ev.name} — from ${new Date(ev.savedAt).toLocaleString()}`);
+    return;
+  } else if (ev.type === 'resume-failed') {
+    toast('Resume failed', ev.message, true);
+    return;
   } else {
     state.playing.delete(ev.id);
     if (ev.type === 'crashed') {

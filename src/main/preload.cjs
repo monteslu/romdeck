@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('romdeck', {
   launch: (romPath, opts) => ipcRenderer.invoke('session:launch', romPath, opts),
   stopSession: (id) => ipcRenderer.invoke('session:stop', id),
   listSessions: () => ipcRenderer.invoke('session:list'),
+  cmd: (id, method, params) => ipcRenderer.invoke('session:cmd', id, method, params),
+  saveState: (id, name) => ipcRenderer.invoke('session:saveState', id, name),
+  loadState: (id, name) => ipcRenderer.invoke('session:loadState', id, name),
+  screenshot: (id) => ipcRenderer.invoke('session:screenshot', id),
+  statesList: (romPath) => ipcRenderer.invoke('states:list', romPath),
+  statesDelete: (romPath, name) => ipcRenderer.invoke('states:delete', romPath, name),
   uiReady: () => ipcRenderer.send('ui:ready'),
   on: (channel, cb) => {
     if (!EVENT_CHANNELS.has(channel)) return;

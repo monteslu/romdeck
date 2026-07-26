@@ -6,8 +6,10 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { scanRoms } from './scanner.js';
 import { GameSessionManager } from './sessions.js';
+import { StateStore } from './statestore.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
 
@@ -20,7 +22,8 @@ const cliRomsDir = process.argv
 
 let win = null;
 let prefs = null;
-const sessions = new GameSessionManager();
+let stateStore = null;
+let sessions = null;
 const padNav = new PadNav((ev) => {
   if (win && !win.isDestroyed() && win.isFocused()) {
     win.webContents.send('pad:nav', ev);
@@ -75,9 +78,13 @@ ipcMain.handle('library:chooseDir', async () => {
   return getLibrary();
 });
 
-ipcMain.handle('session:launch', (_ev, romPath, opts = {}) => {
+function findRom(romPath) {
   const { roms } = getLibrary();
-  const rom = roms.find((r) => r.path === romPath);
+  return roms.find((r) => r.path === romPath) ?? null;
+}
+
+ipcMain.handle('session:launch', (_ev, romPath, opts = {}) => {
+  const rom = findRom(romPath);
   if (!rom) return { error: 'ROM not found in library' };
   return sessions.launch(rom, opts);
 });
@@ -85,8 +92,79 @@ ipcMain.handle('session:launch', (_ev, romPath, opts = {}) => {
 ipcMain.handle('session:stop', (_ev, id) => sessions.stop(id));
 ipcMain.handle('session:list', () => sessions.list());
 
-sessions.on('update', (ev) => {
-  if (win && !win.isDestroyed()) win.webContents.send('session:update', ev);
+// Generic session command passthrough (pause/resume/setSpeed/setFullscreen/
+// rewind/reset/getStatus) — the renderer never gets arbitrary method access.
+const RENDERER_METHODS = new Set([
+  'pause', 'resume', 'setSpeed', 'setFullscreen', 'rewind', 'reset', 'getStatus',
+]);
+ipcMain.handle('session:cmd', async (_ev, id, method, params = {}) => {
+  if (!RENDERER_METHODS.has(method)) return { error: `method not allowed: ${method}` };
+  try {
+    return { result: await sessions.rpc(id, method, params) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Named save state from a live session
+ipcMain.handle('session:saveState', async (_ev, id, name) => {
+  const session = sessions.get(id);
+  if (!session) return { error: 'no such session' };
+  try {
+    const res = await sessions.rpc(id, 'saveState', {});
+    stateStore.save(session.rom, name || `save-${Date.now()}`, {
+      stateB64: res.stateB64,
+      screenshotPngB64: res.screenshotPngB64,
+      frameCount: res.frameCount,
+      core: session.core,
+    });
+    return { result: { name, size: res.size } };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Load a stored state into a live session (or the game's session by path)
+ipcMain.handle('session:loadState', async (_ev, id, name) => {
+  const session = sessions.get(id);
+  if (!session) return { error: 'no such session' };
+  const stored = stateStore.load(session.rom, name);
+  if (!stored) return { error: `no state named ${name}` };
+  try {
+    await sessions.rpc(id, 'loadState', { stateB64: stored.stateB64 });
+    return { result: {} };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('session:screenshot', async (_ev, id) => {
+  const session = sessions.get(id);
+  if (!session) return { error: 'no such session' };
+  try {
+    const res = await sessions.rpc(id, 'screenshot', {});
+    const dir = path.join(app.getPath('userData'), 'screenshots');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(
+      dir,
+      `${session.name.replace(/[^\w-]+/g, '_')}-${Date.now()}.png`,
+    );
+    writeFileSync(file, Buffer.from(res.pngB64, 'base64'));
+    return { result: { file, dataUrl: 'data:image/png;base64,' + res.pngB64 } };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('states:list', (_ev, romPath) => {
+  const rom = findRom(romPath);
+  return rom ? stateStore.list(rom) : [];
+});
+
+ipcMain.handle('states:delete', (_ev, romPath, name) => {
+  const rom = findRom(romPath);
+  if (rom) stateStore.delete(rom, name);
+  return true;
 });
 
 ipcMain.on('ui:ready', () => {
@@ -97,9 +175,10 @@ ipcMain.on('ui:ready', () => {
   if (AUTOPLAY) runAutoplayCheck();
 });
 
-// --autoplay: end-to-end architecture check. Launch the first game in the
-// library as a real player process, confirm it stays alive, stop it, confirm
-// clean shutdown, then quit. Proves the Electron→player spawn path.
+// --autoplay: end-to-end M1 check. Launch the first game, then drive the whole
+// session surface through the control channel: pause/resume, named save state
+// (persisted), load it back, screenshot to disk, fast-forward, rewind, graceful
+// quit — and confirm the exit-autosave landed for resume-on-next-launch.
 async function runAutoplayCheck() {
   const { roms } = getLibrary();
   if (!roms.length) {
@@ -109,36 +188,102 @@ async function runAutoplayCheck() {
   }
   const rom = roms[0];
   console.log(`AUTOPLAY launching: ${rom.name} (${rom.system})`);
-  let sawStart = false;
+  let failures = 0;
+  const check = (name, cond, extra = '') => {
+    console.log(`${cond ? 'PASS' : 'FAIL'}: ${name} ${extra}`);
+    if (!cond) failures++;
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
   let id = null;
-  // listener FIRST — launch() emits 'started' synchronously
-  sessions.on('update', (ev) => {
+  let phase2 = false;
+  sessions.on('update', async (ev) => {
     if (id !== null && ev.id !== id) return;
-    if (ev.type === 'started') sawStart = true;
-    if (ev.type === 'closed' && sawStart) {
-      console.log('AUTOPLAY OK — player spawned, ran, and shut down cleanly');
-      setTimeout(() => app.quit(), 300);
-    }
-    if (ev.type === 'crashed' || ev.type === 'error') {
-      console.error(`AUTOPLAY FAIL — ${ev.type}:`, ev.message ?? ev.code, ev.logTail ?? '');
+    try {
+      if (ev.type === 'ready' && phase2) return; // phase 2 waits for 'resumed'
+      if (ev.type === 'ready') {
+        check('session ready', true, `core=${ev.core}`);
+        await sleep(2000);
+
+        await sessions.rpc(id, 'pause');
+        const st = await sessions.rpc(id, 'getStatus');
+        check('paused via channel', st.paused === true, `frame=${st.frameCount}`);
+        await sessions.rpc(id, 'resume');
+
+        const save = await sessions.rpc(id, 'saveState', {});
+        check('saveState blob', (save.stateB64?.length ?? 0) > 1000, `${save.size}b`);
+        const session = sessions.get(id);
+        stateStore.save(session.rom, 'checkpoint', {
+          stateB64: save.stateB64,
+          screenshotPngB64: save.screenshotPngB64,
+          frameCount: save.frameCount,
+          core: session.core,
+        });
+        check('state persisted', stateStore.load(rom, 'checkpoint') !== null);
+
+        await sessions.rpc(id, 'loadState', { stateB64: save.stateB64 });
+        check('loadState round-trip', true);
+
+        const shot = await sessions.rpc(id, 'screenshot', {});
+        check('screenshot', (shot.pngB64?.length ?? 0) > 500, `${shot.width}x${shot.height}`);
+
+        const sp = await sessions.rpc(id, 'setSpeed', { x: 4 });
+        check('fast-forward set', sp.speed === 4);
+        await sleep(800);
+        await sessions.rpc(id, 'setSpeed', { x: 1 });
+
+        await sleep(1500);
+        const st2 = await sessions.rpc(id, 'getStatus');
+        if (st2.rewindDepth > 0) {
+          const rw = await sessions.rpc(id, 'rewind', { steps: 1 });
+          check('rewind', rw.frame <= st2.frameCount, `depth=${st2.rewindDepth}`);
+        } else {
+          check('rewind history', false, 'no depth accrued');
+        }
+
+        await sessions.stop(id);
+      }
+      if (ev.type === 'closed' && !phase2) {
+        phase2 = true;
+        check('graceful close', true, `code=${ev.code}`);
+        check('exit autosave persisted', stateStore.hasAuto(rom));
+        // Phase 2: relaunch with resume — the autosave must load automatically.
+        console.log('AUTOPLAY phase 2: relaunch + resume');
+        ({ id } = sessions.launch(rom, { resume: true }));
+        return;
+      }
+      if (ev.type === 'resumed') {
+        check('resume-on-launch', true, `from ${ev.savedAt}`);
+        await sleep(500);
+        await sessions.stop(id);
+        return;
+      }
+      if (ev.type === 'closed' && phase2) {
+        console.log(failures === 0 ? 'AUTOPLAY M1 OK — all session features verified' : `AUTOPLAY ${failures} FAILURES`);
+        setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
+      }
+      if (ev.type === 'crashed' || ev.type === 'error') {
+        console.error(`AUTOPLAY FAIL — ${ev.type}:`, ev.message ?? ev.code, ev.logTail ?? '');
+        app.exit(1);
+      }
+    } catch (err) {
+      console.error('AUTOPLAY FAIL — driver error:', err.message);
       app.exit(1);
     }
   });
-  ({ id } = sessions.launch(rom, {}));
-  setTimeout(() => {
-    if (sessions.list().some((s) => s.id === id)) {
-      console.log('AUTOPLAY player alive after 8s — stopping it');
-      sessions.stop(id);
-    } else if (!sawStart) {
-      console.error('AUTOPLAY FAIL — player never started');
-      app.exit(1);
-    }
-  }, 8000);
+  ({ id } = sessions.launch(rom, { resume: false }));
 }
 
 // ── lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   prefs = new Prefs(app.getPath('userData'));
+  stateStore = new StateStore(app.getPath('userData'), app.getVersion());
+  const saveDir = path.join(app.getPath('userData'), 'saves');
+  mkdirSync(saveDir, { recursive: true });
+  sessions = new GameSessionManager({ stateStore, saveDir });
+  sessions.on('update', (ev) => {
+    if (win && !win.isDestroyed()) win.webContents.send('session:update', ev);
+  });
   createWindow();
   padNav.start(); // degrades gracefully if SDL is unavailable
   app.on('activate', () => {
@@ -148,12 +293,12 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   padNav.stop();
-  sessions.stopAll();
+  sessions?.stopAll();
 });
 
 app.on('window-all-closed', () => {
   // Library closed → stop players too (they're children of this app's purpose,
   // not orphans). Then quit on every platform; romdeck is not a tray app (yet).
-  sessions.stopAll();
+  sessions?.stopAll();
   app.quit();
 });
