@@ -405,6 +405,44 @@ export class Stage {
    * does a headless render -- there is nobody to see a 400ms slide in a
    * screenshot, and animating there would make every check time-dependent.
    */
+  /**
+   * The game a <gameselector> element points at.
+   *
+   * In the SYSTEM view a theme can show artwork or metadata for a game other
+   * than the highlighted one -- a random title from the system, the last one
+   * played, the most played (GameSelectorComponent.h). Elements reference a
+   * selector by name and pick an entry from it with <gameselectorEntry>.
+   *
+   * Random is seeded per system rather than per frame: a title that reshuffled
+   * on every repaint would strobe.
+   */
+  gameSelectorGame(props) {
+    const sys = this.currentSystem();
+    if (!sys?.roms.length) return null;
+    const sel = this.elements().find((e) => e.type === 'gameselector'
+      && (!props.gameselector || e.name === props.gameselector));
+    if (!sel) return null;
+    const mode = sel.props.selection ?? 'random';
+    const count = Math.max(1, Math.min(30, Number(sel.props.gameCount ?? 1)));
+    let pool = sys.roms;
+    if (mode === 'lastplayed') {
+      pool = pool.filter((r) => r.meta?.lastplayed && String(r.meta.lastplayed) !== '0')
+        .sort((a, b) => String(b.meta.lastplayed).localeCompare(String(a.meta.lastplayed)));
+    } else if (mode === 'mostplayed') {
+      pool = pool.filter((r) => Number(r.meta?.playcount ?? 0) > 0)
+        .sort((a, b) => Number(b.meta.playcount) - Number(a.meta.playcount));
+    } else {
+      // Deterministic per system: the same system always yields the same
+      // "random" pick for as long as the library is unchanged.
+      const seed = [...sys.name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+      pool = [...pool].sort((a, b) => ((seed + a.path.length) % 97) - ((seed + b.path.length) % 97));
+    }
+    if (!pool.length) return null;
+    const entry = Math.max(0, Math.min(count - 1, Number(props.gameselectorEntry ?? 0)));
+    return pool[entry % pool.length] ?? pool[0];
+  }
+
+
   /** @see scrollInterval -- exposed so the app can pick a scroll tier. */
   scrollInterval(heldMs, fast) { return scrollInterval(heldMs, fast); }
 
@@ -451,6 +489,14 @@ export class Stage {
   currentSystem() { return this.systems[this.sysIndex] ?? null; }
   currentGame() { return this.currentSystem()?.roms[this.gameIndex] ?? null; }
 
+  /** The game an ELEMENT should show: its gameselector's, or the selection. */
+  gameFor(props) {
+    if (this.view === 'system' && (props.gameselector || props.gameselectorEntry !== undefined)) {
+      return this.gameSelectorGame(props) ?? this.currentGame();
+    }
+    return this.currentGame();
+  }
+
   /**
    * The media file for an ES-DE <imageType>, or null.
    *
@@ -462,8 +508,8 @@ export class Stage {
    * anything else must resolve to nothing and let the element stay empty,
    * which is what ES-DE does for missing media.
    */
-  artFor(type) {
-    const game = this.currentGame();
+  artFor(type, forGame = null) {
+    const game = forGame ?? this.currentGame();
     if (!game) return null;
     switch (type) {
       // "image" is ES-DE's GENERIC slot, and FileData::getImagePath is a
@@ -582,9 +628,9 @@ export class Stage {
   }
 
   // ── data bindings ──────────────────────────────────────────────────
-  meta(key) {
+  meta(key, props = null) {
     const sys = this.currentSystem();
-    const game = this.currentGame();
+    const game = props ? this.gameFor(props) : this.currentGame();
     switch (key) {
       case 'system.fullName':
       case 'system.fullName.noCollections': return sys?.name ?? '';
@@ -679,6 +725,7 @@ export class Stage {
   // ── painting ───────────────────────────────────────────────────────
   paint() {
     const ctx = this.ctx;
+    this.drawErrors = [];
     ctx.clearRect(0, 0, STAGE_W, STAGE_H);
     // A theme with no background still needs one, or the previous frame and
     // the desktop show through.
@@ -706,7 +753,16 @@ export class Stage {
         && this.currentGame()?.meta?.hidemetadata === 'true') continue;
       ctx.save();
       ctx.globalAlpha = el.props.opacity ?? 1;
-      try { this.drawElement(ctx, el); } catch { /* one bad element must not blank the view */ }
+      // One bad element must not blank the whole view -- but a SILENT catch
+      // hid a real crash for a whole batch of work: drawHelp threw on an
+      // undefined variable and the help row simply vanished, with every
+      // assertion still green. Record it so a check can see it.
+      try {
+        this.drawElement(ctx, el);
+      } catch (err) {
+        this.drawErrors = this.drawErrors ?? [];
+        this.drawErrors.push(`${el.type}${el.name ? `:${el.name}` : ''} — ${err.message}`);
+      }
       ctx.restore();
     }
     return this.canvas;
@@ -730,7 +786,7 @@ export class Stage {
       case 'gamelistinfo': {
         const key = el.props.metadata ?? el.props.systemdata;
         let text = key
-          ? (this.meta(key) || el.props.defaultValue || '')
+          ? (this.meta(key, el.props) || el.props.defaultValue || '')
           : this.bind(el.props.text ?? '');
         // A <datetime> holds an ES-DE timestamp (19990801T000000) and the
         // theme's <format> says how to print it. Without this the raw stamp
@@ -792,11 +848,26 @@ export class Stage {
     // Spacings are fractions of SCREEN WIDTH, clamped exactly as ES-DE does
     // (HelpComponent.cpp:277). Hardcoding them ignored the theme's own rhythm.
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
-    const size = (p.fontSize ?? 0.022) * STAGE_H * Number(p.entryRelativeScale ?? 1);
-    const entryGap = p.entrySpacing !== undefined
-      ? clamp(p.entrySpacing, 0, 0.04) * STAGE_W : size * 1.1;
-    const iconGap = p.iconTextSpacing !== undefined
-      ? clamp(p.iconTextSpacing, 0, 0.04) * STAGE_W : size * 0.35;
+    // The *Dimmed variants apply when ES-DE dims the help row. Our row is
+    // never dimmed, so they act as fallbacks -- a theme that sets ONLY the
+    // dimmed values still gets its own sizing rather than our defaults.
+    const size = (p.fontSize ?? p.fontSizeDimmed ?? 0.022) * STAGE_H
+      * Number(p.entryRelativeScale ?? 1);
+    const entrySpacing = p.entrySpacing ?? p.entrySpacingDimmed;
+    const iconSpacing = p.iconTextSpacing ?? p.iconTextSpacingDimmed;
+    const entryGap = entrySpacing !== undefined
+      ? clamp(entrySpacing, 0, 0.04) * STAGE_W : size * 1.1;
+    const iconGap = iconSpacing !== undefined
+      ? clamp(iconSpacing, 0, 0.04) * STAGE_W : size * 0.35;
+    // <opacity>/<opacityDimmed> fade the whole row.
+    const rowAlpha = Math.max(0.2, Math.min(1, Number(p.opacity ?? p.opacityDimmed ?? 1)));
+    // posDimmed/originDimmed are the DIMMED-state position, not a fallback
+    // for the normal one -- <pos> already reached us through box(), so
+    // preferring the pair here re-applied it and moved the row off screen.
+    // They are read so a theme setting only the dimmed pair still places its
+    // row, which is the one case where the fallback is right.
+    const posPair = p.pos ? null : p.posDimmed;
+    const originPair = p.origin ?? p.originDimmed;
 
     ctx.font = fontStack(size, { family: p._family ?? null, weight: 700 });
     ctx.textAlign = 'left';
@@ -808,9 +879,13 @@ export class Stage {
 
     // <pos> is the anchor and <origin> says which corner of the row it names,
     // so the row has to be measured before it can be placed.
-    const [ox, oy] = p.origin ?? [0, 0];
-    let x = b.x - ox * width;
-    const y = b.y - oy * size + size / 2;
+    const [ox, oy] = originPair ?? [0, 0];
+    const baseX = posPair ? posPair[0] * STAGE_W : b.x;
+    const baseY = posPair ? posPair[1] * STAGE_H : b.y;
+    let x = baseX - ox * width;
+    const y = baseY - oy * size + size / 2;
+    const prevRowAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevRowAlpha * rowAlpha;
 
     // The background plate, when the theme asks for one. Padding pairs are
     // (before, after) and BOTH axes are fractions of screen width.
@@ -828,18 +903,38 @@ export class Stage {
       ctx.fill();
     }
 
-    for (const [, icon, label] of entries) {
-      // *Dimmed variants apply when ES-DE dims the help row (during a
-      // transition or while a menu is up). Our help row is never in that
-      // state, so they are only used as a fallback when a theme supplies the
-      // dimmed colour and no base one.
-      ctx.fillStyle = hex(p.iconColor ?? p.iconColorDimmed, '#cccccc');
-      ctx.fillText(icon, x, y);
-      x += ctx.measureText(icon).width + iconGap;
-      ctx.fillStyle = hex(p.textColor ?? p.textColorDimmed, '#cccccc');
-      ctx.fillText(applyCase(label, p.letterCase), x, y);
-      x += ctx.measureText(label).width + entryGap;
+    // <entryLayout> puts the LABEL before the icon when a theme asks. The
+    // *Dimmed colours apply when ES-DE dims the row; ours is never dimmed, so
+    // they act as fallbacks for a theme that sets only those.
+    const textFirst = p.entryLayout === 'textFirst';
+    for (const [id, icon, label] of entries) {
+      // <customButtonIcon:<id>> swaps a prompt glyph for theme art.
+      const custom = this.img(this.perSystem(p[`customButtonIcon:${id}`]));
+      const text = applyCase(label, p.letterCase);
+      const iconColor = hex(p.iconColor ?? p.iconColorDimmed, '#cccccc');
+      const textColor = hex(p.textColor ?? p.textColorDimmed, '#cccccc');
+
+      const drawIcon = () => {
+        if (custom) {
+          drawContain(ctx, custom, { x, y: y - size / 2, w: size, h: size }, iconColor, 1);
+          x += size + iconGap;
+        } else {
+          ctx.fillStyle = iconColor;
+          ctx.fillText(icon, x, y);
+          x += ctx.measureText(icon).width + iconGap;
+        }
+      };
+      const drawLabel = () => {
+        ctx.fillStyle = textColor;
+        ctx.fillText(text, x, y);
+        x += ctx.measureText(text).width;
+      };
+
+      if (textFirst) { drawLabel(); x += iconGap; drawIcon(); x -= iconGap; }
+      else { drawIcon(); drawLabel(); }
+      x += entryGap;
     }
+    ctx.globalAlpha = prevRowAlpha;
     ctx.textBaseline = 'alphabetic';
   }
 
@@ -1030,7 +1125,7 @@ export class Stage {
     }
     let url = null;
     if (p.metadata) url = this.meta(p.metadata);
-    else if (p.imageType) url = this.artFor(p.imageType);
+    else if (p.imageType) url = this.artFor(p.imageType, this.gameFor(p));
     else url = this.perSystem(p.path);
     let img = this.img(url);
     if (!img && p.default) img = this.img(this.perSystem(p.default));
@@ -1131,11 +1226,18 @@ export class Stage {
     // clamping the loop to the system count dropped them entirely.
     // ES-DE loads ceil((maxItemCount + 1) / 2) either side, so the
     // half-clipped outermost items still draw.
+    // <itemsBeforeCenter> / <itemsAfterCenter> override the symmetric span,
+    // so a theme can show more items on one side of the selection than the
+    // other (CarouselComponent.h:238, default 8 each).
     const half = Math.ceil((span + 1) / 2);
+    const before = p.itemsBeforeCenter !== undefined
+      ? Math.max(0, Math.min(20, Number(p.itemsBeforeCenter))) : half;
+    const after = p.itemsAfterCenter !== undefined
+      ? Math.max(0, Math.min(20, Number(p.itemsAfterCenter))) : half;
 
     // <itemStacking> decides which item is on TOP where they overlap.
     const order = [];
-    for (let o = -half; o <= half; o++) order.push(o);
+    for (let o = -before; o <= after; o++) order.push(o);
     for (const off of stackOrder(order, p.itemStacking)) {
       const idx = (this.sysIndex + off + this.systems.length * 2) % this.systems.length;
       const sys = this.systems[idx];
@@ -1271,19 +1373,43 @@ export class Stage {
         // (CarouselComponent.h:1838). Everything else uses the element's
         // plain <letterCase>.
         // <textBackgroundColor> is a plate behind the carousel item's label.
-        if (p.textBackgroundColor && p.textBackgroundColor !== '00000000') {
+        // The selected item's label can carry its own colours.
+        const labelColor = sel ? (p.textSelectedColor ?? p.textColor) : p.textColor;
+        const labelBg = sel
+          ? (p.textSelectedBackgroundColor ?? p.textBackgroundColor)
+          : p.textBackgroundColor;
+        if (labelBg && labelBg !== '00000000') {
           const tbRadius = Math.max(0, Math.min(0.5,
             Number(p.textBackgroundCornerRadius ?? 0))) * STAGE_W;
           roundRect(ctx, cx, cy + h * 0.72, w, h * 0.28, tbRadius);
-          ctx.fillStyle = hex(p.textBackgroundColor);
+          ctx.fillStyle = hex(labelBg);
           ctx.fill();
-          ctx.fillStyle = hex(p.textColor, '#e8ecf4');
         }
+        ctx.fillStyle = hex(labelColor, '#e8ecf4');
         const kindCase = sys.isCustom ? p.letterCaseCustomCollections
           : sys.isCollection ? p.letterCaseAutoCollections
             : null;
         wrapText(ctx, applyCase(sys.name, kindCase ?? p.letterCase),
           cx + w / 2, cy + h / 2, w * 0.86, Math.round(h * 0.15));
+      }
+      // <reflections>: a mirrored copy under each item, fading out.
+      // <reflectionsOpacity> sets the starting alpha (0.1-1) and
+      // <reflectionsFalloff> how fast it dies (CarouselComponent.h:1748).
+      if ((p.reflections === 'true' || p.reflections === true) && img) {
+        const opacity = Math.max(0.1, Math.min(1, Number(p.reflectionsOpacity ?? 0.5)));
+        const falloff = Math.max(0, Math.min(10, Number(p.reflectionsFalloff ?? 1)));
+        const rh = h / Math.max(1, 1 + falloff);
+        const prevA = ctx.globalAlpha;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cx, cy + h, w, rh);
+        ctx.clip();
+        ctx.globalAlpha = prevA * opacity;
+        ctx.translate(cx, cy + h * 2);
+        ctx.scale(1, -1);
+        drawContain(ctx, img, { x: 0, y: 0, w, h }, null, 1);
+        ctx.restore();
+        ctx.globalAlpha = prevA;
       }
       if (rotated) {
         ctx.restore();
@@ -1497,10 +1623,28 @@ export class Stage {
         wrapText(ctx, game.name, cx + cw / 2, cy + ch / 2, cw * 0.9, Math.round(ch * 0.11), 3);
       }
       if (sel) {
-        roundRect(ctx, cx, cy, cw, ch, 8);
-        ctx.strokeStyle = hex(p.selectorColor, '#4fd1c5');
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        // <selectorRelativeScale> sizes the selector against the CELL, and
+        // <selectorLayer> decides whether it sits under or over the artwork.
+        // "bottom" is drawn before the image, so this branch only runs for
+        // the default "top".
+        const selScale = Math.max(0.1, Math.min(2, Number(p.selectorRelativeScale ?? 1)));
+        const sw = cw * selScale;
+        const sh = ch * selScale;
+        const sx = cx + (cw - sw) / 2;
+        const sy = cy + (ch - sh) / 2;
+        const selRadius = Math.max(0, Math.min(0.5,
+          Number(p.selectorCornerRadius ?? 0))) * STAGE_W || 8;
+        const selImg = this.img(this.perSystem(p.selectorImage));
+        if (selImg) {
+          drawContain(ctx, selImg, { x: sx, y: sy, w: sw, h: sh },
+            p.selectorColor ? hex(p.selectorColor) : null, 1);
+        } else {
+          roundRect(ctx, sx, sy, sw, sh, selRadius);
+          ctx.strokeStyle = fillStyle(ctx, { x: sx, y: sy, w: sw, h: sh },
+            p.selectorColor, p.selectorColorEnd, p.selectorGradientType, '#4fd1c5');
+          ctx.lineWidth = 4;
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();

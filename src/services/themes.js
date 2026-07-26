@@ -93,6 +93,7 @@ const parser = new XMLParser({
 });
 
 const ELEMENT_TYPES = new Set([
+  'gameselector',
   'image', 'text', 'carousel', 'textlist', 'rating', 'datetime', 'video', 'grid',
   // Real themes lean on these constantly; parsing them (even when the renderer
   // only handles some) keeps element counts honest and layouts intact.

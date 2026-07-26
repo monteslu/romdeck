@@ -64,6 +64,15 @@ async function smoke({ romsDir }) {
   r.check('library scanned', Array.isArray(lib.roms), `${lib.roms.length} roms`);
   r.check('theme loaded', !!app.stage.theme, app.stage.theme?.displayName);
   r.check('stage paints', !!app.render(), `${app.presenter.frames} frame(s)`);
+  // A drawing element that THROWS is caught per-element so one failure cannot
+  // blank the view. That is right, and it also hid a crash for an entire batch
+  // of work -- the help row vanished and every assertion stayed green. Nothing
+  // may throw during a normal paint.
+  app.render();
+  r.check('no element threw while drawing',
+    (app.stage.drawErrors ?? []).length === 0,
+    (app.stage.drawErrors ?? []).join(' | '));
+
   r.check('systems grouped', app.stage.systems.length > 0,
     app.stage.systems.map((s) => s.name).join(', '));
 
