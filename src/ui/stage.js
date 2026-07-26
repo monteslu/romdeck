@@ -110,6 +110,35 @@ const DEFAULT_Z = {
 };
 const DEFAULT_Z_FALLBACK = 55;
 
+// ES-DE's auto-collections (CollectionSystemsManager.cpp:51). The theme
+// FOLDER name is what themes key their artwork and logos off, so it has to
+// match exactly -- a theme ships auto-favorites/ and expects that string.
+//
+// "recent" is capped at LAST_PLAYED_MAX (CollectionSystemsManager.h:25) and
+// ordered most-recent-first; the others keep the library's own order.
+const LAST_PLAYED_MAX = 50;
+const AUTO_COLLECTIONS = [
+  {
+    name: 'all games',
+    short: 'auto-allgames',
+    match: () => true,
+  },
+  {
+    name: 'last played',
+    short: 'auto-lastplayed',
+    match: (rom) => !!rom.meta?.lastplayed && String(rom.meta.lastplayed) !== '0',
+    order: (roms) => roms
+      .slice()
+      .sort((a, b) => String(b.meta?.lastplayed ?? '').localeCompare(String(a.meta?.lastplayed ?? '')))
+      .slice(0, LAST_PLAYED_MAX),
+  },
+  {
+    name: 'favorites',
+    short: 'auto-favorites',
+    match: (rom) => rom.meta?.favorite === true || rom.meta?.favorite === 'true',
+  },
+];
+
 /**
  * The themed view.
  *
@@ -183,6 +212,24 @@ export class Stage {
     this.systems = [...grouped.entries()]
       .map(([name, roms]) => ({ name, roms, short: roms[0]?.short ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Auto-collections are systems too -- same shape, so the carousel, the
+    // gamelist and every themed element work on them unchanged. ES-DE puts
+    // them AFTER the real systems and omits an empty one rather than showing
+    // a system with nothing in it.
+    const enabled = this.svc.prefs?.get('collections') ?? [];
+    for (const decl of AUTO_COLLECTIONS) {
+      if (!enabled.includes(decl.short)) continue;
+      const roms = list.filter(decl.match);
+      if (!roms.length) continue;
+      this.systems.push({
+        name: decl.name,
+        roms: decl.order ? decl.order(roms) : roms,
+        short: decl.short,
+        isCollection: true,
+      });
+    }
+
     if (this.sysIndex >= this.systems.length) {
       this.sysIndex = Math.max(0, this.systems.length - 1);
     }
@@ -859,7 +906,15 @@ export class Stage {
       const ind = p.indicators ?? 'symbols';
       const mark = !sys.roms[i].meta?.favorite || ind === 'none' ? ''
         : ind === 'ascii' ? '* ' : '★ ';
-      const label = mark + sys.roms[i].name;
+      // <systemNameSuffix> appends " [SYSTEM]" in a COLLECTION, where a list
+      // mixes games from several systems and the name alone is ambiguous
+      // (GamelistBase.cpp:789). It has its own letter case, separate from the
+      // list's, and is inert outside a collection -- which is exactly why it
+      // could not be implemented before collections existed.
+      let label = mark + sys.roms[i].name;
+      if (sys.isCollection && (p.systemNameSuffix === 'true' || p.systemNameSuffix === true)) {
+        label += ` [${applyCase(sys.roms[i].system, p.letterCaseSystemNameSuffix ?? 'uppercase')}]`;
+      }
       const margin = b.w * (p.horizontalMargin ?? 0.02);
       const tx = ctx.textAlign === 'center' ? b.x + b.w / 2 : b.x + margin;
       // Clipping alone leaves a name sliced mid-glyph at the edge, which

@@ -35,6 +35,7 @@ export function installMenus(App) {
           { label: 'Controllers', hint: 'remap, ports, deadzone', action: () => this.openControllersMenu() },
           { label: 'Themes', hint: 'switch or download', action: () => this.openThemesMenu() },
           { label: 'BIOS files', action: () => this.openBiosMenu() },
+          { label: 'Collections', hint: 'favorites, last played, all games', action: () => this.openCollectionsMenu() },
           { label: 'Get box art', hint: 'scrape the library', action: () => this.doScrapeAll() },
           { label: 'Identify ROMs', hint: 'CRC match against No-Intro', action: () => this.doIdentify() },
           { label: 'Homebrew', action: () => this.openFeedMenu() },
@@ -304,6 +305,42 @@ export function installMenus(App) {
     },
 
     // ── themes ───────────────────────────────────────────────────────
+    /**
+     * Auto-collections: extra "systems" assembled from the whole library.
+     *
+     * ES-DE ships three (CollectionSystemsManager.cpp:51) and themes carry
+     * artwork for each keyed on the folder name, so the short names here are
+     * not ours to choose. Off by default -- a library with three extra
+     * systems in the carousel is a surprise nobody asked for.
+     */
+    openCollectionsMenu() {
+      const AUTO = [
+        ['auto-allgames', 'All games', 'every game, one list'],
+        ['auto-lastplayed', 'Last played', 'most recent 50'],
+        ['auto-favorites', 'Favorites', 'games you starred'],
+      ];
+      const enabled = this.svc.prefs.get('collections') ?? [];
+      const items = AUTO.map(([short, label, hint]) => ({
+        label: `${enabled.includes(short) ? '[x]' : '[ ]'} ${label}`,
+        hint,
+        action: () => {
+          const now = this.svc.prefs.get('collections') ?? [];
+          const next = now.includes(short)
+            ? now.filter((x) => x !== short)
+            : [...now, short];
+          this.svc.prefs.set('collections', next);
+          this.stage.setLibrary(this.svc.library().roms);
+          this.menus.closeAll();
+          this.openCollectionsMenu();          // reopen so the marks refresh
+        },
+      }));
+      this.menus.open_({
+        title: 'Collections',
+        subtitle: 'extra systems assembled from the whole library',
+        items,
+      });
+    },
+
     openThemesMenu() {
       const installed = this.svc.themes.list();
       const catalog = this.svc.themes.catalog().filter((c) => !c.installed);

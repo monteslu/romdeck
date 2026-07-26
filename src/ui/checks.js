@@ -542,6 +542,36 @@ export async function shots({ romsDir, argAfter }) {
     }
   }
 
+  // Auto-collections. These are systems with a different `short`, so every
+  // themed element works on them unchanged -- and they are what makes
+  // systemNameSuffix reachable at all, since it is gated on isCollection.
+  {
+    const beforePref = app.svc.prefs.get('collections');
+    app.svc.prefs.set('collections', ['auto-allgames', 'auto-lastplayed', 'auto-favorites']);
+    const roms = app.svc.library().roms;
+    const favBefore = roms[0]?.meta?.favorite;
+    if (roms[0]) roms[0].meta.favorite = true;
+    app.stage.setLibrary(roms);
+    const colls = app.stage.systems.filter((sy) => sy.isCollection);
+    r.check('auto-collections appear', colls.length >= 2,
+      colls.map((c) => `${c.short}:${c.roms.length}`).join(' '));
+    const all = colls.find((c) => c.short === 'auto-allgames');
+    const favs = colls.find((c) => c.short === 'auto-favorites');
+    // "all games" must span systems; favorites must contain only favorites.
+    if (all) {
+      const systems = new Set(all.roms.map((rom) => rom.system));
+      r.check('all-games spans systems', systems.size > 1, `${systems.size} systems`);
+    }
+    if (favs) {
+      r.check('favorites holds only favorites',
+        favs.roms.every((rom) => rom.meta?.favorite === true || rom.meta?.favorite === 'true'),
+        `${favs.roms.length} games`);
+    }
+    if (roms[0]) roms[0].meta.favorite = favBefore;
+    app.svc.prefs.set('collections', beforePref ?? []);
+    app.stage.setLibrary(app.svc.library().roms);
+  }
+
   // Badges and grid: whole ELEMENT TYPES that never drew. Badges only appear
   // for a game with the metadata set, and grid only in a grid variant, so
   // neither was reachable from the default view -- they were "implemented"
