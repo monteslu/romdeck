@@ -75,10 +75,21 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   parseTagValue: false,
-  isArray: (name) => [
-    'view', 'variant', 'colorScheme', 'aspectRatio', 'fontSize', 'include',
-    'language', 'variables',
-  ].includes(name),
+  // `fontSize` is BOTH a conditional wrapper (<fontSize name="medium">) and a
+  // scalar element property (<fontSize>0.032</fontSize>) — ES-DE's own
+  // ThemeData.cpp lists it as FLOAT among element properties while also
+  // accepting it as a variables wrapper. Forcing it to an array made every
+  // element-level fontSize parse as ["0.032"], which Number() coerces to 0
+  // for a single entry only by luck and to NaN for more than one. Either way
+  // the text rendered at size 0, i.e. invisibly.
+  //
+  // _walk() handles the wrapper case explicitly, so the array hint is only
+  // needed for genuinely repeatable nodes.
+  isArray: (name, jpath) => {
+    if (name === 'fontSize') return /(^|\.)theme\.fontSize$/.test(jpath ?? '');
+    return ['view', 'variant', 'colorScheme', 'aspectRatio', 'include',
+      'language', 'variables'].includes(name);
+  },
 });
 
 const ELEMENT_TYPES = new Set([
