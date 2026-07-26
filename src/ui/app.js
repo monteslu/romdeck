@@ -342,6 +342,10 @@ export class App {
   updateScroll() {
     const wants = this.stage.elements().some((e) => {
       const p = e.props;
+      if (e.type === 'textlist'
+        && (p.textHorizontalScrolling === 'true' || p.textHorizontalScrolling === true)) {
+        return true;
+      }
       return e.type === 'text'
         && (p.container === 'true' || p.container === true
           || (p.metadata === 'description' && p.container !== 'false'))
@@ -361,6 +365,9 @@ export class App {
       last = now;
       let moved = false;
       let stillWants = false;
+      // The marquee shares the scroll timer rather than adding a fourth: both
+      // animate text, both stop when nothing needs them.
+      if (this.stage.tickMarquee(dt)) { stillWants = true; moved = true; }
       for (const el of this.stage.elements()) {
         if (!el._contentH) continue;
         const h = this.stage.box(el.props).h;

@@ -408,8 +408,15 @@ export class Stage {
   /** @see scrollInterval -- exposed so the app can pick a scroll tier. */
   scrollInterval(heldMs, fast) { return scrollInterval(heldMs, fast); }
 
+  /** Advance the marquee clock. Returns true while any row is scrolling. */
+  tickMarquee(dt) {
+    this._marqueeAt = (this._marqueeAt ?? 0) + dt;
+    return this.elements().some((e) => e.type === 'textlist'
+      && (e.props.textHorizontalScrolling === 'true' || e.props.textHorizontalScrolling === true));
+  }
+
   /** Reset the video start-delay clock; the app calls this on selection change. */
-  markSnapDelay(now = Date.now()) { this._snapShownAt = now; }
+  markSnapDelay(now = Date.now()) { this._snapShownAt = now; this._marqueeAt = 0; }
 
   startCarouselSlide(fromIndex, fast = false) {
     const el = this.elements().find((e) => e.type === 'carousel');
@@ -816,7 +823,8 @@ export class Stage {
       const bh = size + (padT + padB) * STAGE_W;
       const radius = clamp(p.backgroundCornerRadius ?? 0, 0, 0.5) * STAGE_W;
       roundRect(ctx, bx, by, bw, bh, radius);
-      ctx.fillStyle = hex(p.backgroundColor);
+      ctx.fillStyle = fillStyle(ctx, { x: bx, y: by, w: bw, h: bh },
+        p.backgroundColor, p.backgroundColorEnd, p.backgroundGradientType);
       ctx.fill();
     }
 
@@ -966,7 +974,8 @@ export class Stage {
     if (p.backgroundColor && b.w && b.h) {
       const radius = Math.max(0, Math.min(0.5, Number(p.backgroundCornerRadius ?? 0))) * STAGE_W;
       roundRect(ctx, b.x, b.y, b.w, b.h, radius);
-      ctx.fillStyle = hex(p.backgroundColor);
+      ctx.fillStyle = fillStyle(ctx, b, p.backgroundColor, p.backgroundColorEnd,
+        p.backgroundGradientType);
       ctx.fill();
       ctx.fillStyle = hex(p.color, '#e8ecf4');
     }
@@ -993,6 +1002,27 @@ export class Stage {
     // a cyan slab over the carousel. The fill idiom is specifically box.png
     // (or a tiled 1x1); anything else keeps its shape.
     const isBoxIdiom = /(^|\/)box\.(png|svg)$/i.test(p.path ?? '') || p.tile === 'true';
+    // A genuinely TILED image with a <tileSize> repeats at that size rather
+    // than stretching once across the box.
+    if (p.tile === 'true' && p.tileSize?.[0] && !p.color) {
+      const tImg = this.img(this.perSystem(p.path));
+      if (tImg) {
+        const tw = Math.max(1, p.tileSize[0] * STAGE_W);
+        const th = Math.max(1, (p.tileSize[1] ?? p.tileSize[0]) * STAGE_H);
+        const tb = this.box(p, tImg);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(tb.x, tb.y, tb.w, tb.h);
+        ctx.clip();
+        for (let ty = tb.y; ty < tb.y + tb.h; ty += th) {
+          for (let tx = tb.x; tx < tb.x + tb.w; tx += tw) {
+            ctx.drawImage(tImg, tx, ty, tw, th);
+          }
+        }
+        ctx.restore();
+        return;
+      }
+    }
     if (p.color && (isBoxIdiom || (!p.path && !p.metadata && !p.imageType))) {
       ctx.fillStyle = hex(p.color);
       ctx.fillRect(b.x, b.y, b.w || STAGE_W, b.h || STAGE_H);
@@ -1182,6 +1212,9 @@ export class Stage {
       if (!img) img = this.img(this.perSystem(p.defaultImage, sys));
       if (img) {
         const tint = sel ? (p.imageSelectedColor ?? p.imageColor) : p.imageColor;
+        const tintEnd = sel ? (p.imageSelectedColorEnd ?? p.imageColorEnd) : p.imageColorEnd;
+        const tintGrad = sel ? (p.imageSelectedGradientType ?? p.imageGradientType)
+          : p.imageGradientType;
         // <imageBrightness> lifts or drops the item's artwork, -1..1.
         const brightness = Number(p.imageBrightness ?? 0);
         // Unfocused items get their own opacity/dimming, clamped as ES-DE
@@ -1211,9 +1244,12 @@ export class Stage {
           ctx.clip();
         }
         if (p.itemSize?.[0] >= 1 || p.itemSize?.[1] >= 1) {
-          drawCover(ctx, shownImg, { x: cx, y: cy, w, h }, tint ? hex(tint) : null);
+          drawCover(ctx, shownImg, { x: cx, y: cy, w, h },
+            tint ? fillStyle(ctx, { x: cx, y: cy, w, h }, tint, tintEnd, tintGrad) : null,
+            p.imageCropPos);
         } else {
-          drawContain(ctx, shownImg, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
+          drawContain(ctx, shownImg, { x: cx, y: cy, w, h },
+            tint ? fillStyle(ctx, { x: cx, y: cy, w, h }, tint, tintEnd, tintGrad) : null, 0.86);
         }
         if (imgRadius > 0) ctx.restore();
         restoreItemInterp();
@@ -1340,7 +1376,35 @@ export class Stage {
       // Clipping alone leaves a name sliced mid-glyph at the edge, which
       // reads as a rendering fault. Ellipsis is what the DOM did via
       // text-overflow and what ES-DE does for a too-long entry.
-      ctx.fillText(ellipsize(ctx, applyCase(label, p.letterCase), b.w - margin * 2), tx, y);
+      // <textHorizontalScrolling>: a selected row too long for the box
+      // MARQUEES sideways rather than being cut with an ellipsis
+      // (TextListComponent.h:544). Speed, start delay and the gap before the
+      // text repeats are all theme-controlled.
+      const shownLabel = applyCase(label, p.letterCase);
+      const avail = b.w - margin * 2;
+      const marquee = sel && (p.textHorizontalScrolling === 'true'
+        || p.textHorizontalScrolling === true)
+        && ctx.measureText(shownLabel).width > avail;
+      if (marquee) {
+        const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v)));
+        const speed = clampN(p.textHorizontalScrollSpeed ?? 1, 0.1, 10);
+        const delay = clampN(p.textHorizontalScrollDelay ?? 3, 0, 10) * 1000;
+        const gapMul = clampN(p.textHorizontalScrollGap ?? 1.5, 0.1, 5);
+        const textW = ctx.measureText(shownLabel).width;
+        const gapPx = avail * gapMul;
+        const cycle = textW + gapPx;
+        const since = Math.max(0, (this._marqueeAt ?? 0) - delay);
+        const shift = ((since * 0.06 * speed) % cycle);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(b.x + margin, y - size, avail, size * 1.6);
+        ctx.clip();
+        ctx.fillText(shownLabel, tx - shift, y);
+        ctx.fillText(shownLabel, tx - shift + cycle, y);
+        ctx.restore();
+      } else {
+        ctx.fillText(ellipsize(ctx, shownLabel, avail), tx, y);
+      }
     }
     ctx.restore();
   }
@@ -1422,7 +1486,7 @@ export class Stage {
       if (img) {
         const cell = { x: cx, y: cy, w: cw, h: ch };
         // "cover" crops to fill, "fill" stretches, "contain" letterboxes.
-        if (fit === 'cover') drawCover(ctx, img, cell, null);
+        if (fit === 'cover') drawCover(ctx, img, cell, null, p.imageCropPos);
         else if (fit === 'fill') ctx.drawImage(img, cx, cy, cw, ch);
         else drawContain(ctx, img, cell, null, 1);
       } else {
@@ -1498,7 +1562,12 @@ export class Stage {
       const x = b.x + col * (itemW + marginX);
       const y = b.y + ln * (itemH + marginY);
       const tint = slot === 'controller' ? p.controllerIconColor : p.badgeIconColor;
-      drawContain(ctx, icon, { x, y, w: size, h: size }, tint ? hex(tint) : null, 1);
+      const tintEnd = slot === 'controller' ? p.controllerIconColorEnd : p.badgeIconColorEnd;
+      const tintGrad = slot === 'controller' ? p.controllerIconGradientType : p.badgeIconGradientType;
+      const badgeFill = tint
+        ? fillStyle(ctx, { x, y, w: size, h: size }, tint, tintEnd, tintGrad)
+        : null;
+      drawContain(ctx, icon, { x, y, w: size, h: size }, badgeFill, 1);
 
       // OVERLAY: a second icon sitting on top of the badge -- the controller
       // type on a "controller" badge, the link marker on a folder. Position is
@@ -1516,8 +1585,14 @@ export class Stage {
       const [opx, opy] = p[`${overlayKey}Pos`] ?? [0.5, 0.5];
       const ox = x + size * clampN(opx, -1, 2) - oSize / 2;
       const oy = y + size * clampN(opy, -1, 2) - oSize / 2;
+      const ovColor = overlayKey === 'folderLink'
+        ? (p.folderLinkIconColor ?? p.controllerIconColor) : p.controllerIconColor;
+      const ovEnd = overlayKey === 'folderLink'
+        ? p.folderLinkIconColorEnd : p.controllerIconColorEnd;
+      const ovGrad = overlayKey === 'folderLink'
+        ? p.folderLinkIconGradientType : p.controllerIconGradientType;
       drawContain(ctx, overlay, { x: ox, y: oy, w: oSize, h: oSize },
-        p.controllerIconColor ? hex(p.controllerIconColor) : null, 1);
+        ovColor ? fillStyle(ctx, { x: ox, y: oy, w: oSize, h: oSize }, ovColor, ovEnd, ovGrad) : null, 1);
     });
   }
 
@@ -1616,6 +1691,10 @@ export class Stage {
       if (still) { drawContain(ctx, still, b, null, 1); restoreInterp(); return; }
     }
 
+    // <videoCornerRadius> rounds the video's own corners.
+    const vRadius = Math.max(0, Math.min(0.5, Number(el.props.videoCornerRadius ?? 0))) * STAGE_W;
+    if (vRadius > 0) { ctx.save(); roundRect(ctx, b.x, b.y, b.w, b.h, vRadius); ctx.clip(); }
+
     const f = this.snap?.frame;
     if (f) {
       if (!this._snapCanvas || this._snapCanvas.width !== f.width || this._snapCanvas.height !== f.height) {
@@ -1627,6 +1706,13 @@ export class Stage {
       this._snapCtx.putImageData(this._snapImage, 0, 0);
       pillarbox(ctx, this._snapCanvas, b, el.props);
       drawContain(ctx, this._snapCanvas, b, null, 1);
+      // <scanlines> lays a CRT line pattern over the video, which is the
+      // point of a snap on a retro theme.
+      if (el.props.scanlines === 'true' || el.props.scanlines === true) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        for (let ly = b.y; ly < b.y + b.h; ly += 3) ctx.fillRect(b.x, ly, b.w, 1);
+      }
+      if (vRadius > 0) ctx.restore();
       restoreInterp();
       return;
     }
@@ -1639,7 +1725,13 @@ export class Stage {
     // (VideoComponent.cpp:51); the still fallback is a separate
     // mStaticImage that draws without one. Applying it to the still put
     // black bars around every cover in themes that never show video.
-    if (img) { drawContain(ctx, img, b, null, 1); restoreInterp(); return; }
+    if (img) {
+      drawContain(ctx, img, b, null, 1);
+      if (vRadius > 0) ctx.restore();
+      restoreInterp();
+      return;
+    }
+    if (vRadius > 0) ctx.restore();
     restoreInterp();
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
     ctx.fillRect(b.x, b.y, b.w, b.h);
@@ -1772,12 +1864,16 @@ function withInterpolation(ctx, mode) {
   return () => { ctx.imageSmoothingEnabled = prev; };
 }
 
-function drawCover(ctx, img, b, tint = null) {
+function drawCover(ctx, img, b, tint = null, cropPos = null) {
   const scale = Math.max(b.w / img.width, b.h / img.height);
   const w = img.width * scale;
   const h = img.height * scale;
-  const x = b.x + (b.w - w) / 2;
-  const y = b.y + (b.h - h) / 2;
+  // <cropPos> picks WHICH part of the overflow is kept: 0 = top/left,
+  // 1 = bottom/right, 0.5 (the default) = centred.
+  const cx = cropPos?.[0] === undefined ? 0.5 : Math.max(0, Math.min(1, Number(cropPos[0])));
+  const cy = cropPos?.[1] === undefined ? 0.5 : Math.max(0, Math.min(1, Number(cropPos[1])));
+  const x = b.x + (b.w - w) * cx;
+  const y = b.y + (b.h - h) * cy;
   ctx.save();
   ctx.beginPath();
   ctx.rect(b.x, b.y, b.w, b.h);

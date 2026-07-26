@@ -162,7 +162,9 @@ const PAIR_PROPS = new Set(['pos', 'size', 'maxSize', 'minSize', 'origin', 'item
   // fraction of SCREEN WIDTH, even the vertical one (HelpComponent.cpp:160).
   'backgroundHorizontalPadding', 'backgroundVerticalPadding',
   'selectedBackgroundMargins', 'selectedItemMargins', 'itemMargin', 'pillarboxThreshold',
-  'controllerPos', 'folderLinkPos']);
+  'controllerPos', 'folderLinkPos', 'cropPos', 'imageCropPos', 'tileSize',
+  'backgroundMargins', 'itemLinearScale', 'itemLinearSpacing', 'itemRotationOrigin',
+  'selectedItemOffset', 'rotationOrigin']);
 const NUM_PROPS = new Set([
   'rotation', 'opacity', 'zIndex', 'fontSize', 'lineSpacing', 'itemScale',
   'itemSpacing', 'maxItemCount', 'textRelativeScale', 'unfocusedItemOpacity',
