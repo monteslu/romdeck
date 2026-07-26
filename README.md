@@ -85,7 +85,7 @@ cross-platform, on cores that update independently of the app.
   navigation. See [docs/Themes.md](docs/Themes.md).
 - *Currently* this view forces fullscreen when entered — an artefact of
   building it as a "big-screen mode". It is resolution-independent and works
-  fine in a window; decoupling it is part of M7 (PLAN.md §16e).
+  fine in a window; decoupling it is planned work.
 
 ### Remote play — "a very long couch"
 - Host a game, get a share code, a friend joins as **player 2** — they need
@@ -142,8 +142,9 @@ packages — **nothing is installed system-wide**.
 > controller remapping, themes, remote play, and even *entering* big-screen
 > mode) needs a mouse or keyboard today. This is a known design error, not a
 > missing feature: the app was meant to be gamepad-first like
-> EmulationStation. Diagnosis in PLAN.md §16d; the fix is planned as M7 in
-> §16e, with an "unplug the keyboard and mouse" acceptance test.
+> EmulationStation. The planned fix is tracked internally as M7, with an
+> "unplug the keyboard and mouse" acceptance test: remove both, and every
+> feature must still be reachable.
 
 ## Where things live
 
@@ -167,13 +168,14 @@ packages — **nothing is installed system-wide**.
 
 | Doc | What's in it |
 |---|---|
-| [../HANDOFF.md](../HANDOFF.md) | **Start here if you're picking this project up** — state, the known design error, traps, what to do first |
 | [docs/Architecture.md](docs/Architecture.md) | Process model, module map, data flow, design decisions |
 | [docs/GameSession.md](docs/GameSession.md) | The player-process contract (every RPC method and event) |
 | [docs/Themes.md](docs/Themes.md) | Theme format, supported subset, desktop tokens |
 | [docs/RemotePlay.md](docs/RemotePlay.md) | Wire protocol, share codes, bandwidth |
 | [docs/DeveloperMode.md](docs/DeveloperMode.md) | Memory viewer and how to hunt a variable |
-| [../PLAN.md](../PLAN.md) | Project plan, milestone status, research findings |
+
+Project planning, research, milestone history and the maintainer handoff live
+outside this repo in `internal-romdeck/` (not shipped with the app).
 
 ## Self-checks
 

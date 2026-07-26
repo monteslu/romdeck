@@ -9,9 +9,17 @@ its own — rendered as DOM + CSS instead of OpenGL.
 > views/elements. Real themes nest their content inside `<variant>` /
 > `<aspectRatio>` / `<fontSize>` wrapper elements and reach their views through
 > includes at every depth — which the parser does not descend into. Loading
-> `modern-es-de` yields **0 elements** (a blank screen). Root cause, evidence
-> and the fix are in `PLAN.md` §16f. What works today is the bundled
-> `romdeck-default` and themes written in the same flattened subset.
+> `modern-es-de` yields **0 elements** (a blank screen).
+>
+> **Root cause:** real themes nest content inside `<variant>` /
+> `<aspectRatio>` / `<fontSize>` wrapper elements and reach their views through
+> `<include>` at every depth; the parser only reads `<view>`/`<include>` at the
+> top level of `<theme>`. Fixing it needs a recursive walk of those wrappers,
+> plus an image-driven carousel (real themes use system logos, not text) and
+> theme-side fonts.
+>
+> What works today: the bundled `romdeck-default` and themes written in the
+> same flattened subset.
 
 Drop a theme folder in `<userData>/themes/<name>/` and it appears in the theme
 picker. Bundled themes live in the app's `themes/` directory.
