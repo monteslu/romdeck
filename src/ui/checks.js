@@ -118,8 +118,13 @@ async function realtheme({ romsDir, argAfter }) {
   const app = new App({ romsDir, headless: true });
   await app.start();
   const res = await app.setTheme(name, { variant });
-  r.check(`${name} loads`, !res.error, res.error ?? `${app.stage.theme.displayName}`);
-  if (res.error) { app.svc.shutdown(); return r.done(''); }
+  // loadTheme() falls back to the bundled theme when one is missing, which is
+  // right for a user and WRONG for a check: it reported "modern-es-de renders"
+  // while showing Shelf. Assert on the theme that actually loaded.
+  const loaded = app.stage.theme?.name;
+  r.check(`${name} loads`, !res.error && loaded === name,
+    res.error ?? (res.fellBackFrom ? `NOT INSTALLED — fell back to ${loaded}` : app.stage.theme.displayName));
+  if (res.error || loaded !== name) { app.svc.shutdown(); return r.done(''); }
   await app.stage.preload();
 
   const shot = (label) => {

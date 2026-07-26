@@ -275,9 +275,23 @@ export class Stage {
   }
 
   // ── geometry ───────────────────────────────────────────────────────
-  box(props) {
+  /**
+   * Element box in stage pixels.
+   *
+   * A theme may give only one dimension and expect the other to follow from
+   * the image's aspect ratio (<size>0.2314 0</size>). The missing side is
+   * filled in from the loaded image where one is available, because the
+   * ORIGIN offset depends on it: treating the zero as real puts an
+   * origin-0.5 element half a screen from where the theme meant it.
+   */
+  box(props, img = null) {
     const [x, y] = props.pos ?? [0, 0];
-    const [w, h] = props.size ?? props.maxSize ?? [0, 0];
+    let [w, h] = props.size ?? props.maxSize ?? [0, 0];
+    if (img && (!w || !h)) {
+      const ratio = img.width / img.height;
+      if (w && !h) h = (w * STAGE_W / ratio) / STAGE_H;
+      else if (h && !w) w = (h * STAGE_H * ratio) / STAGE_W;
+    }
     const [ox, oy] = props.origin ?? [0, 0];
     return {
       x: x * STAGE_W - ox * w * STAGE_W,
@@ -374,8 +388,13 @@ export class Stage {
     // A 1x1 image tinted with <color> is the box.png fill idiom every real
     // theme uses for backgrounds and separator rules. Drawing it as an image
     // paints the whole stage its own colour.
-    const isFill = p.color && (p.tile === 'true' || /box\.(png|svg)$/i.test(p.path ?? ''));
-    if (isFill || (p.color && !p.path && !p.metadata && !p.imageType)) {
+    //
+    // But <color> on a REAL image means TINT, not fill — modern-es-de's
+    // selectionBox is a shaped PNG with a colour, and filling its box painted
+    // a cyan slab over the carousel. The fill idiom is specifically box.png
+    // (or a tiled 1x1); anything else keeps its shape.
+    const isBoxIdiom = /(^|\/)box\.(png|svg)$/i.test(p.path ?? '') || p.tile === 'true';
+    if (p.color && (isBoxIdiom || (!p.path && !p.metadata && !p.imageType))) {
       ctx.fillStyle = hex(p.color);
       ctx.fillRect(b.x, b.y, b.w || STAGE_W, b.h || STAGE_H);
       return;
@@ -388,7 +407,9 @@ export class Stage {
     if (!img && p.default) img = this.img(this.perSystem(p.default));
     if (!img && p.defaultImage) img = this.img(this.perSystem(p.defaultImage));
     if (!img) return;
-    drawContain(ctx, img, b, hex(p.color, null) && p.color ? hex(p.color) : null);
+    // Recompute with the image in hand: a one-dimension <size> needs the
+    // aspect ratio before the origin offset can be right.
+    drawContain(ctx, img, this.box(p, img), p.color ? hex(p.color) : null);
   }
 
   drawCarousel(ctx, el, b) {
@@ -398,8 +419,13 @@ export class Stage {
     const half = Math.floor(count / 2);
     const gap = (p.itemSpacing ?? 0.02) * STAGE_W;
     const itemW = (b.w - gap * (count - 1)) / count;
+    // ES-DE's default itemStacking is CENTERED (CarouselComponent.h): the
+    // SELECTED item sits at the middle of the carousel and neighbours flank
+    // it, rather than items filling slots left-to-right. Getting this wrong
+    // put the theme's own selection box a slot away from the selection.
+    const centerX = b.x + b.w / 2;
 
-    for (let off = -half, slot = 0; slot < count; off++, slot++) {
+    for (let off = -half; off <= half; off++) {
       const idx = (this.sysIndex + off + this.systems.length * 2) % this.systems.length;
       const sys = this.systems[idx];
       if (!sys) continue;
@@ -409,7 +435,7 @@ export class Stage {
       // Items sit INSIDE the carousel box rather than filling it, matching
       // .te-caritem's height in the DOM renderer.
       const h = b.h * 0.74 * scale;
-      const cx = b.x + slot * (itemW + gap) + itemW / 2 - w / 2;
+      const cx = centerX + off * (itemW + gap) - w / 2;
       const cy = b.y + b.h / 2 - h / 2;
 
       roundRect(ctx, cx, cy, w, h, 14);
@@ -593,6 +619,13 @@ function applyCase(text, letterCase) {
  * source-in compositing on a scratch buffer — fewer moving parts.
  */
 function drawContain(ctx, img, b, tint = null, pad = 1) {
+  // A theme may set only one dimension (<size>0.2314 0</size>) and expect the
+  // other to follow from the image's aspect ratio. Treating the zero as real
+  // makes the scale collapse or explode; modern-es-de's selectionBox is
+  // exactly this shape.
+  const w0 = b.w > 0 ? b.w : (b.h > 0 ? b.h * (img.width / img.height) : img.width);
+  const h0 = b.h > 0 ? b.h : (b.w > 0 ? b.w * (img.height / img.width) : img.height);
+  b = { x: b.x, y: b.y, w: w0, h: h0 };
   const scale = Math.min((b.w * pad) / img.width, (b.h * pad) / img.height);
   const w = img.width * scale;
   const h = img.height * scale;
