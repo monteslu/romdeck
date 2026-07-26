@@ -265,6 +265,36 @@ export class App {
     return canvas;
   }
 
+  /**
+   * Start or stop the snap for the current selection.
+   *
+   * Snaps are decoration: they animate only while a theme asks for one and a
+   * game has one, and they stop the moment the selection moves. That keeps
+   * the event-driven repaint policy intact — the only thing in the app that
+   * schedules continuous frames, and only while it is visible.
+   */
+  async updateSnap() {
+    const wantsVideo = this.stage.elements().some((e) => e.type === 'video');
+    const file = wantsVideo ? this.stage.currentGame()?.video : null;
+    if (!file) {
+      if (this._snapTimer) { clearInterval(this._snapTimer); this._snapTimer = null; }
+      this.stage.snap?.close();
+      this.stage.snap = null;
+      return;
+    }
+    if (!this.stage.snap) {
+      const { SnapPlayer } = await import('./video/player.js');
+      this.stage.snap = new SnapPlayer();
+    }
+    const ok = await this.stage.snap.load(file);
+    if (this._snapTimer) { clearInterval(this._snapTimer); this._snapTimer = null; }
+    if (!ok) return; // no decoder, or not a container we handle: static image
+    this._snapTimer = setInterval(() => {
+      if (this.stage.snap?.tick()) this.invalidate();
+    }, 33);
+    this._timers.push(this._snapTimer);
+  }
+
   /** Reload the library from disk and repaint. */
   async refresh() {
     const lib = this.svc.library({ refresh: true });

@@ -588,8 +588,21 @@ export class Stage {
   }
 
   drawVideo(ctx, el, b) {
-    // Frames arrive in M8.5; until then the element holds its space with the
-    // game's static image, which is what ES-DE does before a snap starts.
+    // A decoded snap frame if one is ready, otherwise the game's static
+    // image — which is exactly what ES-DE shows before a snap starts, so the
+    // fallback is correct rather than merely safe.
+    const f = this.snap?.frame;
+    if (f) {
+      if (!this._snapCanvas || this._snapCanvas.width !== f.width || this._snapCanvas.height !== f.height) {
+        this._snapCanvas = createCanvas(f.width, f.height);
+        this._snapCtx = this._snapCanvas.getContext('2d');
+        this._snapImage = this._snapCtx.createImageData(f.width, f.height);
+      }
+      this._snapImage.data.set(f.data);
+      this._snapCtx.putImageData(this._snapImage, 0, 0);
+      drawContain(ctx, this._snapCanvas, b, null, 1);
+      return;
+    }
     const img = this.img(this.currentGame()?.art);
     if (img) { drawContain(ctx, img, b, null, 1); return; }
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
