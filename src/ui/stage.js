@@ -247,13 +247,23 @@ export class Stage {
   async preload() {
     if (!this.theme) return;
     const urls = new Set();
-    for (const el of this.elements()) {
-      // filledPath/unfilledPath are the rating element's star art. Leaving
-      // them out meant the first paint had no stars to draw with.
-      for (const key of ['path', 'staticImage', 'defaultImage', 'default', 'imagePath',
-        'filledPath', 'unfilledPath', 'iconPath']) {
-        const v = el.props?.[key];
+    // BOTH views, not just the active one. preload() runs at startup while
+    // the stage is still on the system view, so gamelist-only assets -- the
+    // badge icons especially -- were never warmed, and drawBadges hit a cold
+    // cache and returned early on the very frame it was asked to draw.
+    const everyElement = [
+      ...(this.theme.views?.system ?? []),
+      ...(this.theme.views?.gamelist ?? []),
+    ];
+    for (const el of everyElement) {
+      // Detect assets by VALUE, not by a list of key names. The list kept
+      // going stale -- it missed the rating element's filledPath, then the
+      // badges' customBadgeIcon:<slot> keys, each time leaving the first paint
+      // with nothing to draw. Anything pointing into the theme is an asset.
+      for (const [key, v] of Object.entries(el.props ?? {})) {
         if (typeof v !== 'string' || !v) continue;
+        if (!v.startsWith('romdeck-theme://') && !/\.(png|jpg|jpeg|svg|webp|gif)$/i.test(v)) continue;
+        if (key === 'fontPath') continue;             // registered, not drawn
         if (v.includes('${system.theme}')) {
           for (const sys of this.systems) {
             if (sys.short) urls.add(v.replace(/\$\{system\.theme\}/g, sys.short));
@@ -857,18 +867,54 @@ export class Stage {
     const p = el.props;
     const sys = this.currentSystem();
     if (!sys) return;
-    // itemSize is normalized to the STAGE, so columns are stage-width over
-    // item-width. A theme that leaves it to an include we did not select
-    // still needs sane geometry.
-    const [iw, ih] = p.itemSize?.[0] ? p.itemSize : [0.2, 0.42];
-    const cols = Math.max(1, Math.round((p.size?.[0] ?? 1) / iw));
-    const cellW = b.w / cols;
-    const cellH = ih * STAGE_H;
-    const rows = Math.max(1, Math.floor(b.h / cellH));
+    // ES-DE's grid geometry (GridComponent.h:545). Columns are not derived by
+    // rounding: it accumulates itemSize + itemSpacing until the next one would
+    // overflow the box, which is why an item that ALMOST fits leaves a gap
+    // rather than being squeezed in.
+    //
+    //   width = horizontalMargin * 2
+    //   loop:  width += itemSize.x (+ itemSpacing.x after the first)
+    //          stop when width > size.x, else ++columns
+    //
+    // itemSize defaults to 15% of screen width (GridComponent.h:233).
+    // A pair prop can be null when the theme leaves it to an include, so read
+    // through optional chaining AND coalesce -- p.itemSpacing?.[0] is
+    // undefined for null but NaN-propagates if the array holds junk.
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const itemW = num(p.itemSize?.[0], 0.15) * STAGE_W;
+    const itemH = num(p.itemSize?.[1], 0.25) * STAGE_H;
+    const spaceX = num(p.itemSpacing?.[0], 0) * STAGE_W;
+    const spaceY = num(p.itemSpacing?.[1], 0) * STAGE_H;
+    // scaleInwards keeps a scaled item inside its cell, so no margin is
+    // needed to hold the overflow.
+    const scale = Number(p.itemScale ?? 1);
+    const inwards = p.scaleInwards === 'true' || p.scaleInwards === true;
+    const marginX = ((itemW * (inwards ? 1 : scale)) - itemW) / 2;
+    const marginY = ((itemH * (inwards ? 1 : scale)) - itemH) / 2;
+
+    let cols = 0;
+    let acc = marginX * 2;
+    for (;;) {
+      acc += itemW;
+      if (cols !== 0) acc += spaceX;
+      if (acc > b.w) break;
+      cols++;
+    }
+    if (cols === 0) cols = 1;
+
+    // fractionalRows lets a partial row show at the bottom edge; without it
+    // only whole rows are laid out.
+    const fractional = p.fractionalRows === 'true' || p.fractionalRows === true;
+    const rowH = itemH + spaceY;
+    const rows = Math.max(1, fractional
+      ? Math.ceil((b.h - marginY * 2) / rowH)
+      : Math.floor((b.h - marginY * 2 + spaceY) / rowH));
+    const cellW = itemW + spaceX;
+    const cellH = rowH;
     const perPage = cols * rows;
     const page = Math.floor(this.gameIndex / perPage);
     const start = page * perPage;
-    const pad = Math.min(cellW, cellH) * 0.06;
+    const pad = 0;
 
     ctx.save();
     ctx.beginPath();
@@ -876,10 +922,10 @@ export class Stage {
     ctx.clip();
     for (let i = start, n = 0; i < sys.roms.length && n < perPage; i++, n++) {
       const game = sys.roms[i];
-      const cx = b.x + (n % cols) * cellW + pad;
-      const cy = b.y + Math.floor(n / cols) * cellH + pad;
-      const cw = cellW - pad * 2;
-      const ch = cellH - pad * 2;
+      const cx = b.x + marginX + (n % cols) * cellW + pad;
+      const cy = b.y + marginY + Math.floor(n / cols) * cellH + pad;
+      const cw = itemW - pad * 2;
+      const ch = itemH - pad * 2;
       const sel = i === this.gameIndex;
 
       roundRect(ctx, cx, cy, cw, ch, 8);
@@ -905,32 +951,66 @@ export class Stage {
     ctx.restore();
   }
 
+  /**
+   * Metadata badges: favorite, completed, kidgame, broken, manual, …
+   *
+   * ES-DE lays these out with a flexbox (FlexboxComponent.cpp:104):
+   *
+   *   grid        = direction "row" ? (itemsPerLine, lines) : (lines, itemsPerLine)
+   *   maxItemSize = (size + itemMargin - grid * itemMargin) / grid
+   *
+   * itemsPerLine defaults to 4 (BadgeComponent.cpp:274) and lines to 1. Icons
+   * come from the theme via customBadgeIcon:<slot>; ES-DE also has built-in
+   * :/graphics/badge_*.svg fallbacks that we do not ship, so a slot with no
+   * theme icon is skipped rather than drawn as an invented glyph.
+   */
   drawBadges(ctx, el, b) {
     const game = this.currentGame();
-    if (!game) return;
-    // Only slots romdeck can actually populate. Inventing a value for
-    // completed/kidgame/broken would be worse than an empty slot.
-    const slots = String(el.props.slots ?? 'favorite')
-      .split(',').map((s) => s.trim()).filter(Boolean);
-    const active = slots.filter((s) => s === 'favorite' && game.meta?.favorite);
-    if (!active.length) return;
-    const size = Math.min(b.h || 40, 40);
-    let x = b.x;
-    let y = b.y;
-    for (const slot of active) {
-      const icon = this.img(el.props[`customBadgeIcon:${slot}`]);
-      if (icon) {
-        drawContain(ctx, icon, { x, y, w: size, h: size }, null, 1);
-      } else {
-        ctx.fillStyle = '#f6ad55';
-        ctx.font = fontStack(Math.round(size * 0.8));
-        ctx.textAlign = 'center';
-        ctx.fillText('★', x + size / 2, y + size * 0.78);
-      }
-      if (el.props.direction === 'column') y += size * 1.2;
-      else x += size * 1.2;
+    if (!game || !b.w || !b.h) return;
+    const p = el.props;
+
+    // Slots romdeck can actually answer for. Claiming "completed" or "broken"
+    // would be inventing metadata we do not track.
+    const KNOWN = {
+      favorite: () => !!game.meta?.favorite,
+      completed: () => game.meta?.completed === true || game.meta?.completed === 'true',
+      kidgame: () => game.meta?.kidgame === true || game.meta?.kidgame === 'true',
+      broken: () => game.meta?.broken === true || game.meta?.broken === 'true',
+      manual: () => !!game.meta?.manual,
+    };
+    const order = ['favorite', 'completed', 'kidgame', 'broken', 'manual'];
+    let wanted = order;
+    if (typeof p.slots === 'string' && !/\ball\b/i.test(p.slots)) {
+      const want = p.slots.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      wanted = order.filter((slot) => want.includes(slot));
     }
+    const active = wanted.filter((slot) => KNOWN[slot]?.());
+    if (!active.length) return;
+
+    const perLine = Math.max(1, Math.min(10, Number(p.itemsPerLine ?? 4)));
+    const lines = Math.max(1, Math.min(10, Number(p.lines ?? 1)));
+    const [mx, my] = p.itemMargin ?? [0.01, 0.01];
+    const marginX = mx * STAGE_W;
+    const marginY = my * STAGE_H;
+    const row = (p.direction ?? 'row') === 'row';
+    const cols = row ? perLine : lines;
+    const rows = row ? lines : perLine;
+    const itemW = (b.w + marginX - cols * marginX) / cols;
+    const itemH = (b.h + marginY - rows * marginY) / rows;
+    const size = Math.max(1, Math.min(itemW, itemH));
+
+    active.forEach((slot, i) => {
+      const icon = this.img(this.perSystem(p[`customBadgeIcon:${slot}`]));
+      if (!icon) return;                        // no built-in fallbacks shipped
+      const col = row ? i % perLine : Math.floor(i / perLine);
+      const ln = row ? Math.floor(i / perLine) : i % perLine;
+      const x = b.x + col * (itemW + marginX);
+      const y = b.y + ln * (itemH + marginY);
+      const tint = slot === 'controller' ? p.controllerIconColor : p.badgeIconColor;
+      drawContain(ctx, icon, { x, y, w: size, h: size }, tint ? hex(tint) : null, 1);
+    });
   }
+
 
   /**
    * The five-star rating.

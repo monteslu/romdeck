@@ -139,6 +139,19 @@ const ASSET_PROPS = [
   'fontPath', 'filledPath', 'unfilledPath', 'defaultImage', 'iconPath',
 ];
 
+/**
+ * Is this prop a path into the theme?
+ *
+ * ASSET_PROPS covers the fixed names, but themes also carry per-slot keys --
+ * customBadgeIcon:favorite, customBadgeIcon:completed -- which cannot be
+ * listed. Both places that rewrite a path have to agree on this, or a prop
+ * gets resolved in one and left relative in the other: modern-es-de's badge
+ * icons stayed "./assets/dark/badges/favorite.svg" and never loaded.
+ */
+function isAssetProp(key) {
+  return ASSET_PROPS.includes(key) || key.startsWith('custom');
+}
+
 // props that carry "x y" pairs
 // cropSize/imageMaxSize/imageSize are ES-DE size properties in their own
 // right, and art-book-next uses them INSTEAD of <size>. Left out of this set
@@ -583,7 +596,7 @@ export class ThemeStore {
     for (const key of Object.keys(el.props)) {
       // Badge/controller icons are keyed dynamically (customBadgeIcon:favorite)
       // so they can't be listed in ASSET_PROPS, but they're still paths.
-      if (!ASSET_PROPS.includes(key) && !key.startsWith('custom')) continue;
+      if (!isAssetProp(key)) continue;
       const p = el.props[key];
       if (typeof p === 'string' && p && !p.includes('${') && !/^\w+:/.test(p)) {
         el.props[key] = this._assetUrl(themeDir, p);
@@ -611,7 +624,7 @@ export class ThemeStore {
         // only the renderer knows it. Convert to a URL anyway so the renderer
         // just substitutes the system name into an already-valid URL, rather
         // than having to know where the theme lives on disk.
-        el.props[k] = ASSET_PROPS.includes(k) && !/^\w+:/.test(resolved)
+        el.props[k] = isAssetProp(k) && !/^\w+:/.test(resolved)
           ? this._assetUrl(themeDir, resolved)
           : resolved;
         // Numeric props declared through a variable arrive as strings.

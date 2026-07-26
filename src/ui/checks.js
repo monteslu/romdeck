@@ -542,6 +542,53 @@ export async function shots({ romsDir, argAfter }) {
     }
   }
 
+  // Badges and grid: whole ELEMENT TYPES that never drew. Badges only appear
+  // for a game with the metadata set, and grid only in a grid variant, so
+  // neither was reachable from the default view -- they were "implemented"
+  // and no render ever exercised them.
+  {
+    const badgeEl = app.stage.elements().find((e) => e.type === 'badges');
+    if (badgeEl) {
+      const game = app.stage.currentGame();
+      const before = game?.meta?.favorite;
+      const bb = app.stage.box(badgeEl.props);
+      // The badge box sits OVER the cover art in some themes, so an absolute
+      // colour count there is really counting the artwork -- it passed with
+      // badge drawing disabled entirely. Compare the same region with and
+      // without the badge instead: the badge must CHANGE those pixels.
+      if (game) game.meta.favorite = false;
+      app.render();
+      await new Promise((res) => setTimeout(res, 1200));
+      // COPY the pixels. readRect hands back an ImageData whose buffer the
+      // next render reuses, so holding two of them compares a frame with
+      // itself -- which is why this passed with badge drawing deleted.
+      // repaint() forces a fresh frame; app.render() alone can hand back the
+      // cached one, so both samples were the same frame.
+      const frame = () => { app.invalidate(); return app.render().getContext('2d'); };
+      const off = Uint8ClampedArray.from(readRect(frame(), bb)?.data ?? []);
+      if (game) game.meta.favorite = true;
+      const on = Uint8ClampedArray.from(readRect(frame(), bb)?.data ?? []);
+      let diff = 0;
+      for (let i = 0; i < off.length && i < on.length; i += 4) {
+        if (off[i] !== on[i] || off[i + 1] !== on[i + 1] || off[i + 2] !== on[i + 2]) diff++;
+      }
+      // A theme with no customBadgeIcon for the slot legitimately draws
+      // nothing: ES-DE falls back to its own :/graphics icons, which we do
+      // not ship. Only assert where the theme supplies art.
+      const hasIcon = !!badgeEl.props['customBadgeIcon:favorite'];
+      // Threshold in proportion to the CELL, not an absolute: modern's badge
+      // cell is 44px where art-book-next's is ~80, so a flat 200px floor
+      // failed a badge that was drawing correctly.
+      const cell = Math.max(1, Math.min(bb.w, bb.h) / Math.max(1, Number(badgeEl.props.itemsPerLine ?? 4)));
+      if (hasIcon) {
+        r.check('badges render', diff > cell * 2,
+          `${diff} px change when favorited (cell ~${Math.round(cell)}px)`);
+      }
+      else console.log('SKIP: theme supplies no badge icons');
+      if (game) game.meta.favorite = before;
+    }
+  }
+
   // Box art for the SELECTED game, which is not the one selected at boot.
   // preload() warmed only the theme's assets plus the boot selection, so
   // every other game drew an empty plate -- a library frontend with no cover
