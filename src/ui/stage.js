@@ -226,6 +226,47 @@ export function scrollInterval(heldMs, fast) {
 }
 
 /**
+ * A gradient fill for a <color> + <colorEnd> pair.
+ *
+ * ES-DE lets any coloured element be a two-stop gradient, with
+ * <gradientType> choosing the axis. Returning a canvas gradient rather than a
+ * flat colour keeps every caller a one-line change.
+ */
+function fillStyle(ctx, box, color, colorEnd, gradientType, fallback = '#ffffff') {
+  if (!colorEnd || colorEnd === color) return hex(color, fallback);
+  const horizontal = gradientType === 'horizontal';
+  const g = ctx.createLinearGradient(
+    box.x, box.y,
+    horizontal ? box.x + box.w : box.x,
+    horizontal ? box.y : box.y + box.h,
+  );
+  g.addColorStop(0, hex(color, fallback));
+  g.addColorStop(1, hex(colorEnd, fallback));
+  return g;
+}
+
+/**
+ * Draw order for <itemStacking> (CarouselComponent.h:1076).
+ *
+ * Which item ends up on TOP when neighbours overlap. "centered" (the default)
+ * draws outward from the selection so it sits above both sides; ascending and
+ * descending run one way, with the *Raised variants lifting the selection back
+ * to the front.
+ */
+function stackOrder(offsets, mode) {
+  const byDistance = [...offsets].sort((a, b) => Math.abs(b) - Math.abs(a));
+  switch (mode) {
+    case 'ascending': return [...offsets].sort((a, b) => b - a);
+    case 'descending': return [...offsets].sort((a, b) => a - b);
+    case 'ascendingRaised':
+      return [...[...offsets].sort((a, b) => b - a).filter((o) => o !== 0), 0];
+    case 'descendingRaised':
+      return [...[...offsets].sort((a, b) => a - b).filter((o) => o !== 0), 0];
+    default: return byDistance;          // centered
+  }
+}
+
+/**
  * The themed view.
  *
  * Owns the theme model, the current selection, and how to paint it. Knows
@@ -969,6 +1010,9 @@ export class Stage {
     // aspect ratio before the origin offset can be right.
     const box = this.box(p, img);
     const restoreInterp = withInterpolation(ctx, p.interpolation);
+    // <flipHorizontal> / <flipVertical> mirror the image about its own centre.
+    const flipH = p.flipHorizontal === 'true' || p.flipHorizontal === true;
+    const flipV = p.flipVertical === 'true' || p.flipVertical === true;
     // <scrollFadeIn>: ramp opacity from 0.5 to 1 over 325ms after the
     // selection moved, rather than snapping new artwork in at full strength.
     const prevAlpha = ctx.globalAlpha;
@@ -997,7 +1041,14 @@ export class Stage {
       restoreInterp();
       return;
     }
+    if (flipH || flipV) {
+      ctx.save();
+      ctx.translate(box.x + box.w / 2, box.y + box.h / 2);
+      ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+      ctx.translate(-(box.x + box.w / 2), -(box.y + box.h / 2));
+    }
     drawContain(ctx, shown, box, p.color ? hex(p.color) : null);
+    if (flipH || flipV) ctx.restore();
     ctx.globalAlpha = prevAlpha;
     restoreInterp();
   }
@@ -1034,7 +1085,17 @@ export class Stage {
     // SELECTED item sits at the middle of the carousel and neighbours flank
     // it, rather than items filling slots left-to-right. Getting this wrong
     // put the theme's own selection box a slot away from the selection.
-    const centerX = b.x + b.w / 2;
+    // <itemHorizontalAlignment> / <wheelHorizontalAlignment> move the
+    // SELECTED item away from the centre; <horizontalOffset> / <verticalOffset>
+    // shift the whole strip, both clamped to -1..1 of the box
+    // (CarouselComponent.h:1729).
+    const align = p.itemHorizontalAlignment ?? p.wheelHorizontalAlignment ?? 'center';
+    const alignX = align === 'left' ? b.x + itemW / 2
+      : align === 'right' ? b.x + b.w - itemW / 2
+        : b.x + b.w / 2;
+    const clamp1 = (v) => Math.max(-1, Math.min(1, Number(v ?? 0)));
+    const centerX = alignX + clamp1(p.horizontalOffset) * b.w;
+    const offsetY = clamp1(p.verticalOffset) * b.h;
     // Draw out to the edges, not just the whole slots: a fractional span
     // means the outermost items are half off-screen and still visible, and
     // clamping the loop to the system count dropped them entirely.
@@ -1042,21 +1103,47 @@ export class Stage {
     // half-clipped outermost items still draw.
     const half = Math.ceil((span + 1) / 2);
 
-    for (let off = -half; off <= half; off++) {
+    // <itemStacking> decides which item is on TOP where they overlap.
+    const order = [];
+    for (let o = -half; o <= half; o++) order.push(o);
+    for (const off of stackOrder(order, p.itemStacking)) {
       const idx = (this.sysIndex + off + this.systems.length * 2) % this.systems.length;
       const sys = this.systems[idx];
       if (!sys) continue;
       const sel = off === 0;
       const scale = sel ? (p.itemScale ?? 1) : 1;
-      const w = itemW * scale;
-      const h = itemH * scale;
+      // <itemLinearScale> shrinks each item a fixed step further from the
+      // selection; <itemLinearSpacing> does the same to the gap. Both are
+      // (x, y) pairs clamped -0.5..1 (CarouselComponent.h:1482).
+      const lin = (pair, i) => (pair?.[i] === undefined ? 0
+        : Math.max(-0.5, Math.min(1, Number(pair[i]))));
+      const dist = Math.abs(off);
+      const linScale = Math.max(0.05, 1 - lin(p.itemLinearScale, 0) * dist);
+      const w = itemW * scale * linScale;
+      const h = itemH * scale * linScale;
       const cx = centerX + (off + this.carouselOffset) * pitch - w / 2;
       // <itemVerticalAlignment> is top | center | bottom
       // (CarouselComponent.h:1674); centre is the default.
       const vAlign = p.itemVerticalAlignment ?? 'center';
-      const cy = vAlign === 'top' ? b.y
+      const cy = (vAlign === 'top' ? b.y
         : vAlign === 'bottom' ? b.y + b.h - h
-          : b.y + b.h / 2 - h / 2;
+          : b.y + b.h / 2 - h / 2) + offsetY
+        // <itemDiagonalOffset> steps each item further down the further it is
+        // from the selection, which is what makes a diagonal wheel.
+        + off * (Number(p.itemDiagonalOffset ?? 0) * STAGE_H);
+
+      // <itemRotation> turns each UNSELECTED item by a fixed angle about
+      // <itemRotationOrigin> (a fraction of the item). The selected one stays
+      // upright, which is what makes a fanned wheel read as a wheel.
+      const itemRot = sel ? 0 : Number(p.itemRotation ?? 0);
+      const rotated = itemRot !== 0;
+      if (rotated) {
+        const [rox, roy] = p.itemRotationOrigin ?? [0.5, 0.5];
+        ctx.save();
+        ctx.translate(cx + w * rox, cy + h * roy);
+        ctx.rotate((itemRot * Math.PI) / 180);
+        ctx.translate(-(cx + w * rox), -(cy + h * roy));
+      }
 
       // A plate only when the theme asks for one. "00000000" is transparent,
       // and art-book-next sets exactly that: painting the default slate behind
@@ -1064,7 +1151,8 @@ export class Stage {
       const plate = sel ? (p.selectedColor ?? p.color) : p.color;
       if (plate && plate !== '00000000') {
         roundRect(ctx, cx, cy, w, h, 14);
-        ctx.fillStyle = hex(plate, '#1a1f2b');
+        ctx.fillStyle = fillStyle(ctx, { x: cx, y: cy, w, h }, plate,
+          sel ? p.selectedColorEnd : p.colorEnd, p.gradientType, '#1a1f2b');
         ctx.fill();
       }
       // <selectedBackgroundColor> is a PLATE behind the selected row, with
@@ -1077,7 +1165,9 @@ export class Stage {
           Number(p.selectedBackgroundCornerRadius ?? 0))) * STAGE_W;
         roundRect(ctx, b.x + mL * STAGE_W, y - size * 0.95,
           b.w - (mL + mR) * STAGE_W, lh, radius);
-        ctx.fillStyle = hex(p.selectedBackgroundColor);
+        ctx.fillStyle = fillStyle(ctx,
+          { x: b.x + mL * STAGE_W, y: y - size * 0.95, w: b.w - (mL + mR) * STAGE_W, h: lh },
+          p.selectedBackgroundColor, p.selectedBackgroundColorEnd, p.gradientType);
         ctx.fill();
       }
       if (sel && p.selectorColor && p.selectorColor !== '00000000') {
@@ -1092,6 +1182,8 @@ export class Stage {
       if (!img) img = this.img(this.perSystem(p.defaultImage, sys));
       if (img) {
         const tint = sel ? (p.imageSelectedColor ?? p.imageColor) : p.imageColor;
+        // <imageBrightness> lifts or drops the item's artwork, -1..1.
+        const brightness = Number(p.imageBrightness ?? 0);
         // Unfocused items get their own opacity/dimming, clamped as ES-DE
         // clamps them (CarouselComponent.h:1753). Drawing every item at full
         // strength is why our carousels read flatter than the themes do.
@@ -1157,6 +1249,9 @@ export class Stage {
         wrapText(ctx, applyCase(sys.name, kindCase ?? p.letterCase),
           cx + w / 2, cy + h / 2, w * 0.86, Math.round(h * 0.15));
       }
+      if (rotated) {
+        ctx.restore();
+      }
     }
   }
 
@@ -1188,10 +1283,31 @@ export class Stage {
         const selW = p.selectorWidth ? Number(p.selectorWidth) * STAGE_W : b.w;
         const selX = b.x + (p.selectorHorizontalOffset
           ? Number(p.selectorHorizontalOffset) * STAGE_W : 0);
-        ctx.fillStyle = hex(p.selectorColor, 'rgba(255,255,255,0.08)');
-        ctx.fillRect(selX, y - size * 0.95, Number.isFinite(selW) ? selW : b.w, lh);
+        // <selectorHeight> overrides the row height; <selectorVerticalOffset>
+        // nudges the bar off the text baseline.
+        const selH = p.selectorHeight ? Number(p.selectorHeight) * STAGE_H : lh;
+        const selY = y - size * 0.95
+          + (p.selectorVerticalOffset ? Number(p.selectorVerticalOffset) * STAGE_H : 0);
+        const selBox = { x: selX, y: selY, w: Number.isFinite(selW) ? selW : b.w, h: selH };
+        // <selectorImagePath> replaces the bar with an image (tiled or not).
+        const selImg = this.img(this.perSystem(p.selectorImagePath));
+        if (selImg) {
+          drawContain(ctx, selImg, selBox, p.selectorColor ? hex(p.selectorColor) : null, 1);
+        } else {
+          ctx.fillStyle = fillStyle(ctx, selBox, p.selectorColor, p.selectorColorEnd,
+            p.selectorGradientType, 'rgba(255,255,255,0.08)');
+          ctx.fillRect(selBox.x, selBox.y, selBox.w, selBox.h);
+        }
       }
-      ctx.fillStyle = hex(sel ? (p.selectedColor ?? p.color) : (p.primaryColor ?? p.color), sel ? '#ffffff' : '#8b94a7');
+      // ES-DE splits list entries into PRIMARY (games) and SECONDARY
+      // (folders), each with its own selected colour; secondary falls back to
+      // the primary one when a theme omits it (TextListComponent.h:514).
+      // romdeck has no folder entries, so every row is primary -- the
+      // secondary colours are read so a theme that sets ONLY those still
+      // renders in its own palette rather than the default grey.
+      const primary = p.primaryColor ?? p.color ?? p.secondaryColor;
+      const selected = p.selectedColor ?? p.selectedSecondaryColor ?? primary;
+      ctx.fillStyle = hex(sel ? selected : primary, sel ? '#ffffff' : '#8b94a7');
       // <indicators> is symbols | ascii | none (TextListComponent.h:676) and
       // marks a favorite in the list. ES-DE's symbol is U+F005, a Font Awesome
       // private-use codepoint from a font it ships and we do not -- it would
@@ -1421,6 +1537,8 @@ export class Stage {
   drawRating(ctx, el, b) {
     const p = el.props;
     const value = Math.max(0, Math.min(1, Number(this.currentGame()?.meta?.rating ?? 0)));
+    // <hideIfZero>: an unrated game shows NO rail rather than five empty stars.
+    if (!value && (p.hideIfZero === 'true' || p.hideIfZero === true)) return;
     const filled = this.img(this.perSystem(p.filledPath));
     const unfilled = this.img(this.perSystem(p.unfilledPath));
     const size = b.h || (p.fontSize ?? 0.03) * STAGE_H;
