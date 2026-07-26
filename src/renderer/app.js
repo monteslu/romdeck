@@ -378,6 +378,169 @@ async function toggleBigScreen() {
 
 $('bigscreenbtn').onclick = toggleBigScreen;
 
+// ── homebrew feed ────────────────────────────────────────────────────
+async function openFeed() {
+  $('feedmodal').classList.remove('hidden');
+  const list = $('feedlist');
+  list.textContent = 'Loading…';
+  const entries = await romdeck.feedList();
+  list.replaceChildren();
+  if (!entries.length) {
+    list.textContent = 'Feed unavailable.';
+    return;
+  }
+  for (const e of entries) {
+    const row = document.createElement('div');
+    row.className = 'feedrow';
+    const kind = document.createElement('span');
+    kind.className = `kind ${e.kind}`;
+    kind.textContent = e.kind;
+    const info = document.createElement('div');
+    info.className = 'finfo';
+    const t = document.createElement('div');
+    t.className = 'ftitle';
+    t.textContent = `${e.title} — ${e.systemLabel ?? e.system}`;
+    const d = document.createElement('div');
+    d.className = 'fdesc';
+    d.textContent = `${e.description} · ${e.author} · ${e.license}`;
+    info.append(t, d);
+    const btn = document.createElement('button');
+    btn.textContent = e.installed ? 'Installed' : 'Add to library';
+    btn.disabled = !!e.installed;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+      const res = await romdeck.feedInstall(e.id);
+      if (res.error) {
+        toast('Homebrew', res.error, true);
+        btn.disabled = false;
+        btn.textContent = 'Add to library';
+      } else {
+        toast('Added to library', e.title);
+        btn.textContent = 'Installed';
+        await reloadLibrary();
+      }
+    };
+    row.append(kind, info, btn);
+    list.appendChild(row);
+  }
+}
+$('feedbtn').onclick = openFeed;
+$('feedclose').onclick = () => $('feedmodal').classList.add('hidden');
+$('feedmodal').onclick = (ev) => { if (ev.target.id === 'feedmodal') $('feedmodal').classList.add('hidden'); };
+
+// ── developer mode: live memory viewer ───────────────────────────────
+const dev = { sessionId: null, regions: [], prev: null, timer: null, base: null };
+
+function devSessionId() {
+  const rom = selectedRom();
+  const live = rom ? sessionFor(rom) : null;
+  return live?.id ?? ([...state.playing.keys()][0] ?? null);
+}
+
+async function openDev() {
+  $('devmodal').classList.remove('hidden');
+  dev.sessionId = devSessionId();
+  if (dev.sessionId === null) {
+    $('dev-status').textContent = 'No game running — start one, then reopen this panel.';
+    $('dev-region').replaceChildren();
+    $('dev-hex').textContent = '';
+    return;
+  }
+  const res = await romdeck.dev(dev.sessionId, 'memoryInfo');
+  if (res.error) { $('dev-status').textContent = res.error; return; }
+  dev.regions = res.result.regions;
+  const sel = $('dev-region');
+  sel.replaceChildren();
+  for (const r of dev.regions) {
+    const o = document.createElement('option');
+    o.value = String(r.id);
+    o.textContent = `${r.name} (${r.size.toLocaleString()} bytes)`;
+    sel.appendChild(o);
+  }
+  $('dev-status').textContent = `Inspecting session ${dev.sessionId} — memory is live while the game runs.`;
+  readMem();
+}
+
+function parseOffset() {
+  const raw = $('dev-offset').value.trim();
+  const n = raw.startsWith('0x') ? parseInt(raw, 16) : parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+async function readMem() {
+  if (dev.sessionId === null) return;
+  const region = Number($('dev-region').value || 2);
+  const offset = parseOffset();
+  const res = await romdeck.dev(dev.sessionId, 'readMemory', { region, offset, length: 256 });
+  if (res.error) { $('dev-status').textContent = res.error; return; }
+  const bytes = Uint8Array.from(atob(res.result.dataB64), (c) => c.charCodeAt(0));
+  renderHex(bytes, offset);
+  dev.prev = bytes;
+}
+
+function renderHex(bytes, offset) {
+  const out = [];
+  for (let row = 0; row < bytes.length; row += 16) {
+    const addr = (offset + row).toString(16).padStart(6, '0');
+    let hex = '';
+    let ascii = '';
+    for (let i = 0; i < 16 && row + i < bytes.length; i++) {
+      const b = bytes[row + i];
+      const changed = dev.prev && dev.prev[row + i] !== undefined && dev.prev[row + i] !== b;
+      const h = b.toString(16).padStart(2, '0');
+      hex += changed ? `<span class="chg">${h}</span> ` : `${h} `;
+      ascii += b >= 32 && b < 127 ? String.fromCharCode(b) : '.';
+    }
+    out.push(`<span class="addr">${addr}</span>  ${hex.padEnd(0)} ${escapeHtml(ascii)}`);
+  }
+  $('dev-hex').innerHTML = out.join('\n');
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+// "find changed bytes": snapshot the whole region, wait, snapshot again, and
+// report the addresses that moved — the first step of hunting a lives counter.
+async function scanChanged() {
+  if (dev.sessionId === null) return;
+  const region = Number($('dev-region').value || 2);
+  const info = dev.regions.find((r) => r.id === region);
+  const len = Math.min(info?.size ?? 8192, 65536);
+  const out = $('dev-scanout');
+  out.textContent = 'Snapshot 1…';
+  const a = await romdeck.dev(dev.sessionId, 'readMemory', { region, offset: 0, length: len });
+  if (a.error) { out.textContent = a.error; return; }
+  out.textContent = 'Playing for 1s…';
+  await new Promise((r) => setTimeout(r, 1000));
+  const b = await romdeck.dev(dev.sessionId, 'readMemory', { region, offset: 0, length: len });
+  if (b.error) { out.textContent = b.error; return; }
+  const A = Uint8Array.from(atob(a.result.dataB64), (c) => c.charCodeAt(0));
+  const B = Uint8Array.from(atob(b.result.dataB64), (c) => c.charCodeAt(0));
+  const hits = [];
+  for (let i = 0; i < A.length && hits.length < 60; i++) {
+    if (A[i] !== B[i]) hits.push(`${i.toString(16).padStart(4, '0')}: ${A[i]}→${B[i]}`);
+  }
+  out.textContent = hits.length
+    ? `${hits.length} changed: ${hits.join('  ')}`
+    : 'nothing changed in that second (is the game paused?)';
+}
+
+$('devbtn').onclick = openDev;
+$('dev-refresh').onclick = readMem;
+$('dev-scan').onclick = scanChanged;
+$('dev-region').onchange = () => { dev.prev = null; readMem(); };
+$('dev-auto').onchange = () => {
+  clearInterval(dev.timer);
+  if ($('dev-auto').checked) dev.timer = setInterval(readMem, 500);
+};
+$('devclose').onclick = () => {
+  clearInterval(dev.timer);
+  $('dev-auto').checked = false;
+  $('devmodal').classList.add('hidden');
+};
+
 // ── settings (with provenance) ───────────────────────────────────────
 // Scope follows the selection: with a game selected you can pin a setting to
 // that game or its platform; otherwise you're editing the global default.

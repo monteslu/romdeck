@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "updated": "2026-07-25",
+  "note": "Freely distributable homebrew. Entries may be console ROMs, wasmcart (.wasc) cartridges, or sandboxed JS games — romdeck plays all three from one library.",
+  "entries": [
+    {
+      "id": "starfall-c64",
+      "title": "Starfall",
+      "kind": "rom",
+      "system": "c64",
+      "systemLabel": "Commodore 64",
+      "file": "Starfall.d64",
+      "localPath": "feed/files/starfall.d64",
+      "author": "built with romdev",
+      "license": "MIT",
+      "description": "Catch the golden stars, dodge the meteors. Hardware sprites, twinkling starfield, SID sound. Joystick port 2.",
+      "size": 174848
+    },
+    {
+      "id": "pico8-celeste",
+      "title": "Celeste Classic",
+      "kind": "rom",
+      "system": "pico8",
+      "systemLabel": "PICO-8",
+      "file": "celeste.p8.png",
+      "url": "https://www.lexaloffle.com/bbs/cposts/ce/celeste_classic.p8.png",
+      "author": "Maddy Thorson & Noel Berry",
+      "license": "freely playable",
+      "description": "The original PICO-8 Celeste — the prototype that became the full game.",
+      "verifyBeforeUse": true
+    }
+  ]
+}

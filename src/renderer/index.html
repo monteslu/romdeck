@@ -18,6 +18,8 @@
       <button id="identify" title="Identify ROMs against No-Intro/Redump databases">🔍 Identify</button>
       <button id="bios" title="Check BIOS files">BIOS</button>
       <button id="pads" title="Controllers">🎮</button>
+      <button id="feedbtn" title="Homebrew">🏠</button>
+      <button id="devbtn" title="Developer mode">🔬</button>
       <button id="settingsbtn" title="Settings">⚙</button>
       <button id="themebtn" title="Theme">🎨𝗧</button>
       <button id="bigscreenbtn" title="Big-screen mode (F11)">📺</button>
@@ -76,6 +78,39 @@
         No controllers detected. Plug one in — it appears here immediately.
         Keyboard always works: arrows + Z/X/A/S, Enter, Right-Shift.
       </div>
+    </div>
+  </div>
+
+  <div id="feedmodal" class="hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Homebrew</h2>
+        <button id="feedclose">✕</button>
+      </div>
+      <p class="dim">
+        Freely distributable games. romdeck plays console ROMs, WASM cartridges
+        (<code>.wasc</code>) and sandboxed JS games from the same library.
+      </p>
+      <div id="feedlist">Loading…</div>
+    </div>
+  </div>
+
+  <div id="devmodal" class="hidden">
+    <div class="modal wide">
+      <div class="modal-head">
+        <h2>Developer mode</h2>
+        <button id="devclose">✕</button>
+      </div>
+      <p class="dim" id="dev-status">Start a game to inspect its memory live.</p>
+      <div class="dev-bar">
+        <select id="dev-region"></select>
+        <label>offset <input id="dev-offset" type="text" value="0x0000" size="8" spellcheck="false" /></label>
+        <button id="dev-refresh">Read</button>
+        <label><input id="dev-auto" type="checkbox" /> live</label>
+        <button id="dev-scan">Find changed bytes</button>
+      </div>
+      <pre id="dev-hex"></pre>
+      <div id="dev-scanout" class="dim"></div>
     </div>
   </div>
 

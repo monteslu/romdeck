@@ -20,6 +20,8 @@ import { ThemeStore } from './themes.js';
 import { SettingsStore, SETTINGS } from './settings.js';
 import { CheatStore } from './cheats.js';
 import { CoreUpdates } from './coreupdates.js';
+import { HomebrewFeed } from './feed.js';
+import { RetroAchievements } from './retroachievements.js';
 import { shortnameOf, libretroNameOf } from './systems.js';
 import { Prefs } from './prefs.js';
 import { PadNav } from './gamepad.js';
@@ -29,6 +31,7 @@ const SMOKE = process.argv.includes('--smoke');
 const AUTOPLAY = process.argv.includes('--autoplay');
 const BIGSHOT = process.argv.includes('--bigshot');
 const UISHOT = process.argv.includes('--uishot');
+const DEVCHECK = process.argv.includes('--devcheck');
 const cliRomsDir = process.argv
   .slice(app.isPackaged ? 1 : 2)
   .find((a) => !a.startsWith('-') && existsSync(a));
@@ -46,6 +49,8 @@ let themes = null;
 let settings = null;
 let cheats = null;
 const coreUpdates = new CoreUpdates();
+let feed = null;
+let ra = null;
 
 // Custom schemes must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
@@ -286,6 +291,56 @@ function pushCheatsToSession(rom) {
 }
 
 ipcMain.handle('cores:check', () => coreUpdates.check());
+
+// ── homebrew feed ────────────────────────────────────────────────────
+ipcMain.handle('feed:list', async () => {
+  const entries = await feed.list({ refresh: true });
+  const dir = romsDir();
+  return entries.map((e) => ({
+    ...e,
+    installed: dir ? !!feed.installedPath(e, dir) : false,
+  }));
+});
+
+ipcMain.handle('feed:install', async (_ev, id) => {
+  const dir = romsDir();
+  if (!dir) return { error: 'choose a ROMs folder first' };
+  const entries = await feed.list();
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return { error: 'no such entry' };
+  try {
+    const res = await feed.install(entry, dir);
+    return { result: res };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// ── RetroAchievements (read-only; unlocking needs rcheevos) ──────────
+ipcMain.handle('ra:whoami', () => ra.whoami());
+
+ipcMain.handle('ra:game', async (_ev, romPath) => {
+  const rom = findRom(romPath);
+  if (!rom) return { status: 'error', message: 'ROM not found' };
+  if (!RetroAchievements.hashable(rom.system)) {
+    return { status: 'unsupported-system', system: rom.system };
+  }
+  const md5 = identifier.md5Of(rom);
+  if (!md5) return { status: 'error', message: 'could not hash ROM' };
+  return ra.gameByHash(md5);
+});
+
+// ── developer mode ───────────────────────────────────────────────────
+// A debugger pointed at a running game — the romdev lineage showing through.
+const DEV_METHODS = new Set(['memoryInfo', 'readMemory', 'writeMemory']);
+ipcMain.handle('dev:cmd', async (_ev, sessionId, method, params = {}) => {
+  if (!DEV_METHODS.has(method)) return { error: `not allowed: ${method}` };
+  try {
+    return { result: await sessions.rpc(sessionId, method, params) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
 
 // Core options come from the live session (the core declares them)
 ipcMain.handle('cores:options', async (_ev, sessionId) => {
@@ -585,6 +640,23 @@ async function runAutoplayCheck() {
     if (id !== null && ev.id !== id) return;
     try {
       if (ev.type === 'ready' && phase2) return; // phase 2 waits for 'resumed'
+      if (ev.type === 'ready' && DEVCHECK) {
+        // --autoplay --devcheck: exercise developer mode against a live game
+        await sleep(2000);
+        const info = await sessions.rpc(id, 'memoryInfo');
+        check('dev: memoryInfo', info.regions.length > 0,
+          info.regions.map((r) => `${r.name}:${r.size}`).join(','));
+        const rd = await sessions.rpc(id, 'readMemory', { region: 2, offset: 0, length: 64 });
+        check('dev: readMemory', Buffer.from(rd.dataB64, 'base64').length === 64);
+        await sessions.rpc(id, 'writeMemory', {
+          region: 2, offset: 8, dataB64: Buffer.from([1, 2, 3, 4]).toString('base64'),
+        });
+        const back = Buffer.from(
+          (await sessions.rpc(id, 'readMemory', { region: 2, offset: 8, length: 4 })).dataB64, 'base64');
+        check('dev: writeMemory round-trip', back.toString('hex') === '01020304');
+        await sessions.stop(id);
+        return;
+      }
       if (ev.type === 'ready') {
         check('session ready', true, `core=${ev.core}`);
         await sleep(2000);
@@ -642,6 +714,11 @@ async function runAutoplayCheck() {
         await sessions.stop(id);
         return;
       }
+      if (ev.type === 'closed' && DEVCHECK) {
+        console.log(failures === 0 ? 'DEVCHECK OK' : `DEVCHECK ${failures} FAILURES`);
+        setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
+        return;
+      }
       if (ev.type === 'closed' && phase2) {
         console.log(failures === 0 ? 'AUTOPLAY M1 OK — all session features verified' : `AUTOPLAY ${failures} FAILURES`);
         setTimeout(() => app.exit(failures === 0 ? 0 : 1), 300);
@@ -670,6 +747,8 @@ app.whenReady().then(async () => {
   themes = new ThemeStore(app.getPath('userData'));
   settings = new SettingsStore(app.getPath('userData'));
   cheats = new CheatStore(app.getPath('userData'));
+  feed = new HomebrewFeed(app.getPath('userData'), prefs);
+  ra = new RetroAchievements(prefs);
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)

@@ -1,0 +1,83 @@
+// Homebrew feed — legal games you can play immediately, and romdeck's
+// three-cart-type advantage in one shelf:
+//
+//   rom      a real console ROM run by a libretro core
+//   wasmcart a .wasc WASM cartridge (any language, native speed)
+//   jsgame   a sandboxed JS web game
+//
+// No other frontend plays all three. The feed is a JSON manifest (bundled
+// default, optionally overridden by a URL in prefs) so the catalog can grow
+// without shipping a new app build.
+import { readFileSync, existsSync, mkdirSync, writeFileSync, copyFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BUNDLED_FEED = path.join(__dirname, '..', '..', 'feed', 'homebrew.json');
+
+export class HomebrewFeed {
+  constructor(userDataDir, prefs) {
+    this.userDataDir = userDataDir;
+    this.prefs = prefs;
+    this.cacheFile = path.join(userDataDir, 'feed-cache.json');
+  }
+
+  /** Where installed homebrew lands: a normal library folder, nothing special. */
+  installRoot(romsDir) {
+    return path.join(romsDir ?? path.join(this.userDataDir, 'roms'), 'homebrew');
+  }
+
+  async list({ refresh = false } = {}) {
+    const url = this.prefs?.get('feedUrl') ?? null;
+    if (url && refresh) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (res.ok) {
+          const data = await res.json();
+          writeFileSync(this.cacheFile, JSON.stringify(data));
+          return data.entries ?? [];
+        }
+      } catch { /* fall through to cache/bundled */ }
+    }
+    for (const file of [this.cacheFile, BUNDLED_FEED]) {
+      if (!existsSync(file)) continue;
+      try {
+        return JSON.parse(readFileSync(file, 'utf8')).entries ?? [];
+      } catch { /* try next */ }
+    }
+    return [];
+  }
+
+  /** Is this entry already in the library folder? */
+  installedPath(entry, romsDir) {
+    const file = path.join(this.installRoot(romsDir), entry.system ?? 'misc', entry.file);
+    return existsSync(file) ? file : null;
+  }
+
+  /**
+   * Install an entry. Local entries (bundled with romdeck, or produced by
+   * romdev on this machine) are copied; remote ones are downloaded.
+   */
+  async install(entry, romsDir) {
+    const dir = path.join(this.installRoot(romsDir), entry.system ?? 'misc');
+    mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, entry.file);
+
+    if (entry.localPath) {
+      const src = path.isAbsolute(entry.localPath)
+        ? entry.localPath
+        : path.join(__dirname, '..', '..', entry.localPath);
+      if (!existsSync(src)) throw new Error(`missing local file: ${entry.localPath}`);
+      copyFileSync(src, dest);
+      return { file: dest, bytes: statSync(dest).size };
+    }
+
+    if (!entry.url) throw new Error('entry has neither url nor localPath');
+    const res = await fetch(entry.url, { signal: AbortSignal.timeout(60000) });
+    if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) throw new Error('downloaded file was empty');
+    writeFileSync(dest, buf);
+    return { file: dest, bytes: buf.length };
+  }
+}

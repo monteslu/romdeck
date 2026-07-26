@@ -10,6 +10,7 @@
 // Hash results are cached keyed by path+size+mtime so rescans are free.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { crc32 } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { libretroNameOf } from './systems.js';
@@ -181,6 +182,29 @@ export class Identifier {
       this._saveCache();
     }
     return crcs;
+  }
+
+  /**
+   * MD5 of the header-stripped ROM — what RetroAchievements hashes for the
+   * systems whose rule is "MD5 of the raw ROM". Cached like the CRCs.
+   */
+  md5Of(rom) {
+    const key = this._cacheKey(rom);
+    if (key && this.cache[key]?.md5) return this.cache[key].md5;
+    let buf;
+    try {
+      buf = readFileSync(rom.path);
+    } catch {
+      return null;
+    }
+    if (buf.length > 256 * 1024 * 1024) return null;
+    const payload = stripHeader(buf, path.extname(rom.path).toLowerCase());
+    const md5 = createHash('md5').update(payload).digest('hex');
+    if (key) {
+      this.cache[key] = { ...this.cache[key], md5 };
+      this._saveCache();
+    }
+    return md5;
   }
 
   /**
