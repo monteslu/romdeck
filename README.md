@@ -167,6 +167,7 @@ packages — **nothing is installed system-wide**.
 
 | Doc | What's in it |
 |---|---|
+| [../HANDOFF.md](../HANDOFF.md) | **Start here if you're picking this project up** — state, the known design error, traps, what to do first |
 | [docs/Architecture.md](docs/Architecture.md) | Process model, module map, data flow, design decisions |
 | [docs/GameSession.md](docs/GameSession.md) | The player-process contract (every RPC method and event) |
 | [docs/Themes.md](docs/Themes.md) | Theme format, supported subset, desktop tokens |
