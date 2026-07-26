@@ -8,7 +8,10 @@
 // few thousand entries per system.)
 //
 // Hash results are cached keyed by path+size+mtime so rescans are free.
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, mkdirSync, existsSync, statSync,
+  openSync, readSync, closeSync,
+} from 'node:fs';
 import { crc32 } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -81,6 +84,41 @@ function parseLogiqxDat(text) {
   }
   return idx;
 }
+
+/**
+ * Read a PlayStation disc's internal serial (e.g. SLUS-00594).
+ *
+ * A disc image's CRC is worthless for identification: dumps of the same game
+ * differ by sector mode, subchannel data and padding. The serial is stamped
+ * inside SYSTEM.CNF as `BOOT = cdrom:\SLUS_005.94;1`, is identical across
+ * every dump, and is what Redump keys on.
+ *
+ * Deliberately a scan rather than an ISO9660 directory walk: SYSTEM.CNF lives
+ * in the first few MB, the line is unmistakable, and this stays correct for
+ * raw 2352-byte sectors, 2048-byte sectors and .bin/.iso alike — where a
+ * proper filesystem parse would need a different path for each.
+ */
+function readDiscSerial(file) {
+  let fd;
+  try {
+    fd = openSync(file, 'r');
+    // 4 MB is comfortably past the volume descriptors and root directory on
+    // every PS1 disc, and costs nothing to read.
+    const buf = Buffer.alloc(Math.min(4 * 1024 * 1024, statSync(file).size));
+    readSync(fd, buf, 0, buf.length, 0);
+    const text = buf.toString('latin1');
+    // BOOT = cdrom:\SLUS_005.94;1   →   SLUS-00594
+    const m = /BOOT\s*=\s*cdrom:?\\?([A-Z]{4})[_-]?(\d{3})\.?(\d{2})/i.exec(text);
+    if (m) return `${m[1].toUpperCase()}-${m[2]}${m[3]}`;
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
+const DISC_EXTS = new Set(['.iso', '.bin', '.img', '.cue', '.chd', '.pbp', '.m3u']);
 
 export class Identifier {
   constructor(userDataDir) {
@@ -215,7 +253,28 @@ export class Identifier {
     const key = this._cacheKey(rom);
     if (key && this.cache[key]?.ident) return this.cache[key].ident;
     const sysName = libretroNameOf(rom.system);
-    const result = { crc: null, datName: null, verified: false };
+    const result = { crc: null, datName: null, verified: false, serial: null };
+
+    // Discs identify by their internal serial, not by hashing the image:
+    // two good dumps of the same game have different CRCs but the same
+    // serial. Recorded even when no DAT matches, since it's a stable
+    // identity for state keys and a far better scrape hint than a filename.
+    const ext = path.extname(rom.path).toLowerCase();
+    if (DISC_EXTS.has(ext)) {
+      const serial = readDiscSerial(rom.path);
+      if (serial) {
+        result.serial = serial;
+        const idx = sysName ? this.loadIndex(sysName) : null;
+        // Redump DATs name entries by title, so a serial index is built
+        // lazily from whatever the DAT provides.
+        const hit = idx?.[`serial:${serial.toLowerCase()}`] ?? null;
+        if (hit) {
+          result.datName = hit.name;
+          result.verified = true;
+        }
+      }
+    }
+
     if (sysName) {
       const idx = this.loadIndex(sysName);
       if (idx) {

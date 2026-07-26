@@ -111,9 +111,24 @@ function getLibrary() {
       rom.crc = ident.crc;
       rom.datName = ident.datName;
       rom.verified = ident.verified;
+      rom.serial = ident.serial ?? null;
     } else {
       rom.verified = false;
     }
+    // A newly-identified ROM changes gameKey from basename+size to its CRC
+    // identity. Save states, cheats and per-game settings all key on that, so
+    // they are carried across here — the first time the game is seen after
+    // identification — rather than being silently orphaned.
+    if (rom.serial || (rom.verified && rom.crc)) {
+      const movedFrom = stateStore.migrate(rom);
+      const newKey = stateStore.gameKey(rom);
+      const oldKey = stateStore.legacyGameKey(rom);
+      if (movedFrom || oldKey !== newKey) {
+        cheats.migrate(oldKey, newKey);
+        settings.migrateGameLayer(oldKey, newKey);
+      }
+    }
+
     // name precedence: user gamelist name > CRC-verified DAT name > cleaned filename
     if (meta.displayName) rom.name = meta.displayName;
     else if (rom.datName) rom.name = rom.datName;

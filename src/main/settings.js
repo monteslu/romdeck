@@ -123,6 +123,26 @@ export class SettingsStore {
     return this.resolve(key, layerToCtx(layer));
   }
 
+  /**
+   * Move a per-game layer from an old key to a new one.
+   *
+   * The game: layer keys on the same gameKey as states and cheats, so it has
+   * to travel with them when identification upgrades a game to its CRC
+   * identity.
+   */
+  migrateGameLayer(fromKey, toKey) {
+    if (!fromKey || fromKey === toKey) return false;
+    const from = this.data.layers[`game:${fromKey}`];
+    if (!from || !Object.keys(from).length) return false;
+    const to = this.data.layers[`game:${toKey}`] ?? {};
+    // Values already set under the new key win — they're the more recent
+    // expression of intent.
+    this.data.layers[`game:${toKey}`] = { ...from, ...to };
+    delete this.data.layers[`game:${fromKey}`];
+    this.save();
+    return true;
+  }
+
   /** Launch options for a game, with the cascade already applied. */
   launchOptions(ctx = {}) {
     const val = (k) => this.resolve(k, ctx).value;

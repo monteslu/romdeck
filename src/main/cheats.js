@@ -32,6 +32,27 @@ export class CheatStore {
     return [...(this.data.games[gameKey] ?? [])];
   }
 
+  /**
+   * Carry a game's cheats from an old key to a new one.
+   *
+   * Cheats key on the same gameKey as save states, so when identification
+   * upgrades a game to its CRC identity its cheats have to follow — otherwise
+   * they silently detach from the game they were written for.
+   */
+  migrate(fromKey, toKey) {
+    if (!fromKey || fromKey === toKey) return false;
+    const from = this.data.games[fromKey];
+    if (!from?.length) return false;
+    const to = this.data.games[toKey] ?? [];
+    // Don't duplicate a code that already exists under the new key.
+    const seen = new Set(to.map((c) => c.code));
+    const merged = [...to, ...from.filter((c) => !seen.has(c.code))];
+    this.data.games[toKey] = merged;
+    delete this.data.games[fromKey];
+    this.save();
+    return true;
+  }
+
   /** Only the enabled ones, in the shape the player expects. */
   active(gameKey) {
     return this.list(gameKey)
