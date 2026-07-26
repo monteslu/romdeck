@@ -36,6 +36,7 @@ export function installMenus(App) {
           { label: 'Themes', hint: 'switch or download', action: () => this.openThemesMenu() },
           { label: 'BIOS files', action: () => this.openBiosMenu() },
           { label: 'Collections', hint: 'favorites, last played, all games', action: () => this.openCollectionsMenu() },
+          { label: 'Custom collections', hint: 'your own sets of games', action: () => this.openCustomCollectionsMenu() },
           { label: 'Get box art', hint: 'scrape the library', action: () => this.doScrapeAll() },
           { label: 'Identify ROMs', hint: 'CRC match against No-Intro', action: () => this.doIdentify() },
           { label: 'Homebrew', action: () => this.openFeedMenu() },
@@ -123,6 +124,13 @@ export function installMenus(App) {
           await this.refresh();
         },
       });
+      if (this.svc.collections.list().length) {
+        items.push({
+          label: 'Collections…',
+          hint: 'add to or remove from a set',
+          action: () => this.openGameCollectionsMenu(rom),
+        });
+      }
       if (!rom.art) {
         items.push({
           label: 'Get box art',
@@ -305,6 +313,88 @@ export function installMenus(App) {
     },
 
     // ── themes ───────────────────────────────────────────────────────
+    /** Toggle one game's membership in each custom collection. */
+    openGameCollectionsMenu(rom) {
+      const romsDir = this.svc.romsDir();
+      const items = this.svc.collections.list().map((name) => {
+        const inIt = this.svc.collections.has(name, rom.path, romsDir);
+        return {
+          label: `${inIt ? '[x]' : '[ ]'} ${name}`,
+          action: () => {
+            this.svc.collections.toggle(name, rom.path, romsDir);
+            this.stage.setLibrary(this.svc.library().roms);
+            this.menus.closeAll();
+            this.openGameCollectionsMenu(rom);
+          },
+        };
+      });
+      this.menus.open_({ title: 'Collections', subtitle: rom.name, items });
+    },
+
+    /**
+     * Create, edit and delete custom collections.
+     *
+     * "Edit" turns on the membership tick marks in every gamelist -- ES-DE's
+     * model (GamelistBase.cpp:900), and the only thing <collectionIndicators>
+     * ever marks. It is a mode rather than a screen, so browsing normally is
+     * how you add games to it.
+     */
+    openCustomCollectionsMenu() {
+      const names = this.svc.collections.list();
+      const editing = this.stage.editingCollection;
+      const items = [{
+        label: 'New collection…',
+        hint: 'name it, then add games from any list',
+        action: () => {
+          this.menus.closeAll();
+          this.keyboard.open({
+            title: 'Collection name',
+            value: '',
+            onCommit: (name) => {
+              const clean = String(name).trim();
+              if (!clean) return;
+              if (!this.svc.collections.create(clean)) {
+                this.toast('Already exists', clean);
+                return;
+              }
+              this.stage.editingCollection = clean;
+              this.stage.setLibrary(this.svc.library().roms);
+              this.toast('Editing ' + clean, 'open a game to add it');
+            },
+          });
+        },
+      }];
+
+      for (const name of names) {
+        const isEditing = editing === name;
+        items.push({
+          label: `${isEditing ? '● ' : '   '}${name}`,
+          hint: isEditing ? 'editing — tick marks show members' : `${this.svc.collections.read(name, this.svc.romsDir()).length} games`,
+          action: () => {
+            this.stage.editingCollection = isEditing ? null : name;
+            this.stage.setLibrary(this.svc.library().roms);
+            this.menus.closeAll();
+            this.openCustomCollectionsMenu();
+          },
+        });
+        items.push({
+          label: `      Delete ${name}`,
+          action: () => {
+            this.svc.collections.remove(name);
+            if (editing === name) this.stage.editingCollection = null;
+            this.stage.setLibrary(this.svc.library().roms);
+            this.menus.closeAll();
+            this.openCustomCollectionsMenu();
+          },
+        });
+      }
+      this.menus.open_({
+        title: 'Custom collections',
+        subtitle: 'stored in ES-DE format, shared with it',
+        items,
+      });
+    },
+
     /**
      * Auto-collections: extra "systems" assembled from the whole library.
      *

@@ -158,6 +158,9 @@ export class Stage {
     this.query = '';
     this.sysIndex = 0;
     this.gameIndex = 0;
+    // While editing a custom collection, every gamelist marks which games
+    // are already in it (GamelistBase.cpp:900). Null when not editing.
+    this.editingCollection = null;
     this._images = new Map();
     this._themeFonts = 0;
     initFonts();
@@ -227,6 +230,26 @@ export class Stage {
         roms: decl.order ? decl.order(roms) : roms,
         short: decl.short,
         isCollection: true,
+      });
+    }
+
+    // Custom collections: user-built sets, stored in ES-DE's own .cfg format
+    // so they interoperate. Each is a system whose roms are looked up by path,
+    // in the order the user added them.
+    const romsDir = this.svc.romsDir?.() ?? null;
+    for (const name of this.svc.collections?.list() ?? []) {
+      const paths = this.svc.collections.read(name, romsDir);
+      const byPath = new Map(list.map((rom) => [rom.path, rom]));
+      const roms = paths.map((pth) => byPath.get(pth)).filter(Boolean);
+      if (!roms.length) continue;
+      this.systems.push({
+        name,
+        roms,
+        // Themes key custom-collection artwork off one shared folder rather
+        // than a per-collection one (CollectionSystemsManager.cpp:54).
+        short: 'custom-collections',
+        isCollection: true,
+        isCustom: true,
       });
     }
 
@@ -492,6 +515,11 @@ export class Stage {
     const els = [...this.elements()].sort((a, b) => z(a) - z(b));
     for (const el of els) {
       if (el.props.visible === 'false') continue;
+      // <metadataElement> marks an element as part of the metadata block, to
+      // be hidden together with it (ImageComponent.cpp:739). ES-DE hides it
+      // for folders, placeholders and any game with hidemetadata set.
+      if ((el.props.metadataElement === 'true' || el.props.metadataElement === true)
+        && this.currentGame()?.meta?.hidemetadata === 'true') continue;
       ctx.save();
       ctx.globalAlpha = el.props.opacity ?? 1;
       try { this.drawElement(ctx, el); } catch { /* one bad element must not blank the view */ }
@@ -523,7 +551,11 @@ export class Stage {
         // A <datetime> holds an ES-DE timestamp (19990801T000000) and the
         // theme's <format> says how to print it. Without this the raw stamp
         // went on screen verbatim.
-        if (el.type === 'datetime') text = formatDate(text, el.props.format);
+        if (el.type === 'datetime') {
+          text = el.props.displayRelative === 'true' || el.props.displayRelative === true
+            ? relativeDate(text)
+            : formatDate(text, el.props.format);
+        }
         return this.drawText(ctx, el, b, text);
       }
       default: return undefined;
@@ -612,10 +644,14 @@ export class Stage {
     }
 
     for (const [, icon, label] of entries) {
-      ctx.fillStyle = hex(p.iconColor, '#cccccc');
+      // *Dimmed variants apply when ES-DE dims the help row (during a
+      // transition or while a menu is up). Our help row is never in that
+      // state, so they are only used as a fallback when a theme supplies the
+      // dimmed colour and no base one.
+      ctx.fillStyle = hex(p.iconColor ?? p.iconColorDimmed, '#cccccc');
       ctx.fillText(icon, x, y);
       x += ctx.measureText(icon).width + iconGap;
-      ctx.fillStyle = hex(p.textColor, '#cccccc');
+      ctx.fillStyle = hex(p.textColor ?? p.textColorDimmed, '#cccccc');
       ctx.fillText(applyCase(label, p.letterCase), x, y);
       x += ctx.measureText(label).width + entryGap;
     }
@@ -797,7 +833,12 @@ export class Stage {
       const w = itemW * scale;
       const h = itemH * scale;
       const cx = centerX + off * pitch - w / 2;
-      const cy = b.y + b.h / 2 - h / 2;
+      // <itemVerticalAlignment> is top | center | bottom
+      // (CarouselComponent.h:1674); centre is the default.
+      const vAlign = p.itemVerticalAlignment ?? 'center';
+      const cy = vAlign === 'top' ? b.y
+        : vAlign === 'bottom' ? b.y + b.h - h
+          : b.y + b.h / 2 - h / 2;
 
       // A plate only when the theme asks for one. "00000000" is transparent,
       // and art-book-next sets exactly that: painting the default slate behind
@@ -844,11 +885,21 @@ export class Stage {
         // Full-bleed items COVER their box; inset cards are contained with a
         // margin. Letterboxing a 1x1 item left bars where the theme expects
         // edge-to-edge artwork.
+        // <imageCornerRadius> rounds the ITEM's artwork (as distinct from
+        // <cornerRadius>, which rounds a plain image element).
+        const imgRadius = Math.max(0, Math.min(0.5,
+          Number(p.imageCornerRadius ?? 0))) * STAGE_W;
+        if (imgRadius > 0) {
+          ctx.save();
+          roundRect(ctx, cx, cy, w, h, imgRadius);
+          ctx.clip();
+        }
         if (p.itemSize?.[0] >= 1 || p.itemSize?.[1] >= 1) {
           drawCover(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null);
         } else {
           drawContain(ctx, img, { x: cx, y: cy, w, h }, tint ? hex(tint) : null, 0.86);
         }
+        if (imgRadius > 0) ctx.restore();
         // Dimming is a black wash OVER the item, not a change to its alpha.
         if (!sel && p.unfocusedItemDimming !== undefined) {
           const dim = 1 - clamp01(p.unfocusedItemDimming, 0, 1);
@@ -862,7 +913,24 @@ export class Stage {
         ctx.fillStyle = hex(p.textColor, '#e8ecf4');
         ctx.font = fontStack(Math.round(h * 0.13));
         ctx.textAlign = 'center';
-        wrapText(ctx, sys.name, cx + w / 2, cy + h / 2, w * 0.86, Math.round(h * 0.15));
+        // Collections get their own letter case in the carousel, chosen by
+        // KIND -- auto and custom are separate properties
+        // (CarouselComponent.h:1838). Everything else uses the element's
+        // plain <letterCase>.
+        // <textBackgroundColor> is a plate behind the carousel item's label.
+        if (p.textBackgroundColor && p.textBackgroundColor !== '00000000') {
+          const tbRadius = Math.max(0, Math.min(0.5,
+            Number(p.textBackgroundCornerRadius ?? 0))) * STAGE_W;
+          roundRect(ctx, cx, cy + h * 0.72, w, h * 0.28, tbRadius);
+          ctx.fillStyle = hex(p.textBackgroundColor);
+          ctx.fill();
+          ctx.fillStyle = hex(p.textColor, '#e8ecf4');
+        }
+        const kindCase = sys.isCustom ? p.letterCaseCustomCollections
+          : sys.isCollection ? p.letterCaseAutoCollections
+            : null;
+        wrapText(ctx, applyCase(sys.name, kindCase ?? p.letterCase),
+          cx + w / 2, cy + h / 2, w * 0.86, Math.round(h * 0.15));
       }
     }
   }
@@ -911,7 +979,18 @@ export class Stage {
       // (GamelistBase.cpp:789). It has its own letter case, separate from the
       // list's, and is inert outside a collection -- which is exactly why it
       // could not be implemented before collections existed.
-      let label = mark + sys.roms[i].name;
+      // <collectionIndicators> marks membership of the collection BEING
+      // EDITED, on any list (GamelistBase.cpp:902). ES-DE's symbol is a Font
+      // Awesome tick from a font it ships and we do not, so symbols mode uses
+      // a real check mark here for the same reason the favorite star does.
+      let inColl = '';
+      if (this.editingCollection) {
+        const romsDir = this.svc.romsDir?.() ?? null;
+        if (this.svc.collections?.has(this.editingCollection, sys.roms[i].path, romsDir)) {
+          inColl = (p.collectionIndicators ?? 'symbols') === 'ascii' ? '! ' : '\u2713  ';
+        }
+      }
+      let label = inColl + mark + sys.roms[i].name;
       if (sys.isCollection && (p.systemNameSuffix === 'true' || p.systemNameSuffix === true)) {
         label += ` [${applyCase(sys.roms[i].system, p.letterCaseSystemNameSuffix ?? 'uppercase')}]`;
       }
@@ -988,6 +1067,8 @@ export class Stage {
       const cy = b.y + marginY + Math.floor(n / cols) * cellH + pad;
       const cw = itemW - pad * 2;
       const ch = itemH - pad * 2;
+      // <imageFit> is contain | fill | cover (GridComponent.h:1066).
+      const fit = p.imageFit ?? 'contain';
       const sel = i === this.gameIndex;
 
       roundRect(ctx, cx, cy, cw, ch, 8);
@@ -995,7 +1076,11 @@ export class Stage {
       ctx.fill();
       const img = this.img(game.art);
       if (img) {
-        drawContain(ctx, img, { x: cx, y: cy, w: cw, h: ch }, null, 1);
+        const cell = { x: cx, y: cy, w: cw, h: ch };
+        // "cover" crops to fill, "fill" stretches, "contain" letterboxes.
+        if (fit === 'cover') drawCover(ctx, img, cell, null);
+        else if (fit === 'fill') ctx.drawImage(img, cx, cy, cw, ch);
+        else drawContain(ctx, img, cell, null, 1);
       } else {
         // An unscraped library must stay readable, not a wall of empty boxes.
         ctx.fillStyle = '#8b94a7';
@@ -1140,13 +1225,38 @@ export class Stage {
     const img = this.img(el.props.imageType
       ? this.artFor(el.props.imageType)
       : this.currentGame()?.art);
-    if (img) { pillarbox(ctx, img, b, el.props); drawContain(ctx, img, b, null, 1); return; }
+    // NO pillarboxes here. ES-DE's black frame belongs to the VIDEO
+    // (VideoComponent.cpp:51); the still fallback is a separate
+    // mStaticImage that draws without one. Applying it to the still put
+    // black bars around every cover in themes that never show video.
+    if (img) { drawContain(ctx, img, b, null, 1); return; }
     ctx.fillStyle = 'rgba(255,255,255,0.04)';
     ctx.fillRect(b.x, b.y, b.w, b.h);
   }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
+/**
+ * A date as "3 days ago", ES-DE's <displayRelative>.
+ *
+ * Wording and the "never" sentinel are its own (DateTimeComponent.cpp:96):
+ * unset dates read "never" rather than "56 years ago".
+ */
+export function relativeDate(value, now = Date.now()) {
+  const s = String(value ?? '');
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(s);
+  if (!m) return s;
+  if (s.startsWith('19700101')) return 'never';
+  const [, Y, mo, d, H, Mi, S] = m;
+  const then = Date.UTC(+Y, +mo - 1, +d, +H, +Mi, +S);
+  const secs = Math.max(0, Math.floor((now - then) / 1000));
+  const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (secs >= 86400) return plural(Math.floor(secs / 86400), 'day');
+  if (secs >= 3600) return plural(Math.floor(secs / 3600), 'hour');
+  if (secs >= 60) return plural(Math.floor(secs / 60), 'minute');
+  return plural(secs, 'second');
+}
+
 /**
  * ES-DE date formatting.
  *

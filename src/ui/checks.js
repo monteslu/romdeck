@@ -9,7 +9,7 @@
 // a real theme, a real core — and asserts observable behaviour. Anything
 // visual also gets written to /tmp for eyeballing, because five bugs in this
 // project were invisible to green assertions and obvious in a screenshot.
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createCanvas } from '@napi-rs/canvas';
 import path from 'node:path';
@@ -569,6 +569,37 @@ export async function shots({ romsDir, argAfter }) {
     }
     if (roms[0]) roms[0].meta.favorite = favBefore;
     app.svc.prefs.set('collections', beforePref ?? []);
+    app.stage.setLibrary(app.svc.library().roms);
+  }
+
+  // Custom collections: created, persisted in ES-DE's .cfg format, and shown
+  // as a system. The editing mode is what collectionIndicators marks.
+  {
+    const dir = app.svc.romsDir();
+    const NAME = '__romdeck_check__';
+    app.svc.collections.remove(NAME);
+    r.check('custom collection created', app.svc.collections.create(NAME));
+    const roms = app.svc.library().roms;
+    if (roms.length >= 2) {
+      app.svc.collections.toggle(NAME, roms[0].path, dir);
+      app.svc.collections.toggle(NAME, roms[1].path, dir);
+      // Stored with %ROMPATH% so the collection survives the library moving.
+      const raw = readFileSync(path.join(app.svc.userData, 'collections', `custom-${NAME}.cfg`), 'utf8');
+      r.check('stored in ES-DE format', raw.includes('%ROMPATH%'), raw.split('\n')[0]);
+      r.check('reads back to real paths',
+        app.svc.collections.read(NAME, dir).every((pth) => existsSync(pth)));
+      app.stage.setLibrary(app.svc.library().roms);
+      const cs = app.stage.systems.find((sy) => sy.isCustom);
+      r.check('custom collection is a system', cs?.roms.length === 2,
+        `${cs?.name} · short=${cs?.short}`);
+      // Membership marks only appear while editing.
+      app.stage.editingCollection = NAME;
+      r.check('editing marks membership',
+        app.svc.collections.has(NAME, roms[0].path, dir)
+        && !app.svc.collections.has(NAME, roms[roms.length - 1].path, dir));
+      app.stage.editingCollection = null;
+    }
+    app.svc.collections.remove(NAME);
     app.stage.setLibrary(app.svc.library().roms);
   }
 

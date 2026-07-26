@@ -30,6 +30,7 @@ import { RetroAchievements } from '../services/retroachievements.js';
 import { ScreenScraper } from '../services/screenscraper.js';
 import { shortnameOf, libretroNameOf } from '../services/systems.js';
 import { MetadataStore } from '../services/metadata.js';
+import { CollectionStore } from '../services/collections.js';
 import { Prefs } from '../services/prefs.js';
 import { userDataDir, ensureUserData, appVersion } from './paths.js';
 
@@ -45,6 +46,7 @@ export class Services {
     this.artwork = new ArtworkStore(ud);
     this.identifier = new Identifier(ud);
     this.metadata = new MetadataStore(ud, libretroNameOf);
+    this.collections = new CollectionStore(ud);
     this.bios = new BiosChecker(ud);
     this.mappings = new MappingStore(ud);
     this.themes = new ThemeStore(ud);
