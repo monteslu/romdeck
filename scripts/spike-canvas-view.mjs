@@ -53,7 +53,26 @@ const systems = [
 ];
 let sysIndex = 2;
 
-// ── theme-supplied fonts, the thing Electron was supposedly needed for ──
+// ── fonts ────────────────────────────────────────────────────────────
+// BUNDLED, not borrowed from the host. Canvas does no automatic fallback, so
+// a glyph the named family lacks is silently dropped — that is how the help
+// line lost its Ⓐ/Ⓑ/⛶ in the first run of this spike. Naming a system symbol
+// font only works on machines that happen to have one, which is not a fix.
+// Shipping the faces makes the UI identical everywhere.
+const BUNDLED = [
+  ['romdeck-ui', 'romdeck-ui.ttf'],
+  ['romdeck-ui-bold', 'romdeck-ui-bold.ttf'],
+  ['romdeck-symbols', 'romdeck-symbols.ttf'],
+];
+const fontDir = path.join(__dirname, '..', 'themes', 'romdeck-default', 'fonts');
+for (const [family, file] of BUNDLED) {
+  const p = path.join(fontDir, file);
+  if (existsSync(p)) GlobalFonts.registerFromPath(p, family);
+}
+
+// A theme may also ship its OWN faces via <fontPath>; those layer on top.
+// Same call, which is the whole point — jsgamelauncher's fontface.js does
+// exactly this and needs no FreeType binding.
 const fonts = new Set();
 for (const el of theme.views.system) {
   if (typeof el.props.fontPath === 'string') fonts.add(el.props.fontPath);
@@ -62,13 +81,11 @@ let registered = 0;
 for (const url of fonts) {
   const file = assetPath(url);
   if (file && existsSync(file)) {
-    // This is jsgamelauncher's fontface.js pattern: a theme ships a .ttf and
-    // it becomes a usable family. No FreeType binding required.
     GlobalFonts.registerFromPath(file, `theme${registered}`);
     registered++;
   }
 }
-console.log(`  theme fonts registered: ${registered}/${fonts.size}`);
+console.log(`  fonts: ${BUNDLED.length} bundled, ${registered}/${fonts.size} theme-supplied`);
 
 /** romdeck-theme://<name>/<rel> → a real path on disk. */
 function assetPath(url) {
@@ -172,20 +189,10 @@ async function drawSystemView(ctx) {
   }
 }
 
-/**
- * Font stack for an element.
- *
- * The one real difference from the browser: canvas does NOT fall back
- * automatically for glyphs the first family lacks. A themed help line using
- * Ⓐ/Ⓑ silently loses them unless a symbol family is named explicitly. The
- * fix is a stack, not a different renderer — but it has to be deliberate,
- * which is exactly the kind of thing a spike is for finding.
- */
+/** Font stack: the theme's own face if it ships one, then the bundled ones. */
 function fontFor(props) {
-  const symbols = '"Noto Sans Symbols2", "Noto Sans Symbols", "DejaVu Sans"';
-  return props.fontPath && registered
-    ? `theme0, ${symbols}, sans-serif`
-    : `${symbols}, sans-serif`;
+  const base = 'romdeck-ui-bold, romdeck-ui, romdeck-symbols';
+  return props.fontPath && registered ? `theme0, ${base}` : base;
 }
 
 function bindText(text) {
