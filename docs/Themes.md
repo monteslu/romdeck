@@ -4,22 +4,24 @@ romdeck's themed view is an EmulationStation/ES-DE frontend reimplemented in
 browser tech. Themes are the **ES-DE XML format** — romdeck invents no format of
 its own — rendered as DOM + CSS instead of OpenGL.
 
-> ⚠️ **Status: real community themes do not render yet.** The engine reads the
-> ES-DE format but only in a *flattened* form: conditionals as attributes on
-> views/elements. Real themes nest their content inside `<variant>` /
-> `<aspectRatio>` / `<fontSize>` wrapper elements and reach their views through
-> includes at every depth — which the parser does not descend into. Loading
-> `modern-es-de` yields **0 elements** (a blank screen).
->
-> **Root cause:** real themes nest content inside `<variant>` /
-> `<aspectRatio>` / `<fontSize>` wrapper elements and reach their views through
-> `<include>` at every depth; the parser only reads `<view>`/`<include>` at the
-> top level of `<theme>`. Fixing it needs a recursive walk of those wrappers,
-> plus an image-driven carousel (real themes use system logos, not text) and
-> theme-side fonts.
->
-> What works today: the bundled `romdeck-default` and themes written in the
-> same flattened subset.
+Real community themes render. `modern-es-de` and `slate-es-de` are verified by
+a conformance harness on every change:
+
+```bash
+THEME_REPOS=1 node scripts/theme-conformance.mjs
+```
+
+It clones the themes ES-DE itself lists, loads each across every declared
+variant / colour scheme / aspect ratio, and **fails if any view yields zero
+elements**. Rendering is checked separately, against pixels rather than
+counts:
+
+```bash
+npx electron . --realtheme modern-es-de <roms>
+```
+
+which asserts no unresolved `${…}` bindings reach the screen, no images are
+broken, and that carousel items actually show their system logos.
 
 Drop a theme folder in `<userData>/themes/<name>/` and it appears in the theme
 picker. Bundled themes live in the app's `themes/` directory.
@@ -36,10 +38,18 @@ picker. Bundled themes live in the app's `themes/` directory.
 The engine renders a documented subset and **ignores anything it doesn't know**
 — an unsupported theme renders partially rather than failing.
 
-**Views:** `system`, `gamelist`, `desktop` (romdeck extension — see below)
+**Views:** `system`, `gamelist`, `desktop` (romdeck extension — see below).
+A view block may name several at once: `<view name="system, gamelist">`.
 
 **Elements:** `image`, `text`, `carousel`, `textlist`, `video`, `rating`,
-`datetime`
+`datetime`, `gamelistinfo`, `badges`, `helpsystem`, `clock`, `systemstatus`
+
+**Structure:** the conditional wrappers real themes are built from —
+`<variant>`, `<aspectRatio>`, `<fontSize>`, `<colorScheme>` — nesting to any
+depth, with `<include>` followed at every level. A wrapper's condition applies
+to everything inside it. Redeclaring an element name later **merges** onto the
+earlier declaration, which is how themes set shared properties once and then
+refine a single element.
 
 **Properties:** `pos`, `size`, `maxSize`, `origin`, `rotation`, `opacity`,
 `zIndex`, `visible`, `color`, `backgroundColor`, `selectedColor`,
@@ -134,8 +144,31 @@ matches the palette.
 `themes/romdeck-default/` is the reference implementation — the shipped theme is
 authored in this same format, so the engine is always dogfooding it.
 
+## Metadata bindings, the ES-DE names
+
+Real themes bind through `<metadata>` or `<systemdata>` using ES-DE's own
+names, all of which resolve: `gamecount`, `name`, `description`, `genre`,
+`developer`, `publisher`, `players`, `releasedate`, `rating`, `playcount`.
+`<defaultValue>` covers a game with nothing recorded.
+
+A `<text>` body may also carry a runtime binding — `${system.fullName}` and its
+collection-scoped siblings. These are **not** theme variables (those resolve in
+the main process); they are filled in at paint time. romdeck has no
+collections, so `${system.fullName.autoCollections}` and its custom equivalent
+resolve to empty, which is what themes expect: they declare all three at one
+position and rely on the inapplicable ones staying blank.
+
+## Fonts and images
+
+`<fontPath>` files are registered as `@font-face` and applied per element.
+Carousel logos come from `<staticImage>` with `${system.theme}` — the ES-DE
+shortname — substituted per system; a system the theme has no art for falls
+back to its name rather than an empty slot. A 1×1 image tinted with `<color>`
+(the `box.png` idiom) is rendered as a solid fill.
+
 ## Not yet supported
 
-Grid view, `<gameselector>`, Lottie animations, badges, scrollable containers,
-per-system theming (`system.theme` folders), and theme-side font files. Video
-elements are declared and positioned but not yet playing footage.
+Grid view, `<gameselector>`, Lottie animations, badge *icons* (the element is
+positioned but not populated), scrollable containers, and per-system theming
+(`system.theme` folders beyond carousel art). Video elements are declared and
+positioned but not yet playing footage.

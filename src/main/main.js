@@ -56,6 +56,7 @@ let cheats = null;
 const coreUpdates = new CoreUpdates();
 let feed = null;
 let ra = null;
+let viewAtStartup = null;
 
 // Custom schemes must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
@@ -808,6 +809,8 @@ ipcMain.on('ui:ready', () => {
 // is one keypress away), with the choice remembered afterwards.
 async function runViewCheck() {
   let failures = 0;
+  // Captured at ui:ready, before the renderer's launch logic writes it back.
+  const startupView = viewAtStartup;
   const check = (name, cond, extra = '') => {
     console.log(`${cond ? 'PASS' : 'FAIL'}: ${name} ${extra}`);
     if (!cond) failures++;
@@ -815,20 +818,34 @@ async function runViewCheck() {
   const js = (expr) => win.webContents.executeJavaScript(expr);
   try {
     await new Promise((r) => setTimeout(r, 2000));
+    // The launch behaviour is what's under test, and it depends on the stored
+    // preference — so assert against what THIS run actually started in rather
+    // than assuming a first-run state a previous check may have overwritten.
+    const startedThemed = startupView !== 'desktop';
     const view = await js('window.__romdeckTest.state()');
-    check('launches into the themed view', view.active === true,
-      `elements=${view.elements}`);
+    check(`launches into the ${startedThemed ? 'themed' : 'desktop'} view`,
+      view.active === startedThemed,
+      `stored view=${startupView ?? '(unset — first run)'} elements=${view.elements}`);
     check('launches WINDOWED, not fullscreen', win.isFullScreen() === false);
-    check('the choice is remembered', prefs.get('view') === 'themed',
-      `view=${prefs.get('view')}`);
+    if (startupView == null) {
+      check('a first run defaults to the themed view', view.active === true);
+    }
 
-    // Switching to the desktop must persist too, so the preference is a real
+    // Toggling must persist in BOTH directions, so the preference is a real
     // choice rather than something reset on every start.
     await js('window.__romdeckTest.enterBigScreen()');
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 900));
     const after = await js('window.__romdeckTest.state()');
-    check('can switch to the desktop view', after.active === false);
-    check('desktop choice persists', prefs.get('view') === 'desktop',
+    check('toggling switches the view', after.active === !view.active,
+      `${view.active ? 'themed' : 'desktop'} → ${after.active ? 'themed' : 'desktop'}`);
+    check('the new choice persists', prefs.get('view') === (after.active ? 'themed' : 'desktop'),
+      `view=${prefs.get('view')}`);
+
+    await js('window.__romdeckTest.enterBigScreen()');
+    await new Promise((r) => setTimeout(r, 900));
+    const back = await js('window.__romdeckTest.state()');
+    check('toggling back returns to where it started', back.active === view.active);
+    check('and that choice persists too', prefs.get('view') === (back.active ? 'themed' : 'desktop'),
       `view=${prefs.get('view')}`);
 
     writeFileSync('/tmp/romdeck-viewcheck.png', (await win.webContents.capturePage()).toPNG());
@@ -1223,6 +1240,9 @@ app.whenReady().then(async () => {
   });
   const saveDir = path.join(app.getPath('userData'), 'saves');
   mkdirSync(saveDir, { recursive: true });
+  // Read the stored view BEFORE the renderer boots and writes its choice back;
+  // --viewcheck asserts against the state the app actually started from.
+  viewAtStartup = prefs.get('view') ?? null;
   sessions = new GameSessionManager({ stateStore, saveDir, mappings, settings, cheats });
   sessions.on('update', (ev) => {
     if (win && !win.isDestroyed()) win.webContents.send('session:update', ev);

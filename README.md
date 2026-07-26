@@ -78,14 +78,15 @@ cross-platform, on cores that update independently of the app.
 - Unplugging a pad **pauses every running game** (the tripped-cable case).
 
 ### Themes & the ES view
-- **EmulationStation / ES-DE XML themes**, reimplemented in browser tech.
-- Themes drive **both** the windowed desktop UI *and* the themed ES view.
-  Any ES-DE theme restyles the desktop with no romdeck-specific markup.
-- The themed view (**F11** today): system carousel → gamelist → launch, pad
-  navigation. See [docs/Themes.md](docs/Themes.md).
-- *Currently* this view forces fullscreen when entered — an artefact of
-  building it as a "big-screen mode". It is resolution-independent and works
-  fine in a window; decoupling it is planned work.
+- **EmulationStation / ES-DE XML themes**, reimplemented in browser tech —
+  including real community themes like `modern-es-de` and `slate-es-de`,
+  verified by a conformance harness on every change.
+- The themed view is **the interface**: romdeck launches into it, windowed,
+  and fullscreen is a toggle rather than a separate mode. System carousel with
+  real theme logos → gamelist → launch, with menus carrying every feature.
+- Themes drive **both** the themed view *and* the windowed desktop UI. Any
+  ES-DE theme restyles the desktop with no romdeck-specific markup.
+- See [docs/Themes.md](docs/Themes.md).
 
 ### Remote play — "a very long couch"
 - Host a game, get a share code, a friend joins as **player 2** — they need
@@ -127,24 +128,24 @@ packages — **nothing is installed system-wide**.
 
 ## Controls
 
+romdeck is gamepad-first. **Unplug the keyboard and the mouse and every
+feature is still reachable** — that is an acceptance test (`--padonly`), not an
+aspiration.
+
 | Input | Action |
 |---|---|
-| Arrows / d-pad / left stick | Browse |
-| Enter / Ⓐ / Start | Play |
+| Arrows / d-pad / left stick | Move the focus ring |
+| Enter / Ⓐ | Select |
+| Backspace / Ⓑ / ESC | Back |
+| **Start** / Tab | Main menu — settings, controllers, themes, everything |
+| **Select** or Ⓧ / Space | Game menu — states, cheats, favorite, invite |
 | `[` `]` / LB RB | Switch system |
-| Double-click | Play |
-| **F11** | Big-screen mode |
+| **F11** | Fullscreen (a toggle, not a mode) |
 | Start+Select or ESC *(in game)* | Overlay menu |
 
-> ⚠️ **Gamepad coverage is currently incomplete.** A controller can browse the
-> library, switch systems and launch games — and, in big-screen mode, navigate
-> the carousel and gamelist. Everything else (settings, cheats, save states,
-> controller remapping, themes, remote play, and even *entering* big-screen
-> mode) needs a mouse or keyboard today. This is a known design error, not a
-> missing feature: the app was meant to be gamepad-first like
-> EmulationStation. The planned fix is tracked internally as M7, with an
-> "unplug the keyboard and mouse" acceptance test: remove both, and every
-> feature must still be reachable.
+Text entry — search, cheat codes, share codes — uses an on-screen keyboard, so
+a pad is enough for those too. Dropdowns and sliders adjust with left/right
+rather than trapping the ring.
 
 ## Where things live
 
@@ -186,10 +187,15 @@ clicking around:
 npx electron . --smoke      <roms>   # boots, renderer loads, IPC round-trips
 npx electron . --autoplay   <roms>   # full session surface incl. relaunch-resume
 npx electron . --devcheck   <roms>   # + memory read/write against a live game
+npx electron . --padonly    <roms>   # THE acceptance test: no pointer, anywhere
+npx electron . --viewcheck  <roms>   # launches into the themed view, windowed
+npx electron . --realtheme <name> <roms>  # renders a real ES-DE theme, checks pixels
 npx electron . --bigshot    <roms>   # renders both themed views, screenshots them
 npx electron . --themeshot  <roms>   # desktop under each color scheme
 npx electron . --uishot     <roms>   # settings and cheats panels
 npx electron . --joincheck <CODE> <roms>   # joins a live host through the UI
+
+THEME_REPOS=1 node scripts/theme-conformance.mjs   # real themes, every combination
 ```
 
 ## Licensing

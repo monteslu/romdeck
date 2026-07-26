@@ -57,9 +57,10 @@ Two custom schemes are registered before app-ready, both path-jailed:
 | `romdeck-media://art/<system>/<file>` | box art from `<userData>/media` |
 | `romdeck-theme://<theme>/<path>` | theme assets from a theme folder |
 
-Self-check flags (`--smoke`, `--autoplay`, `--devcheck`, `--bigshot`,
-`--themeshot`, `--uishot`, `--joincheck`) run the app headlessly and assert
-behavior. They exist because clicking through a GUI is not a test.
+Self-check flags (`--smoke`, `--autoplay`, `--devcheck`, `--padonly`,
+`--viewcheck`, `--realtheme`, `--bigshot`, `--themeshot`, `--uishot`,
+`--joincheck`) run the app headlessly and assert behavior. They exist because
+clicking through a GUI is not a test.
 
 ### 2. Renderer (`src/renderer/`)
 
@@ -69,9 +70,16 @@ reaches the main process solely through the `romdeck` object exposed by
 `preload.cjs`, which is an **explicit allowlist** — the renderer can't invoke
 an arbitrary IPC channel or an arbitrary session method.
 
-- `app.js` — library grid, system rail, details panel, all modals, keyboard
-  and pad navigation, theme token application.
-- `bigscreen.js` — the ES-DE theme renderer (10-foot mode).
+- `app.js` — library grid, system rail, details panel, modals, menus, theme
+  token application.
+- `focus.js` — the **focus ring**: named groups on a stack, geometric
+  navigation, one visible style. Pad, keyboard and mouse all drive it, and
+  hover *sets* focus rather than bypassing it, so the pointer and the pad can
+  never disagree about what is selected. Every interactive surface registers
+  here; that is what makes the app usable without a pointer.
+- `menu.js` — in-view menus (the ES "one button opens everything" model).
+- `osk.js` — on-screen keyboard, three alphabets (text / hex / base24).
+- `bigscreen.js` — the ES-DE theme renderer. This is the primary view.
 
 ### 3. Player processes (`retroemu`)
 
@@ -181,11 +189,19 @@ by device GUID rather than port index.
 
 One theme drives two very different UIs:
 
-- **Big-screen mode** renders the theme's `system`/`gamelist` views as DOM on
-  a fixed-aspect stage scaled to the window, so normalized 0–1 layouts are
-  resolution-independent.
+- **The themed view** (the primary interface) renders the theme's
+  `system`/`gamelist` views as DOM on a fixed-aspect stage scaled to the
+  window, so normalized 0–1 layouts are resolution-independent. It runs
+  windowed or fullscreen; fullscreen is a toggle, not a mode.
 - **The desktop UI** consumes *design tokens* extracted from the same theme
   and applies them as CSS custom properties.
+
+Parsing is a **recursive walk**: real themes nest their views inside
+`<variant>` / `<aspectRatio>` / `<fontSize>` / `<colorScheme>` wrappers and
+reach them through `<include>` at every depth. Reading only the top level of
+`<theme>` — as romdeck originally did — yields zero elements against a real
+theme while reporting its capabilities correctly, which is exactly why the
+conformance harness (`scripts/theme-conformance.mjs`) gates this now.
 
 Any ES-DE theme restyles the desktop with no romdeck-specific markup, because
 conventionally-named variables (`background`, `textColor`, `selectedColor`, …)

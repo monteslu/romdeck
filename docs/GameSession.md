@@ -34,6 +34,8 @@ speed). The manager also passes, when relevant:
 | `--cheats <json>` | enabled codes for that game |
 | `--input-map <json>` | controller bindings + port order for that context |
 | `--save-dir <dir>` | shared SRAM directory in userData |
+| `--ff-speed <n>` | fast-forward multiplier (`0` = uncapped) |
+| `--no-rewind` | passed when rewind is switched off for that context |
 
 `launch()` is refused if that ROM already has a live session — one window per
 game, since each session is a real process and a duplicate is confusing rather
@@ -50,7 +52,7 @@ surface as a rejected promise.
 
 | Method | Params | Result | Notes |
 |---|---|---|---|
-| `getStatus` | — | `{romPath, core, system, frameCount, paused, speed, rewindDepth, fullscreen}` | cheap; safe to poll |
+| `getStatus` | — | `{romPath, core, system, frameCount, paused, speed, rewindDepth, rewindEnabled, ffSpeed, fullscreen}` | cheap; safe to poll |
 | `pause` | — | `{paused:true}` | core stops; SDL events keep pumping |
 | `resume` | — | `{paused:false}` | |
 | `reset` | — | `{}` | clears rewind history |
