@@ -135,6 +135,11 @@ function getLibrary() {
     rom.art = artwork.hasCover(rom)
       ? 'romdeck-media://art/' + short + '/' + encodeURIComponent(path.basename(artwork.coverPath(rom)))
       : null;
+    // Video snaps come from whatever scraper wrote the ES-DE media layout;
+    // themes with a <video> element pick them up automatically.
+    rom.video = artwork.hasVideo(rom)
+      ? 'romdeck-media://video/' + short + '/' + encodeURIComponent(path.basename(artwork.videoPath(rom)))
+      : null;
   }
   return { romsDir: dir, roms };
 }
@@ -765,13 +770,18 @@ ipcMain.on('ui:ready', () => {
     // capabilities correctly while producing a blank screen. This looks.
     (async () => {
       const name = process.argv[process.argv.indexOf('--realtheme') + 1];
+      // Optional third arg picks a variant, so grid layouts (which only exist
+      // in certain variants) can actually be exercised.
+      const variantArg = process.argv[process.argv.indexOf('--realtheme') + 2];
+      const variant = variantArg && !variantArg.startsWith('-') && !existsSync(variantArg)
+        ? variantArg : null;
       const shot = async (label) => {
         const img = await win.webContents.capturePage();
         writeFileSync(`/tmp/romdeck-real-${name}-${label}.png`, img.toPNG());
         console.log(`REALTHEME ${name} ${label}`);
       };
       await win.webContents.executeJavaScript(
-        `window.__romdeckTest.setTheme(${JSON.stringify(name)})`);
+        `window.__romdeckTest.setTheme(${JSON.stringify(name)}, ${JSON.stringify(variant)})`);
       await new Promise((r) => setTimeout(r, 1500));
       await win.webContents.executeJavaScript('window.__romdeckTest.enterBigScreen()');
       await new Promise((r) => setTimeout(r, 1800));
@@ -1371,13 +1381,17 @@ app.whenReady().then(async () => {
 
   // romdeck-media://art/<short>/<file>.png → media/<short>/covers/<file>.png
   // (standard scheme: host = 'art', pathname = /<short>/<file>)
+  // romdeck-media://art/<short>/<file>    → media/<short>/covers/<file>
+  // romdeck-media://video/<short>/<file>  → media/<short>/videos/<file>
+  const MEDIA_DIRS = { art: 'covers', video: 'videos' };
   protocol.handle('romdeck-media', (req) => {
     const url = new URL(req.url);
     const parts = url.pathname.replace(/^\/+/, '').split('/');
-    if (url.host !== 'art' || parts.length < 2) return new Response('not found', { status: 404 });
+    const kind = MEDIA_DIRS[url.host];
+    if (!kind || parts.length < 2) return new Response('not found', { status: 404 });
     const short = parts[0];
     const file = decodeURIComponent(parts.slice(1).join('/'));
-    const target = path.normalize(path.join(artwork.root, short, 'covers', file));
+    const target = path.normalize(path.join(artwork.root, short, kind, file));
     if (!target.startsWith(artwork.root + path.sep)) return new Response('forbidden', { status: 403 });
     return net.fetch(pathToFileURL(target).toString());
   });

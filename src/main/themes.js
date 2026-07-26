@@ -506,6 +506,19 @@ export class ThemeStore {
     const el = { type, name: name ?? raw['@_name'] ?? type, props: {} };
     for (const [key, value] of Object.entries(raw)) {
       if (key.startsWith('@_') || key === '#text') continue;
+      // <customBadgeIcon badge="favorite">path</customBadgeIcon> — several of
+      // these appear per element, distinguished only by their attribute, so
+      // they'd collapse onto one another without being keyed by it.
+      if (key === 'customBadgeIcon' || key === 'customControllerIcon') {
+        const attr = key === 'customBadgeIcon' ? '@_badge' : '@_controller';
+        for (const one of Array.isArray(value) ? value : [value]) {
+          if (!one || typeof one !== 'object') continue;
+          const slot = one[attr];
+          const p = one['#text'];
+          if (slot && p) el.props[`${key}:${slot}`] = String(p);
+        }
+        continue;
+      }
       const v = typeof value === 'object' ? value['#text'] ?? '' : value;
       // A prop written as ${variable} must stay a STRING until _substitute()
       // resolves it. Parsing it now turns "${systemViewLogoPos}" into [0, 0]
@@ -520,7 +533,10 @@ export class ThemeStore {
     // a ${variable} are left for _substitute(), which runs once every file has
     // contributed its <variables> — rewriting them here would bake in a name
     // that hasn't been resolved yet.
-    for (const key of ASSET_PROPS) {
+    for (const key of Object.keys(el.props)) {
+      // Badge/controller icons are keyed dynamically (customBadgeIcon:favorite)
+      // so they can't be listed in ASSET_PROPS, but they're still paths.
+      if (!ASSET_PROPS.includes(key) && !key.startsWith('custom')) continue;
       const p = el.props[key];
       if (typeof p === 'string' && p && !p.includes('${') && !/^\w+:/.test(p)) {
         el.props[key] = this._assetUrl(themeDir, p);

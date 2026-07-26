@@ -32,6 +32,28 @@ export class ArtworkStore {
     }
   }
 
+  /**
+   * Video snap path, in the ES-DE media layout.
+   *
+   * romdeck doesn't scrape these (libretro-thumbnails has no videos), but
+   * ES-DE, Skraper and Skyscraper all write here — so a user who scraped
+   * with any of those gets working snaps for free, which is the whole point
+   * of following the layout rather than inventing one.
+   */
+  videoPath(rom) {
+    const short = shortnameOf(rom.system);
+    const base = path.basename(rom.path).replace(/\.p8\.png$/i, '').replace(/\.[^.]+$/, '');
+    return path.join(this.root, short, 'videos', `${base}.mp4`);
+  }
+
+  hasVideo(rom) {
+    try {
+      return statSync(this.videoPath(rom)).size > 0;
+    } catch {
+      return false;
+    }
+  }
+
   /** Try to fetch a cover from libretro-thumbnails. Returns 'ok'|'nomatch'|'unsupported'. */
   async scrape(rom) {
     if (this.hasCover(rom)) return 'ok';

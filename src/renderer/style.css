@@ -787,6 +787,62 @@ button.big:hover { filter: brightness(1.1); color: #062824; }
   text-overflow: ellipsis;
 }
 .te-video { border-radius: 10px; overflow: hidden; }
+.te-video video { width: 100%; height: 100%; object-fit: contain; }
+/* A game with no snap must not leave the previous game's footage on screen. */
+.te-video.empty { background: rgba(255, 255, 255, 0.04); }
+.te-video.empty video { display: none; }
+
+/* Badges: small status marks on the selected game. */
+.te-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.te-badges.col { flex-direction: column; align-items: flex-start; }
+.te-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  font-size: 0.8em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.te-badge img { width: 100%; height: 100%; object-fit: contain; }
+
+/* Grid view: the gamelist as cover art. Columns come from the theme's
+   normalized <itemSize>, which is how a theme says "5 across" per aspect
+   ratio without naming a column count. */
+.te-grid {
+  display: grid;
+  /* Column count comes from the theme's itemSize, so the gap has to come out
+     of the columns rather than adding to them — otherwise the last column
+     overhangs the stage by exactly (cols-1) x gap. */
+  gap: 1%;
+  align-content: start;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-right: 1%;
+}
+.te-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  transition: transform 0.12s ease-out;
+}
+/* contain, not cover: a box art grid that crops the art defeats the point,
+   and console covers vary enough in aspect ratio that cropping loses titles. */
+.te-cell img { width: 100%; height: 100%; object-fit: contain; }
+.te-cell.sel { transform: scale(1.06); z-index: 2; }
+/* An unscraped library must still be readable, not a wall of empty boxes. */
+.te-cell.noart {
+  font-size: 13px;
+  text-align: center;
+  padding: 6px;
+  line-height: 1.25;
+  overflow: hidden;
+}
 
 /* ── in-view menus (M7 Phase 2) ──────────────────────────────────────
    ES's "start button opens a menu" model. First-party fixed layout that

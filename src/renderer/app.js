@@ -1460,8 +1460,8 @@ window.__romdeckTest = {
   nav: (action) => nav(action),
   openSettings: () => openSettings(),
   join: async (code) => { await openJoin(); $('join-code').value = code; return doJoin(false); },
-  setTheme: async (theme) => {
-    await romdeck.themeSetPrefs({ theme, variant: null, colorScheme: null });
+  setTheme: async (theme, variant = null) => {
+    await romdeck.themeSetPrefs({ theme, variant, colorScheme: null });
     await applyDesktopTheme();
   },
   setScheme: async (colorScheme) => {

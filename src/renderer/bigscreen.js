@@ -98,7 +98,7 @@ function metaValue(key) {
     case 'system.gameCount': return sys ? `${sys.roms.length} games` : '';
     case 'game.name': return game?.name ?? '';
     case 'game.cover': return game?.art ?? '';
-    case 'game.video': return '';
+    case 'game.video': return game?.video ?? '';
     // …and the ones REAL ES-DE themes actually use.
     // system.fullName has collection-scoped siblings: a theme declares all
     // three at the same position and ES-DE shows whichever applies. romdeck
@@ -214,10 +214,26 @@ function buildTextlist(el) {
   return node;
 }
 
+function buildGrid(el) {
+  const node = document.createElement('div');
+  node.className = 'te-grid';
+  place(node, el.props);
+  return node;
+}
+
 function buildVideo(el) {
   const node = document.createElement('div');
   node.className = 'te-video';
   place(node, el.props);
+  // Video snaps play through a real <video>: hardware-decoded, and simpler
+  // than ES-DE's own FFmpeg path. Muted and looping because a gamelist
+  // preview that demands attention is worse than one that doesn't.
+  const v = document.createElement('video');
+  v.muted = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  node.appendChild(v);
   return node;
 }
 
@@ -233,6 +249,7 @@ const BUILDERS = {
   // theme's layout intact instead of leaving holes where these sit; the ones
   // romdeck has no data for simply come out empty rather than misplacing
   // everything around them.
+  grid: buildGrid,
   gamelistinfo: buildText,
   clock: buildClock,
   systemstatus: buildText,
@@ -255,7 +272,45 @@ function buildBadges(el) {
   const node = document.createElement('div');
   node.className = 'te-badges';
   place(node, el.props);
+  if (el.props.direction === 'column') node.classList.add('col');
   return node;
+}
+
+// Badges romdeck can actually populate, in ES-DE's own slot vocabulary. The
+// rest of ES-DE's set (completed, kidgame, broken, altemulator, manual)
+// depends on metadata romdeck doesn't track, and inventing a value for them
+// would be worse than leaving the slot empty.
+const BADGE_SLOTS = {
+  favorite: (g) => !!g?.meta?.favorite,
+  collection: () => false,
+  folder: () => false,
+  controller: () => false,
+};
+
+function paintBadges(node, el) {
+  node.replaceChildren();
+  const game = currentGame();
+  // A theme lists which slots it wants, in order.
+  const slots = String(el.props.slots ?? 'favorite')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  for (const slot of slots) {
+    const test = BADGE_SLOTS[slot];
+    if (!test || !test(game)) continue;
+    const b = document.createElement('div');
+    b.className = `te-badge ${slot}`;
+    // A theme can supply its own icon; otherwise a glyph stands in rather
+    // than the slot silently vanishing.
+    const custom = el.props[`customBadgeIcon:${slot}`];
+    if (custom) {
+      const img = document.createElement('img');
+      img.src = custom;
+      img.onerror = () => { img.remove(); b.textContent = '★'; };
+      b.appendChild(img);
+    } else {
+      b.textContent = slot === 'favorite' ? '★' : '●';
+    }
+    node.appendChild(b);
+  }
 }
 
 // ── rendering ────────────────────────────────────────────────────────
@@ -315,6 +370,19 @@ function paint() {
       paintCarousel(node, el);
     } else if (el.type === 'textlist') {
       paintTextlist(node, el);
+    } else if (el.type === 'grid') {
+      paintGrid(node, el);
+    } else if (el.type === 'badges') {
+      paintBadges(node, el);
+    } else if (el.type === 'video') {
+      const v = node.querySelector('video');
+      const src = currentGame()?.video ?? '';
+      if (v && v.getAttribute('src') !== src) {
+        if (src) { v.src = src; v.play?.().catch(() => { /* autoplay policy */ }); }
+        else { v.removeAttribute('src'); v.load?.(); }
+      }
+      // A game with no snap shouldn't leave the previous game's footage up.
+      node.classList.toggle('empty', !src);
     }
   }
 }
@@ -432,6 +500,58 @@ function shortnameOf(displayName) {
   return rom?.short ?? null;
 }
 
+/**
+ * Grid view — the gamelist as cover art rather than a list.
+ *
+ * Themes give a normalized <itemSize> and expect the columns to fall out of
+ * it, which is how they control "5 across" vs "10 across" per aspect ratio
+ * without naming a column count anywhere. The grid shares gameIndex with the
+ * textlist, so switching variants doesn't lose the player's place.
+ */
+function paintGrid(node, el) {
+  node.replaceChildren();
+  const sys = currentSystem();
+  if (!sys) return;
+
+  // itemSize is normalized to the STAGE, not to the grid, so columns are
+  // stage-width over item-width. A theme that leaves it to an include we
+  // didn't select still needs sane geometry, hence the fallback.
+  const [iw, ih] = el.props.itemSize?.[0] ? el.props.itemSize : [0.2, 0.42];
+  const [gw, gh] = el.props.size ?? [1, 1];
+  const cols = Math.max(1, Math.round(gw / iw));
+  node.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  // Rows are sized from the theme's item height so cells keep their aspect
+  // ratio instead of stretching to fill whatever space is left.
+  node.style.gridAutoRows = `${(ih / gh) * 100}%`;
+
+  // Keep the selection on screen without paging the whole list around it.
+  const rows = Math.max(1, Math.floor(gh / ih));
+  const perPage = cols * rows;
+  const page = Math.floor(bs.gameIndex / perPage);
+  const start = page * perPage;
+
+  for (let i = start; i < Math.min(sys.roms.length, start + perPage); i++) {
+    const game = sys.roms[i];
+    const cell = document.createElement('div');
+    cell.className = 'te-cell' + (i === bs.gameIndex ? ' sel' : '');
+    if (i === bs.gameIndex && el.props.selectorColor) {
+      cell.style.outline = `3px solid ${hex(el.props.selectorColor)}`;
+    }
+    if (game.art) {
+      const img = document.createElement('img');
+      img.src = game.art;
+      img.onerror = () => { img.remove(); cell.textContent = game.name; };
+      cell.appendChild(img);
+    } else {
+      // No cover: the name still has to be readable, or the grid is a wall
+      // of empty boxes for an unscraped library.
+      cell.textContent = game.name;
+      cell.classList.add('noart');
+    }
+    node.appendChild(cell);
+  }
+}
+
 function paintTextlist(node, el) {
   node.replaceChildren();
   const sys = currentSystem();
@@ -509,11 +629,21 @@ function nav(action) {
     else if (action === 'back') bs.onExit?.();
     return true;
   }
-  // gamelist
-  if (action === 'up') { bs.gameIndex = Math.max(0, bs.gameIndex - 1); paint(); }
-  else if (action === 'down') { bs.gameIndex = Math.min((sys?.roms.length ?? 1) - 1, bs.gameIndex + 1); paint(); }
-  else if (action === 'left' || action === 'prevSystem') { bs.gameIndex = Math.max(0, bs.gameIndex - 10); paint(); }
-  else if (action === 'right' || action === 'nextSystem') { bs.gameIndex = Math.min((sys?.roms.length ?? 1) - 1, bs.gameIndex + 10); paint(); }
+  // gamelist. A grid moves by COLUMNS vertically and one at a time
+  // horizontally; a list does the opposite. Reading the step from whichever
+  // element the theme actually declared keeps navigation matching what's on
+  // screen instead of assuming a list.
+  const max = (sys?.roms.length ?? 1) - 1;
+  const grid = [...bs.els.values()].find((e) => e.el.type === 'grid')?.el ?? null;
+  const step = grid
+    ? Math.max(1, Math.round((grid.props.size?.[0] ?? 1) / (grid.props.itemSize?.[0] ?? 0.2)))
+    : 1;
+  const jump = grid ? 1 : 10;
+
+  if (action === 'up') { bs.gameIndex = Math.max(0, bs.gameIndex - step); paint(); }
+  else if (action === 'down') { bs.gameIndex = Math.min(max, bs.gameIndex + step); paint(); }
+  else if (action === 'left' || action === 'prevSystem') { bs.gameIndex = Math.max(0, bs.gameIndex - jump); paint(); }
+  else if (action === 'right' || action === 'nextSystem') { bs.gameIndex = Math.min(max, bs.gameIndex + jump); paint(); }
   else if (action === 'confirm') { const g = currentGame(); if (g) bs.onLaunch?.(g); }
   else if (action === 'back') { bs.view = 'system'; buildView('system'); }
   return true;
