@@ -172,8 +172,20 @@ async function drawSystemView(ctx) {
   }
 }
 
+/**
+ * Font stack for an element.
+ *
+ * The one real difference from the browser: canvas does NOT fall back
+ * automatically for glyphs the first family lacks. A themed help line using
+ * Ⓐ/Ⓑ silently loses them unless a symbol family is named explicitly. The
+ * fix is a stack, not a different renderer — but it has to be deliberate,
+ * which is exactly the kind of thing a spike is for finding.
+ */
 function fontFor(props) {
-  return props.fontPath && registered ? 'theme0, sans-serif' : 'sans-serif';
+  const symbols = '"Noto Sans Symbols2", "Noto Sans Symbols", "DejaVu Sans"';
+  return props.fontPath && registered
+    ? `theme0, ${symbols}, sans-serif`
+    : `${symbols}, sans-serif`;
 }
 
 function bindText(text) {
