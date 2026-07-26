@@ -333,6 +333,29 @@ ipcMain.handle('ra:game', async (_ev, romPath) => {
 // ── developer mode ───────────────────────────────────────────────────
 // A debugger pointed at a running game — the romdev lineage showing through.
 const DEV_METHODS = new Set(['memoryInfo', 'readMemory', 'writeMemory']);
+
+// ── remote play ("a very long couch") ────────────────────────────────
+ipcMain.handle('remote:host', async (_ev, sessionId) => {
+  try {
+    return { result: await sessions.rpc(sessionId, 'remoteHost', {}) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+ipcMain.handle('remote:status', async (_ev, sessionId) => {
+  try {
+    return { result: await sessions.rpc(sessionId, 'remoteStatus', {}) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+ipcMain.handle('remote:stop', async (_ev, sessionId) => {
+  try {
+    return { result: await sessions.rpc(sessionId, 'remoteStop', {}) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
 ipcMain.handle('dev:cmd', async (_ev, sessionId, method, params = {}) => {
   if (!DEV_METHODS.has(method)) return { error: `not allowed: ${method}` };
   try {

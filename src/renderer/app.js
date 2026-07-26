@@ -139,11 +139,27 @@ function selectedRom() {
   return state.filtered[state.selected] ?? null;
 }
 
+let launching = null; // guards against a second spawn while one is in flight
+
 async function launch(rom, opts = {}) {
   if (!rom) return;
+  // One window per game. Every session is its own process, so without this a
+  // stray second Enter/double-click silently opens a duplicate of the game
+  // you're already playing.
+  if (sessionFor(rom)) {
+    toast('Already running', `${rom.name} is open — use its window, or Stop first.`);
+    return;
+  }
+  if (launching === rom.path) return;
+  launching = rom.path;
   $('status').textContent = `launching ${rom.name}…`;
-  const res = await romdeck.launch(rom.path, opts);
-  if (res?.error) toast('Launch failed', res.error, true);
+  try {
+    const res = await romdeck.launch(rom.path, opts);
+    if (res?.error) toast('Launch failed', res.error, true);
+  } finally {
+    // clear once the session is registered (or immediately on failure)
+    setTimeout(() => { if (launching === rom.path) launching = null; }, 1500);
+  }
 }
 
 // ── details panel (selected game + live session controls + states) ───
@@ -235,6 +251,17 @@ async function renderDetails() {
       const st = await romdeck.cmd(live.id, 'getStatus');
       const on = !(st.result?.fullscreen ?? false);
       await romdeck.cmd(live.id, 'setFullscreen', { on });
+    });
+    // Remote play: hand someone a code and they're on the couch with you.
+    btn('📡 Invite', async () => {
+      const r = await romdeck.remoteHost(live.id);
+      if (r.error) { toast('Remote play', r.error, true); return; }
+      const code = r.result.code;
+      toast('Share this code', `${code}\n\nThey run:  npx retroemu --join ${code}`, false, [
+        ['Copy code', () => navigator.clipboard?.writeText(code)],
+        ['Stop hosting', async () => { await romdeck.remoteStop(live.id); toast('Remote play', 'stopped'); }],
+      ]);
+      $('status').textContent = `hosting ${live.name ?? ''} — share code ${code}`;
     });
     btn('✕ Stop', () => romdeck.stopSession(live.id), 'danger');
   }
