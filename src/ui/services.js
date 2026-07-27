@@ -313,7 +313,21 @@ export class Services {
     return out;
   }
 
-  shutdown() {
+  /**
+   * Stop the child player processes. That is ALL this does.
+   *
+   * It was called shutdown(), which reads as "release everything" — so fifteen
+   * headless call sites used it as an App teardown and leaked every App they
+   * built. Services holds no OS handles of its own; the timers, window and GL
+   * context belong to the App, so App.dispose() is the thing that releases
+   * them. The honest name is the fix.
+   */
+  stopSessions() {
     this.sessions.stopAll();
+  }
+
+  /** @deprecated Misleading name — use stopSessions(), or App.dispose(). */
+  shutdown() {
+    this.stopSessions();
   }
 }

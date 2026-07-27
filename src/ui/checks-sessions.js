@@ -6,7 +6,7 @@
 // channel. What changes is that they call the session manager directly
 // instead of through IPC, which makes them shorter and removes the window
 // they used to need.
-import { App } from './app.js';
+import { withApp } from './app.js';
 import { makeReporter } from './checks.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,8 +29,7 @@ function waitFor(sessions, id, types, ms = 30000) {
 export async function autoplay({ romsDir, dev = false }) {
   const label = dev ? 'DEVCHECK' : 'AUTOPLAY';
   const r = makeReporter(label);
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   const { sessions, stateStore } = app.svc;
 
   const roms = app.svc.library().roms;
@@ -47,7 +46,6 @@ export async function autoplay({ romsDir, dev = false }) {
     const tail = ready?.logTail?.length ? `\n  ${ready.logTail.join('\n  ')}` : '';
     r.check('session ready', false,
       (ready ? `${ready.type}: ${ready.message ?? ready.code}` : 'timed out') + tail);
-    app.dispose();
     return r.done('');
   }
   r.check('session ready', true, `core=${ready.core}`);
@@ -113,15 +111,14 @@ export async function autoplay({ romsDir, dev = false }) {
   await sessions.stop(id);
   await waitFor(sessions, id, ['closed', 'crashed'], 12000);
 
-  app.dispose();
   return r.done(dev ? 'memory API works against a live game' : 'all session features verified');
+  });
 }
 
 // ── --cartcheck ──────────────────────────────────────────────────────
 export async function cartcheck({ romsDir }) {
   const r = makeReporter('CARTCHECK');
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   const { sessions } = app.svc;
 
   const byKind = new Map();
@@ -169,8 +166,8 @@ export async function cartcheck({ romsDir }) {
     await sleep(1000);
   }
 
-  app.dispose();
   return r.done('ROM, wasmcart and jsgame all play from one library');
+  });
 }
 
 // ── --joincheck ──────────────────────────────────────────────────────
@@ -179,16 +176,15 @@ export async function joincheck({ romsDir, argAfter }) {
   const r = makeReporter('JOINCHECK');
   if (!code) { console.error('JOINCHECK needs a share code'); return 1; }
 
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   const res = app.doJoin(code);
   r.check('guest session spawned', !res.error, res.error ?? res.code);
-  if (res.error) { app.dispose(); return r.done(''); }
+  if (res.error) return r.done('');
 
   const ready = await waitFor(app.svc.sessions, res.id, ['ready', 'crashed', 'error'], 30000);
   r.check('connected to the host', ready?.type === 'ready',
     ready ? (ready.message ?? ready.type) : 'timed out');
   await app.svc.sessions.stop(res.id);
-  app.dispose();
   return r.done(`joined ${code}`);
+  });
 }

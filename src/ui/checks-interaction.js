@@ -7,7 +7,7 @@
 // it exercises the production path rather than a parallel one, exactly as the
 // Electron version did through nav(). It no longer needs executeJavaScript or
 // a browser to inject into, which makes it both simpler and faster.
-import { App } from './app.js';
+import { withApp } from './app.js';
 import { focus } from './focus.js';
 import { HeadlessPresenter } from './present.js';
 import { makeReporter } from './checks.js';
@@ -16,8 +16,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function padonly({ romsDir }) {
   const r = makeReporter('PADONLY');
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   const pad = (action, times = 1) => {
     for (let i = 0; i < times; i++) app.dispatch(action);
   };
@@ -148,15 +147,14 @@ export async function padonly({ romsDir }) {
   shot.write('/tmp/romdeck-native-padonly.png');
   console.log('  wrote /tmp/romdeck-native-padonly.png');
 
-  app.dispose();
   return r.done(`every surface reachable without a pointer (${total} controls registered)`);
+  });
 }
 
 export async function viewcheck({ romsDir }) {
   const r = makeReporter('VIEWCHECK');
-  const app = new App({ romsDir, headless: true });
+  return withApp({ romsDir, headless: true }, async (app) => {
   const startedFullscreen = !!app.svc.prefs.get('fullscreen');
-  await app.start();
 
   // The themed view IS the product: there is no other view to launch into now,
   // which is Phase 4 option (c) arriving by construction rather than by a
@@ -178,6 +176,6 @@ export async function viewcheck({ romsDir }) {
   app.svc.prefs.set('theme', before);
   r.check('restored the original theme preference', app.svc.prefs.get('theme') === before, before);
 
-  app.dispose();
   return r.done('the themed view is the product');
+  });
 }

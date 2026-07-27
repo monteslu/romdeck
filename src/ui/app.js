@@ -444,9 +444,12 @@ export class App {
    * called svc.shutdown(), which only stops child sessions, so every previous
    * App stayed pinned by its own timers.
    *
-   * Anything that constructs an App in a loop must call this, not svc.shutdown().
+   * Prefer withApp() over calling this by hand — it cannot be forgotten on an
+   * early return or a throw. This is idempotent, so the two compose safely.
    */
   dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
     this.running = false;
     for (const t of this._timers) clearInterval(t);
     this._timers = [];
@@ -456,7 +459,7 @@ export class App {
       if (this[k]) { clearInterval(this[k]); this[k] = null; }
     }
     this.padNav?.stop();
-    this.svc.shutdown();
+    this.svc.stopSessions();
     this.presenter?.destroy?.();
     try { this.window?.destroy(); } catch { /* already gone */ }
     this.window = null;
@@ -483,3 +486,37 @@ export class App {
 
 // Menu content lives in its own module so app.js stays about the shell.
 installMenus(App);
+
+/**
+ * Run `fn` with a started App and dispose it on EVERY exit path.
+ *
+ * An App owns OS resources — interval timers, a gamepad poller, an SDL window,
+ * a GL context, child player processes — so "who releases this, and when?"
+ * needs an answer that does not depend on remembering. Fifteen headless call
+ * sites independently reached for svc.shutdown(), which only stops child
+ * sessions; the result was a harness that grew to 7.8 GB and was OOM-killed.
+ * That is a design gap, not fifteen separate mistakes, so the fix is a scope
+ * that owns the lifetime rather than another rule to follow.
+ *
+ * Disposal happens in `finally`, which is the part hand-written teardown kept
+ * missing: before today no check file had a single `finally`, so any throw
+ * leaked the App AND left its emulator child processes running.
+ *
+ *   return withApp({ romsDir, headless: true }, async (app) => {
+ *     ...                       // early-return freely; throw freely
+ *   });
+ *
+ * @template T
+ * @param {ConstructorParameters<typeof App>[0]} opts
+ * @param {(app: App) => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export async function withApp(opts, fn) {
+  const app = new App(opts);
+  try {
+    await app.start();
+    return await fn(app);
+  } finally {
+    app.dispose();
+  }
+}

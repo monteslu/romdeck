@@ -13,7 +13,7 @@
 // Usage: node scripts/theme-render-sweep.mjs [themesDir]
 import { readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { App } from '../src/ui/app.js';
+import { withApp } from '../src/ui/app.js';
 
 const dir = process.argv[2] ?? '/tmp/all-themes';
 const romsDir = process.argv[3] ?? path.join(process.env.HOME, 'code/cliemu/roms-real');
@@ -46,9 +46,10 @@ console.log('-'.repeat(w + 56));
 const fmt = (s) => `${String(s.colors).padStart(4)}c ${((1 - s.dominance) * 100).toFixed(1).padStart(5)}%`;
 
 for (const name of names) {
-  const app = new App({ romsDir, headless: true });
+  // withApp disposes on every path, including the throw this catch handles —
+  // a leak here is what took the machine down, since the loop builds 64 Apps.
   try {
-    await app.start();
+    await withApp({ romsDir, headless: true }, async (app) => {
     app.svc.themes.dirs = [dir, ...app.svc.themes.dirs];
     const res = await app.stage.setTheme(name, {});
     if (res.error || app.stage.theme?.name !== name) {
@@ -56,7 +57,7 @@ for (const name of names) {
       rows.push({ name, note });
       console.log(`${name.padEnd(w)}  ${note}`);
       failures++;
-      continue;
+      return; // ends this theme's scope; withApp disposes on the way out
     }
     await app.stage.preload();
     const out = { name, threw: [], unresolved: [] };
@@ -82,14 +83,11 @@ for (const name of names) {
     rows.push(out);
     const notes = [...new Set([...out.threw, ...out.unresolved.map((u) => `unresolved ${u}`)])];
     console.log(`${name.padEnd(w)}  ${fmt(out.system).padEnd(14)} ${fmt(out.gamelist).padEnd(14)} ${notes.join(' | ')}`);
+    });
   } catch (err) {
     rows.push({ name, note: `crashed: ${err.message}` });
     console.log(`${name.padEnd(w)}  crashed: ${err.message}`);
     failures++;
-  } finally {
-    // dispose(), not svc.shutdown(): the latter leaves this App's timers armed,
-    // which pins it and its decoded-image cache for the rest of the run.
-    try { app.dispose(); } catch { /* already down */ }
   }
 }
 
