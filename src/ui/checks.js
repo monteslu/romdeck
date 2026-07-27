@@ -149,6 +149,33 @@ async function smoke({ romsDir }) {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Homebrew feed. The manifest installs files from the network into the
+  // user's library, so the checks here are about REFUSING: an entry whose
+  // bytes are not what the catalog said must never reach the library. No
+  // download happens -- these assert the guard, not the network.
+  {
+    const entries = await app.svc.feed.list();
+    r.check('feed manifest loads', entries.length > 0, `${entries.length} entries`);
+    // Every remote entry needs a hash, or the guard below has nothing to check.
+    const remote = entries.filter((e) => e.url);
+    r.check('every remote entry declares sha256',
+      remote.every((e) => /^[0-9a-f]{64}$/i.test(e.sha256 ?? '')),
+      `${remote.filter((e) => e.sha256).length}/${remote.length} hashed`);
+    // Rights are recorded per entry, and only redistributable ones ship bytes.
+    r.check('every entry declares a licence', entries.every((e) => e.license),
+      [...new Set(entries.map((e) => e.license))].join(','));
+    r.check('freeware is linked, never bundled',
+      !entries.some((e) => e.localPath && e.license === 'freeware'));
+    // The refusal itself, without touching the network: no sha256 -> throw.
+    const tmpRoms = mkdtempSync(path.join(tmpdir(), 'romdeck-feed-'));
+    let refused = false;
+    try {
+      await app.svc.feed.install({ id: 'x', file: 'x.bin', system: 'nes', url: 'https://example.invalid/x' }, tmpRoms);
+    } catch (err) { refused = /sha256/.test(err.message); }
+    r.check('an unhashed download is refused', refused);
+    rmSync(tmpRoms, { recursive: true, force: true });
+  }
+
   // Path jailing. This used to be enforced by the custom protocol handlers;
   // it is now resolveUrl's job, and a theme is still untrusted input. The
   // sandbox went away, so the one guard that DID carry over gets asserted

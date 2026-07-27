@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated": "2026-07-25",
+  "version": 2,
+  "updated": "2026-07-27",
   "note": "Freely distributable homebrew. Entries may be console ROMs, wasmcart (.wasc) cartridges, or sandboxed JS games — romdeck plays all three from one library.",
   "entries": [
     {
@@ -12,9 +12,10 @@
       "file": "Starfall.d64",
       "localPath": "feed/files/starfall.d64",
       "author": "built with romdev",
-      "license": "MIT",
+      "license": "mit",
       "description": "Catch the golden stars, dodge the meteors. Hardware sprites, twinkling starfield, SID sound. Joystick port 2.",
-      "size": 174848
+      "size": 174848,
+      "source": "https://github.com/monteslu/romdev"
     },
     {
       "id": "snake-wasmcart",
@@ -25,9 +26,10 @@
       "file": "snake.wasc",
       "localPath": "feed/files/snake.wasc",
       "author": "wasmcart examples",
-      "license": "MIT",
+      "license": "mit",
       "description": "The classic, as a native WASM cartridge — any language, compiled once, runs at native speed.",
-      "size": 4223
+      "size": 4223,
+      "source": "https://github.com/wasmcart/wasmcart"
     },
     {
       "id": "jsgame-starter",
@@ -38,9 +40,10 @@
       "file": "simple-jsgame-starter.jsgame",
       "localPath": "feed/files/simple-jsgame-starter.jsgame",
       "author": "monteslu",
-      "license": "MIT",
+      "license": "mit",
       "description": "A sandboxed JavaScript game running in the same library as your ROMs — canvas, WebAudio and gamepad, no browser.",
-      "size": 13951
+      "size": 13951,
+      "source": "https://github.com/monteslu/jsgame-libretro"
     },
     {
       "id": "pico8-celeste",
@@ -49,11 +52,13 @@
       "system": "pico8",
       "systemLabel": "PICO-8",
       "file": "celeste.p8.png",
-      "url": "https://www.lexaloffle.com/bbs/cposts/ce/celeste_classic.p8.png",
+      "url": "https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png",
+      "sha256": "b8c78f53bc18cd9c8830c794093a3b724d6208de9eae290f0b84403225740188",
+      "size": 35484,
       "author": "Maddy Thorson & Noel Berry",
-      "license": "freely playable",
-      "description": "The original PICO-8 Celeste — the prototype that became the full game.",
-      "verifyBeforeUse": true
+      "license": "freeware",
+      "source": "https://www.lexaloffle.com/bbs/?tid=2145",
+      "description": "The original PICO-8 Celeste — the prototype that became the full game."
     }
   ]
 }
