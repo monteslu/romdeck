@@ -15,14 +15,14 @@ const SYSTEM_BY_EXT = {
   '.xex': 'Atari 800', '.atr': 'Atari 800', '.atx': 'Atari 800',
   '.bas': 'Atari 800', '.car': 'Atari 800', '.xfd': 'Atari 800',
   '.lnx': 'Lynx',
-  '.pce': 'PC Engine', '.cue': 'PC Engine', '.ccd': 'PC Engine', '.chd': 'PC Engine',
+  '.pce': 'PC Engine',
   '.ngp': 'Neo Geo Pocket', '.ngc': 'Neo Geo Pocket Color',
   '.ws': 'WonderSwan', '.wsc': 'WonderSwan Color',
   '.col': 'ColecoVision',
   '.vec': 'Vectrex',
   '.tzx': 'ZX Spectrum', '.z80': 'ZX Spectrum', '.sna': 'ZX Spectrum',
   '.mx1': 'MSX', '.mx2': 'MSX', '.rom': 'MSX', '.dsk': 'MSX', '.cas': 'MSX',
-  '.iso': 'PlayStation', '.pbp': 'PlayStation', '.m3u': 'PlayStation',
+  '.pbp': 'PlayStation',
   '.prg': 'Commodore 64', '.d64': 'Commodore 64', '.t64': 'Commodore 64', '.crt': 'Commodore 64',
   '.p8': 'PICO-8', '.png': 'PICO-8', // .p8.png carts; bare .png filtered below
   '.gtr': 'GameTank',
@@ -30,6 +30,19 @@ const SYSTEM_BY_EXT = {
   '.jsgame': 'JS Game', '.jsg': 'JS Game',
   '.zip': 'Archive',
 };
+
+// Disc images say "this is a CD", not which console's CD. PSX, Saturn,
+// Dreamcast, PC Engine CD and Sega CD all ship as .cue/.bin pairs, .chd or
+// .iso, so the extension CANNOT pick a system and the folder has to.
+//
+// These used to be mapped outright — .cue/.ccd/.chd to PC Engine and .iso to
+// PlayStation — which made every disc in the library the wrong console. The
+// visible symptom was four self-checks failing on a PSX game launched into a
+// PC Engine core, where "never became ready" was the only clue.
+//
+// They stay in SYSTEM_BY_EXT's keyset via isRom() below, because dropping them
+// entirely would stop discs being seen as ROMs at all.
+const DISC_EXTS = new Set(['.cue', '.ccd', '.chd', '.iso', '.m3u', '.gdi', '.cdi']);
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'saves', 'states', 'bios']);
 
@@ -51,7 +64,7 @@ function isRom(file, fullPath) {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.png') return /\.p8\.png$/i.test(file); // only PICO-8 carts
   if (ext === '.md' || ext === '.bin') return looksLikeGenesis(fullPath);
-  return ext in SYSTEM_BY_EXT;
+  return ext in SYSTEM_BY_EXT || DISC_EXTS.has(ext);
 }
 
 // ES-DE / RetroDECK / Batocera all organize ROMs as <roms>/<shortname>/…,
@@ -68,6 +81,13 @@ const SYSTEM_BY_FOLDER = {
   atari2600: 'Atari 2600', atari5200: 'Atari 5200', atari7800: 'Atari 7800',
   atari800: 'Atari 800', atarilynx: 'Lynx', lynx: 'Lynx',
   pcengine: 'PC Engine', tg16: 'PC Engine', turbografx16: 'PC Engine',
+  // Disc-based systems are folder-only by necessity — see DISC_EXTS. These are
+  // the ES-DE / RetroDECK / Batocera folder names. The CD variants fold into
+  // the cartridge system they extend rather than becoming systems of their
+  // own, because SYSTEMS has no entry for them and inventing one would mean
+  // core and thumbnail-repo wiring that a scanner fix has no business adding.
+  pcenginecd: 'PC Engine', pcecd: 'PC Engine', turbografxcd: 'PC Engine',
+  segacd: 'Genesis', megacd: 'Genesis',
   ngp: 'Neo Geo Pocket', ngpc: 'Neo Geo Pocket Color',
   wonderswan: 'WonderSwan', wonderswancolor: 'WonderSwan Color',
   colecovision: 'ColecoVision', vectrex: 'Vectrex',
@@ -77,13 +97,33 @@ const SYSTEM_BY_FOLDER = {
   pico8: 'PICO-8', gametank: 'GameTank',
 };
 
-function systemOf(file, fullPath) {
+// Walk UP from the file looking for a system folder. One level is not enough:
+// discs are conventionally stored as <roms>/psx/<Game Name>/game.cue, and
+// multi-disc sets nest deeper still, so the immediate parent is the game's own
+// folder rather than the system's. Nearest match wins, so a stray `psx` folder
+// far above cannot outvote the real one just below it.
+function folderSystem(fullPath, romsDir) {
+  const stop = romsDir ? path.resolve(romsDir) : null;
+  let dir = path.dirname(path.resolve(fullPath));
+  for (let i = 0; i < 6; i++) {
+    const key = path.basename(dir).toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const hit = SYSTEM_BY_FOLDER[key];
+    if (hit) return hit;
+    const parent = path.dirname(dir);
+    if (parent === dir || dir === stop) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function systemOf(file, fullPath, romsDir) {
   if (/\.p8\.png$/i.test(file)) return 'PICO-8';
-  const byExt = SYSTEM_BY_EXT[path.extname(file).toLowerCase()];
-  // A zip (or an ambiguous extension) tells us nothing — ask the folder.
-  if (!byExt || byExt === 'Archive') {
-    const folder = path.basename(path.dirname(fullPath)).toLowerCase().replace(/[^a-z0-9-]/g, '');
-    const byFolder = SYSTEM_BY_FOLDER[folder];
+  const ext = path.extname(file).toLowerCase();
+  const byExt = SYSTEM_BY_EXT[ext];
+  // A zip, a disc image, or an unknown extension tells us nothing about which
+  // console this is — ask the folder, which is how every frontend organizes.
+  if (!byExt || byExt === 'Archive' || DISC_EXTS.has(ext)) {
+    const byFolder = folderSystem(fullPath, romsDir);
     if (byFolder) return byFolder;
   }
   return byExt ?? 'Unknown';
@@ -126,7 +166,7 @@ export function scanRoms(romsDir, { maxDepth = 4, maxFiles = 5000 } = {}) {
           path: full,
           name: cleanName(entry),
           file: entry,
-          system: systemOf(entry, full),
+          system: systemOf(entry, full, romsDir),
           size: st.size,
         });
       }
