@@ -56,6 +56,7 @@
     "@napi-rs/canvas": "^1.0.2",
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
+    "rcheevos": "^0.1.4",
     "retroemu": "^0.5.1",
     "webgl-node": "^1.2.0"
   }

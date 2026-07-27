@@ -66,6 +66,54 @@ export async function autoplay({ romsDir, dev = false }) {
     const back = Buffer.from(
       (await sessions.rpc(id, 'readMemory', { region: 2, offset: 8, length: 4 })).dataB64, 'base64');
     r.check('dev: writeMemory round-trip', back.toString('hex') === '01020304');
+
+    // ── achievements ─────────────────────────────────────────────────
+    // The evaluator runs against the SAME live memory the debugger just
+    // proved, so this is the natural place to assert it end to end. It is an
+    // optional artifact (scripts/build-rcheevos.sh in retroemu), so a build
+    // that lacks it skips rather than fails.
+    const caps = (await sessions.rpc(id, 'getStatus')).capabilities ?? {};
+    if (!caps.achievements) {
+      console.log('SKIP: achievement evaluator not built (retroemu/scripts/build-rcheevos.sh)');
+    } else {
+      // rcheevos requires a TRANSITION into the true state — a condition
+      // already true when armed never fires, which is correct (the player has
+      // to DO something). So arm on a value the RAM does not currently hold,
+      // then write it.
+      const ADDR = 0x100;
+      const MAGIC = 0x5a;
+      const armed = await sessions.rpc(id, 'cheevosActivate', {
+        achievements: [
+          { id: 9001, memaddr: `0xH${ADDR.toString(16).padStart(4, '0')}=${MAGIC}`, title: 'probe' },
+          { id: 9002, memaddr: '0xHfffe=255_0xHffff=254', title: 'impossible' },
+        ],
+      });
+      r.check('cheevos: definitions compile', armed.activated === 2,
+        `${armed.activated} armed, ${armed.rejected.length} rejected (rcheevos ${armed.version})`);
+
+      const fired = [];
+      const onCheevo = (ev) => { if (ev.type === 'achievement') fired.push(ev.achievementId); };
+      sessions.on('update', onCheevo);
+
+      // The GAME owns this RAM and rewrites it constantly — a single write is
+      // zeroed within ~100ms, so whether an evaluated frame ever observed the
+      // magic value was a race. Hold it across frames instead.
+      const b64 = Buffer.from([MAGIC]).toString('base64');
+      for (let i = 0; i < 40 && !fired.includes(9001); i++) {
+        await sessions.rpc(id, 'writeMemory', { region: 2, offset: ADDR, dataB64: b64 });
+        await sleep(25);
+      }
+      await sleep(400);
+      sessions.off('update', onCheevo);
+
+      r.check('cheevos: unlocks on a real memory transition', fired.includes(9001),
+        fired.length ? `fired ${fired.join(',')}` : 'never fired');
+      // The half that matters as much: an achievement whose conditions were
+      // never met must NOT fire. Without this the check passes on a runtime
+      // that unlocks everything.
+      r.check('cheevos: no false positives', !fired.includes(9002));
+      await sessions.rpc(id, 'cheevosStop', {}).catch(() => {});
+    }
   } else {
     const st = await sessions.rpc(id, 'getStatus');
     r.check('runs frames', st.frameCount > 0, `frame=${st.frameCount}`);

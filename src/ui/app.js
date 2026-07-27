@@ -168,8 +168,47 @@ export class App {
     this.svc.sessions.on('update', (ev) => {
       this.onSession?.(ev);
       if (ev.type === 'closed' || ev.type === 'crashed') this.svc.invalidateLibrary();
+      if (ev.type === 'achievement') this._onAchievement(ev);
+      if (ev.type === 'ready') this._armAchievements(ev).catch(() => { /* optional feature */ });
       this.invalidate();
     });
+  }
+
+  /**
+   * Arm the achievement evaluator for a session that just came up.
+   *
+   * The split is deliberate: the FRONTEND fetches definitions, because it owns
+   * the RetroAchievements credentials, and the PLAYER evaluates them, because
+   * it owns the emulation loop and the memory. The player never sees an API
+   * key and never makes a network call for this.
+   *
+   * Entirely best-effort. No credentials, no network, an unrecognised game or
+   * an evaluator that was never built all mean "no achievements this session",
+   * never a failed launch.
+   */
+  async _armAchievements(ev) {
+    const rom = this.svc.findRom(ev.romPath);
+    if (!rom || !this.svc.ra.configured()) return;
+    const caps = (await this.svc.sessions.rpc(ev.id, 'getStatus')).capabilities ?? {};
+    if (!caps.achievements) return;
+
+    const defs = await this.svc.ra.runtimeAchievements(rom);
+    if (!defs?.length) return;
+    const res = await this.svc.sessions.rpc(ev.id, 'cheevosActivate', { achievements: defs });
+    if (res?.activated) {
+      this.toast('Achievements active', `${res.activated} tracked`, { ms: 3000 });
+    }
+  }
+
+  /** An achievement fired in the player. Award it and tell the player so. */
+  async _onAchievement(ev) {
+    this.toast('Achievement unlocked', ev.title ?? `#${ev.achievementId}`, { ms: 6000 });
+    // Submitting is the frontend's job and must never take the session down.
+    try {
+      await this.svc.ra.award(ev.rom, ev.achievementId);
+    } catch (err) {
+      this.toast('Achievement not submitted', err.message, { error: true });
+    }
   }
 
   // ── input ──────────────────────────────────────────────────────────

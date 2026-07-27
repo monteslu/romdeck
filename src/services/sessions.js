@@ -290,6 +290,22 @@ export class GameSessionManager extends EventEmitter {
       return;
     }
 
+    // An achievement triggered in the player. The player deliberately does NOT
+    // award it — it has no RA credentials — so this is forwarded for the
+    // frontend to submit and toast.
+    if (msg.event === 'achievement') {
+      this.emit('update', {
+        type: 'achievement',
+        id: session.id,
+        name: session.name,
+        romPath: session.romPath,
+        rom: session.rom,
+        achievementId: msg.achievementId,
+        title: msg.title ?? null,
+      });
+      return;
+    }
+
     if (msg.event === 'autosave') {
       if (this.stateStore && msg.stateB64) {
         try {
