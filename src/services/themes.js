@@ -477,13 +477,22 @@ export class ThemeStore {
 
     // <include> — relative to the INCLUDING file, at any depth.
     for (const inc of node.include ?? []) {
-      const rel = typeof inc === 'string' ? inc : inc['#text'];
-      if (!rel) continue;
+      const raw = typeof inc === 'string' ? inc : inc['#text'];
+      if (!raw) continue;
       if (inc && typeof inc === 'object' && !this._matches(inc, ctx)) continue;
-      this._loadFile(
-        path.resolve(path.dirname(file), rel),
-        themeDir, ctx, variables, views, depth + 1,
-      );
+      // An include PATH can itself be built from variables:
+      //   <include>./${carousel-style}.xml</include>
+      // aura-es-de reaches its entire system view that way, so leaving the
+      // ${...} in place meant the file never loaded and the view rendered
+      // with a background and nothing else -- blank, with no error anywhere.
+      // ${system.theme} is per-system and only the renderer knows it; an
+      // include naming one is skipped rather than guessed at.
+      const rel = String(raw).replace(/\$\{([\w.-]+)\}/g, (m, key) =>
+        (variables[key] !== undefined ? variables[key] : m));
+      if (rel.includes('${')) continue;
+      const resolved = path.resolve(path.dirname(file), rel);
+      if (!existsSync(resolved)) continue;
+      this._loadFile(resolved, themeDir, ctx, variables, views, depth + 1);
     }
 
     // <view> — may name several views at once: <view name="system, gamelist">

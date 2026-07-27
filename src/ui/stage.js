@@ -1401,7 +1401,6 @@ export class Stage {
           : p.imageGradientType;
         // <imageBrightness> lifts or drops the item's artwork, -1..1.
         const brightness = Math.max(-2, Math.min(2, Number(p.imageBrightness ?? 0)));
-        if (brightness !== 0) shownImg = brightenImage(shownImg, w, h, brightness);
         // Unfocused items get their own opacity/dimming, clamped as ES-DE
         // clamps them (CarouselComponent.h:1753). Drawing every item at full
         // strength is why our carousels read flatter than the themes do.
@@ -1421,6 +1420,7 @@ export class Stage {
         const itemSat = sel ? 1 : Number(p.unfocusedItemSaturation ?? 1);
         let shownImg = itemSat < 1
           ? saturateImage(img, w, h, Math.max(0, itemSat)) : img;
+        if (brightness !== 0) shownImg = brightenImage(shownImg, w, h, brightness);
         const imgRadius = Math.max(0, Math.min(0.5,
           Number(p.imageCornerRadius ?? 0))) * STAGE_W;
         if (imgRadius > 0) {
@@ -1635,7 +1635,16 @@ export class Stage {
 
   drawGrid(ctx, el, b) {
     const p = el.props;
-    const sys = this.currentSystem();
+    // A <grid> is a PRIMARY component like <carousel>: in the gamelist view it
+    // lists games, and in the SYSTEM view it lists systems. Drawing games in
+    // both left grimmlex-es-de -- whose system picker is a grid -- rendering a
+    // background and nothing else, with no error to show for it.
+    const systemView = this.view === 'system';
+    const entries = systemView
+      ? this.systems.map((sy) => ({ name: sy.name, art: null, short: sy.short, _sys: sy }))
+      : (this.currentSystem()?.roms ?? []);
+    if (!entries.length) return;
+    const sys = systemView ? { roms: entries } : this.currentSystem();
     if (!sys) return;
     // ES-DE's grid geometry (GridComponent.h:545). Columns are not derived by
     // rounding: it accumulates itemSize + itemSpacing until the next one would
@@ -1682,7 +1691,8 @@ export class Stage {
     const cellW = itemW + spaceX;
     const cellH = rowH;
     const perPage = cols * rows;
-    const page = Math.floor(this.gameIndex / perPage);
+    const cursor = systemView ? this.sysIndex : this.gameIndex;
+    const page = Math.floor(cursor / perPage);
     const start = page * perPage;
     const pad = 0;
 
@@ -1701,7 +1711,7 @@ export class Stage {
       const ch = (itemH - pad * 2) * relScale;
       // <imageFit> is contain | fill | cover (GridComponent.h:1066).
       const fit = p.imageFit ?? 'contain';
-      const sel = i === this.gameIndex;
+      const sel = i === cursor;
 
       // <backgroundRelativeScale> sizes the cell's backing plate against the
       // cell, so artwork can sit on a smaller or larger pad than the slot.
@@ -1723,7 +1733,10 @@ export class Stage {
           p.selectorColor, p.selectorColorEnd, p.selectorGradientType, '#4fd1c5');
         ctx.fill();
       }
-      const img = this.img(game.art);
+      const img = systemView
+        ? this.img(this.perSystem(p.staticImage ?? p.imagePath ?? p.path, game._sys))
+          ?? this.img(this.perSystem(p.defaultImage, game._sys))
+        : this.img(game.art);
       if (img) {
         const cell = { x: cx, y: cy, w: cw, h: ch };
         // "cover" crops to fill, "fill" stretches, "contain" letterboxes.
