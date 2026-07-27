@@ -86,10 +86,13 @@ cross-platform, on cores that update independently of the app.
 - **EmulationStation / ES-DE XML themes**, reimplemented in browser tech —
   including real community themes like Art Book Next, Modern and Slate,
   verified by a conformance harness on every change.
-- **Download themes from the picker.** romdeck bundles one first-party theme
-  (*Shelf* — art-forward, a few KB) and fetches the rest on request, showing
-  each one's author, licence and size first. Community themes are
-  CC-BY-NC-SA and up to 220 MB, so they're downloaded rather than shipped.
+- **Themes are downloaded, not bundled.** On first run romdeck installs
+  **Slate** (~20 MB) — the theme ES-DE ships as its desktop default, with real
+  artwork, logos and controller diagrams for ~150 systems — so the first
+  screen is a game library, not a wireframe. More are one click away in the
+  picker, which shows each one's author, licence and size first. Nothing is
+  shipped inside the package: community themes are CC-BY-NC-SA and up to
+  220 MB, and their console logos belong to their respective owners.
 - The themed view is **the interface**: romdeck launches into it, windowed,
   and fullscreen is a toggle rather than a separate mode. System carousel with
   real theme logos → gamelist → launch, with menus carrying every feature.
@@ -221,6 +224,6 @@ ScreenScraper's API terms require a free application. Data and assets keep
 their own licenses — libretro-database is CC-BY-SA, SDL_GameControllerDB is
 zlib, the bundled UI fonts are DejaVu Sans (Bitstream Vera) and GNU FreeSans
 (GPL-3.0-or-later with the font exception, attributed in
-[fonts/CREDITS.md](themes/romdeck-default/fonts/CREDITS.md)), and community
-themes are individually licensed (only clearly-licensed ones are bundled).
+[assets/fonts/CREDITS.md](assets/fonts/CREDITS.md)), and community
+themes are individually licensed and fetched at runtime, never bundled.
 Every core's upstream lineage and license is listed in the app.

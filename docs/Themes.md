@@ -32,8 +32,15 @@ one is CC-BY-NC-SA, so shipping them would make romdeck a redistributor of
 other people's artwork, and Art Book Next alone is 220 MB against an app that
 is otherwise about one.
 
-romdeck bundles exactly one theme, **Shelf** — first-party, a few KB of XML,
-art-forward — so a fresh install is never blank and never encumbered.
+romdeck bundles **no theme at all**. On first run it installs **Slate**, the
+theme ES-DE ships as its own desktop default: about 20 MB of real per-system
+artwork, logos and console/controller illustrations for ~150 systems. That is
+a download on the user's behalf, not a redistribution — Slate is CC-BY-NC-SA
+and its own CREDITS note the console logos belong to their respective owners,
+so it may not ship inside a GPL-3.0 npm package.
+
+If the fetch fails (offline, or no git), the app still starts and says so,
+with the error and how to retry, rather than painting a blank screen.
 
 You can also drop any theme folder in `<userData>/themes/<name>/` and it
 appears in the picker.
@@ -153,11 +160,11 @@ matches the palette.
 </theme>
 ```
 
-`themes/romdeck-default/` (**Shelf**) is the reference implementation — the
-shipped theme is authored in this same format, so the engine is always
-dogfooding it. It is a coffee-table-book layout: cover art large and centred,
-metadata small and quiet, one hairline of chrome, three colour schemes
-(Midnight, Amber CRT, Paper).
+**Slate** is the reference implementation: it is what a fresh install renders,
+so the engine is always dogfooding a real ES-DE theme rather than a
+first-party one written to its own quirks. `scripts/theme-conformance.mjs`
+and `scripts/theme-render-sweep.mjs` gate the engine against the wider
+catalogue (64 themes, both views, asserted on pixels).
 
 ## Metadata bindings, the ES-DE names
 
