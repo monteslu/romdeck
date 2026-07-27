@@ -31,18 +31,21 @@ const SYSTEM_BY_EXT = {
   '.zip': 'Archive',
 };
 
-// Disc images say "this is a CD", not which console's CD. PSX, Saturn,
-// Dreamcast, PC Engine CD and Sega CD all ship as .cue/.bin pairs, .chd or
-// .iso, so the extension CANNOT pick a system and the folder has to.
+// Extensions that are NOT tied to one system, and so can never name one on
+// their own. Disc containers (.cue/.chd/.iso/…) are the obvious case — PSX,
+// Saturn, Dreamcast, Sega CD and PC Engine CD all ship as exactly these — but
+// cartridge formats collide too: ES-DE lists .rom under MSX, NES and others,
+// .bin under Genesis, Atari and every CD system, .dsk under MSX and Amstrad.
 //
-// These used to be mapped outright — .cue/.ccd/.chd to PC Engine and .iso to
-// PlayStation — which made every disc in the library the wrong console. The
-// visible symptom was four self-checks failing on a PSX game launched into a
-// PC Engine core, where "never became ready" was the only clue.
-//
-// They stay in SYSTEM_BY_EXT's keyset via isRom() below, because dropping them
-// entirely would stop discs being seen as ROMs at all.
-const DISC_EXTS = new Set(['.cue', '.ccd', '.chd', '.iso', '.m3u', '.gdi', '.cdi']);
+// This set only decides what to do when there is NO folder answer. The folder
+// is checked first for every file (see systemOf), which is how ES-DE, Batocera
+// and RetroDECK all work: es_systems.xml gives each system a <path> AND a list
+// of <extension>s, and the same extension appears under many systems, so the
+// extension is a per-system FILTER and the directory is the identity.
+const AMBIGUOUS_EXTS = new Set([
+  '.cue', '.ccd', '.chd', '.iso', '.m3u', '.gdi', '.cdi', '.mds', // disc images
+  '.bin', '.rom', '.dsk', '.img', '.crt', '.cas', '.tap', '.d64', // shared cart/disk/tape
+]);
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'saves', 'states', 'bios']);
 
@@ -64,12 +67,14 @@ function isRom(file, fullPath) {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.png') return /\.p8\.png$/i.test(file); // only PICO-8 carts
   if (ext === '.md' || ext === '.bin') return looksLikeGenesis(fullPath);
-  return ext in SYSTEM_BY_EXT || DISC_EXTS.has(ext);
+  return ext in SYSTEM_BY_EXT || AMBIGUOUS_EXTS.has(ext);
 }
 
-// ES-DE / RetroDECK / Batocera all organize ROMs as <roms>/<shortname>/…,
-// and most real collections are zipped — so the containing folder is the
-// authoritative system signal, with the extension as the fallback.
+// ES-DE / RetroDECK / Batocera all organize ROMs as <roms>/<shortname>/…, and
+// the folder is the system's IDENTITY in all three: es_systems.xml pairs a
+// <path> with a list of <extension>s, and the same extension is listed under
+// many systems (.chd/.cue/.iso under psx, saturn, dreamcast, segacd,
+// pcenginecd, …). So the folder decides, and the extension only filters.
 const SYSTEM_BY_FOLDER = {
   nes: 'NES', famicom: 'NES', fds: 'NES',
   snes: 'SNES', sfc: 'SNES', superfamicom: 'SNES', satellaview: 'SNES',
@@ -81,13 +86,12 @@ const SYSTEM_BY_FOLDER = {
   atari2600: 'Atari 2600', atari5200: 'Atari 5200', atari7800: 'Atari 7800',
   atari800: 'Atari 800', atarilynx: 'Lynx', lynx: 'Lynx',
   pcengine: 'PC Engine', tg16: 'PC Engine', turbografx16: 'PC Engine',
-  // Disc-based systems are folder-only by necessity — see DISC_EXTS. These are
-  // the ES-DE / RetroDECK / Batocera folder names. The CD variants fold into
-  // the cartridge system they extend rather than becoming systems of their
-  // own, because SYSTEMS has no entry for them and inventing one would mean
-  // core and thumbnail-repo wiring that a scanner fix has no business adding.
+  supergrafx: 'PC Engine',
+  // CD variants fold into the cartridge system they extend rather than becoming
+  // systems of their own: SYSTEMS has no entry for them, and inventing one
+  // would mean core and thumbnail-repo wiring a scanner has no business adding.
   pcenginecd: 'PC Engine', pcecd: 'PC Engine', turbografxcd: 'PC Engine',
-  segacd: 'Genesis', megacd: 'Genesis',
+  segacd: 'Genesis', megacd: 'Genesis', megadrivejapan: 'Genesis',
   ngp: 'Neo Geo Pocket', ngpc: 'Neo Geo Pocket Color',
   wonderswan: 'WonderSwan', wonderswancolor: 'WonderSwan Color',
   colecovision: 'ColecoVision', vectrex: 'Vectrex',
@@ -119,13 +123,25 @@ function folderSystem(fullPath, romsDir) {
 function systemOf(file, fullPath, romsDir) {
   if (/\.p8\.png$/i.test(file)) return 'PICO-8';
   const ext = path.extname(file).toLowerCase();
+
+  // FOLDER FIRST, always. A file sitting in <roms>/nes/ is a NES game whatever
+  // it is called, and that is the rule every frontend follows. Extension-first
+  // got `nes/game.rom` wrong (.rom is mapped to MSX) and `amstradcpc/disk.dsk`
+  // wrong (.dsk is mapped to MSX) — the folder said exactly which system it was
+  // and the lookup table overruled it.
+  const byFolder = folderSystem(fullPath, romsDir);
+  if (byFolder) return byFolder;
+
+  // No system folder anywhere above the file — a loose ROM, a flat library, or
+  // a folder name we do not know. Now the extension is the only signal there
+  // is, and for the unambiguous ones it is a good one.
   const byExt = SYSTEM_BY_EXT[ext];
-  // A zip, a disc image, or an unknown extension tells us nothing about which
-  // console this is — ask the folder, which is how every frontend organizes.
-  if (!byExt || byExt === 'Archive' || DISC_EXTS.has(ext)) {
-    const byFolder = folderSystem(fullPath, romsDir);
-    if (byFolder) return byFolder;
-  }
+  if (byExt && byExt !== 'Archive' && !AMBIGUOUS_EXTS.has(ext)) return byExt;
+
+  // .bin that passed isRom() is a verified Genesis dump (looksLikeGenesis),
+  // not just any binary — content beat the ambiguity where the folder could not.
+  if (ext === '.bin' || ext === '.md') return 'Genesis';
+
   return byExt ?? 'Unknown';
 }
 
