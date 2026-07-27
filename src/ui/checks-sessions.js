@@ -128,10 +128,16 @@ export async function cartcheck({ romsDir }) {
   for (const rom of app.svc.library().roms) {
     if (!byKind.has(rom.system)) byKind.set(rom.system, rom);
   }
-  r.check('library has all three cart types',
-    byKind.has('WASM Cart') && byKind.has('JS Game')
-      && [...byKind.keys()].some((k) => !['WASM Cart', 'JS Game'].includes(k)),
-    [...byKind.keys()].join(', '));
+  // This check is about one library serving all three cart types, so it needs
+  // a library that HAS all three. roms-demo is that fixture; roms-real is
+  // emulator ROMs only and will always "fail" here for want of carts, which
+  // reads as a product bug when it is a wrong-folder mistake. Say so.
+  const hasCarts = byKind.has('WASM Cart') && byKind.has('JS Game');
+  const hasRom = [...byKind.keys()].some((k) => !['WASM Cart', 'JS Game'].includes(k));
+  r.check('library has all three cart types', hasCarts && hasRom,
+    hasCarts && hasRom
+      ? [...byKind.keys()].join(', ')
+      : `${[...byKind.keys()].join(', ') || 'empty'} — needs a library with a ROM, a .wasc and a .jsgame (try roms-demo)`);
 
   for (const [system, rom] of byKind) {
     const { id, error } = sessions.launch(rom, { resume: false });
