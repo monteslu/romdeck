@@ -24,6 +24,7 @@ import { MappingStore, BUTTONS } from '../services/inputmap.js';
 import { ThemeStore, THEME_CATALOG, DEFAULT_THEME } from '../services/themes.js';
 import { SettingsStore, SETTINGS } from '../services/settings.js';
 import { CheatStore } from '../services/cheats.js';
+import { ShaderStore, CPU_FILTERS } from '../services/shaders.js';
 import { CoreUpdates } from '../services/coreupdates.js';
 import { HomebrewFeed } from '../services/feed.js';
 import { RetroAchievements } from '../services/retroachievements.js';
@@ -53,6 +54,7 @@ export class Services {
     this.themes = new ThemeStore(ud);
     this.settings = new SettingsStore(ud);
     this.cheats = new CheatStore(ud);
+    this.shaders = new ShaderStore(ud);
     this.coreUpdates = new CoreUpdates();
     this.feed = new HomebrewFeed(ud, this.prefs);
     this.ra = new RetroAchievements(this.prefs);
@@ -66,11 +68,15 @@ export class Services {
       mappings: this.mappings,
       settings: this.settings,
       cheats: this.cheats,
+      shaders: this.shaders,
     });
 
     this._cliRomsDir = romsDir;
     this._library = null;
   }
+
+  /** The CPU filter family, as picker options. */
+  pictureFilters() { return CPU_FILTERS; }
 
   /** Battery / wifi / bluetooth for the <systemstatus> element. */
   deviceStatus() { return deviceStatus(); }

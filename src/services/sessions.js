@@ -32,7 +32,7 @@ function resolveNode() {
 }
 
 export class GameSessionManager extends EventEmitter {
-  constructor({ stateStore, saveDir, mappings, settings, cheats } = {}) {
+  constructor({ stateStore, saveDir, mappings, settings, cheats, shaders } = {}) {
     super();
     this.sessions = new Map();
     this.nextId = 1;
@@ -41,6 +41,7 @@ export class GameSessionManager extends EventEmitter {
     this.mappings = mappings ?? null; // MappingStore
     this.settings = settings ?? null; // SettingsStore (cascade)
     this.cheats = cheats ?? null; // CheatStore
+    this.shaders = shaders ?? null; // ShaderStore — resolves preset paths
   }
 
   /** Push the current controller config to every live session. */
@@ -88,7 +89,14 @@ export class GameSessionManager extends EventEmitter {
 
     const args = [cli, rom.path, '--video', 'sdl', '--control'];
     if (fullscreen) args.push('--fullscreen');
-    if (cfg.videoFilter && cfg.videoFilter !== 'none') {
+    // A GPU shader wins over the CPU filter — they are mutually exclusive and
+    // retroemu enforces that too. Resolving here (rather than passing the
+    // stored relative path) means a preset deleted since it was chosen
+    // degrades to the filter instead of failing the launch.
+    const shaderPath = cfg.shader && this.shaders ? this.shaders.resolve(cfg.shader) : null;
+    if (shaderPath) {
+      args.push('--shader', shaderPath);
+    } else if (cfg.videoFilter && cfg.videoFilter !== 'none') {
       args.push('--video-filter', cfg.videoFilter);
     }
     if (this.cheats && gameKey) {

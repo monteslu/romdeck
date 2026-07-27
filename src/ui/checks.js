@@ -95,6 +95,34 @@ async function smoke({ romsDir }) {
   r.check('bios checker runs', app.svc.bios.check(romsDir).length > 0);
   r.check('theme catalog', app.svc.themes.catalog().length > 0);
 
+  // Picture cascade: shader and CPU filter share one question and must not
+  // both apply. The layered override is the whole point — RetroArch's
+  // global/core/game hierarchy, but with provenance the UI can show.
+  {
+    const st = app.svc.settings;
+    const rom = app.svc.library().roms[0];
+    if (rom) {
+      const ctx = { platform: rom.short, gameKey: app.svc.gameKey(rom) };
+      const saved = JSON.parse(JSON.stringify(st.data.layers));
+      st.set('shader', 'a/global.glslp', 'global');
+      const g = st.resolve('shader', ctx);
+      st.set('shader', 'a/platform.glslp', `platform:${rom.short}`);
+      const p2 = st.resolve('shader', ctx);
+      st.set('shader', 'a/game.glslp', `game:${app.svc.gameKey(rom)}`);
+      const g3 = st.resolve('shader', ctx);
+      r.check('shader cascades global → platform → game',
+        g.source === 'global' && p2.source === 'platform' && g3.source === 'game',
+        `${g.source} → ${p2.source} → ${g3.source}`);
+      // A preset that no longer exists must degrade to the CPU filter rather
+      // than fail the launch.
+      r.check('a missing preset resolves to null', app.svc.shaders.resolve('a/game.glslp') === null);
+      st.data.layers = saved;
+      st.save();
+    }
+  }
+  r.check('picture options offered', app.svc.pictureFilters().length >= 4,
+    `${app.svc.pictureFilters().length} CPU filters, ${app.svc.shaders.list().length} shaders`);
+
   // Path jailing. This used to be enforced by the custom protocol handlers;
   // it is now resolveUrl's job, and a theme is still untrusted input. The
   // sandbox went away, so the one guard that DID carry over gets asserted

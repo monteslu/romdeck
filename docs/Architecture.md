@@ -261,3 +261,53 @@ Screenshots are captured and inspected for anything visual, because "the code
 looks right" has repeatedly not matched what rendered. Several real bugs were
 caught only this way: theme conditionals leaking, carousel duplication, zipped
 ROMs classified as "Archive", audio compression that wasn't compressing.
+
+
+## Picture: filters and shaders
+
+Two different subsystems behind one question.
+
+| | CPU **filter** | GPU **shader** |
+|---|---|---|
+| flag | `--video-filter` | `--shader` |
+| what | softfilter over the RGBA frame | multi-pass `.glslp` preset chain |
+| stackable | no, one at a time | yes — that IS what a preset is |
+| needs GL | no | yes (falls back if absent) |
+
+They are **mutually exclusive**, which is also how RetroArch treats them. The
+UI presents them as one "Picture" menu because to a player it is one question;
+choosing either clears the other in the scope being edited.
+
+### Scope
+
+romdeck's existing settings cascade, unchanged:
+
+```
+default → global → platform:<short> → game:<key>
+```
+
+RetroArch's equivalent is global → core → content-directory → game, Batocera
+uses `<system>-renderer.shader` keys plus a per-system menu, and RetroDECK
+defers to RetroArch's hierarchy entirely.
+
+Two deliberate differences:
+
+- **No content-directory scope.** The platform layer already means "all Game
+  Boy games", and a directory scope would collide with it — a ROM can sit in a
+  folder that is not its platform.
+- **Game scope is keyed by ROM identity, not by core.** RetroArch's game
+  presets are core-specific; romdeck's are not, so a game run under two cores
+  shares one Picture choice. Simpler, and right for a library frontend.
+
+Every row shows **where its value came from** (`from platform`, `from game`).
+That is the direct answer to RetroArch's config-scope trap, and the reason
+`SettingsStore.resolve()` returns a source at all.
+
+### Presets are not bundled
+
+`libretro/glsl-shaders` is 61 MB and CC-BY-NC-SA — the same reason themes are
+downloaded. Drop the repo in `<userData>/shaders/`, or point
+`ROMDECK_SHADER_DIR` at a system-wide copy. Stored values are paths RELATIVE
+to that root so a profile survives being moved between machines, and a preset
+that has since been deleted degrades to the CPU filter instead of failing the
+launch.

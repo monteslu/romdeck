@@ -183,7 +183,13 @@ export function installMenus(App) {
       const ctx = rom ? { platform: rom.short, gameKey: this.svc.gameKey(rom) } : {};
       const scope = rom ? `game:${this.svc.gameKey(rom)}` : 'global';
       const resolved = this.svc.settings.resolveAll(ctx);
-      const items = resolved.map((s) => ({
+      const items = resolved
+        // Picture and Shader get their own menu below: one is a CPU filter,
+        // the other a GPU preset, and to a player they are ONE question.
+        // Showing both as bare enums here would be two controls that silently
+        // override each other.
+        .filter((s) => s.key !== 'videoFilter' && s.key !== 'shader')
+        .map((s) => ({
         label: s.label,
         // Provenance stays visible — the direct answer to RetroArch's
         // config-scope trap, and the reason resolve() returns a source at all.
@@ -197,11 +203,173 @@ export function installMenus(App) {
           this.invalidate();
         },
       }));
+      // Picture first: it is the setting people actually come here to change.
+      const pic = this.pictureSummary(ctx);
+      items.unshift({
+        label: 'Picture',
+        hint: pic.hint,
+        action: () => this.openPictureMenu(rom),
+      });
       items.push({ label: 'Emulator cores', hint: 'check for updates', action: () => this.openCoresMenu() });
       this.menus.open_({
         title: 'Settings',
         subtitle: rom ? `${rom.name} only` : 'all games',
         items,
+      });
+    },
+
+    /** What the Picture row reads, and where the value came from. */
+    pictureSummary(ctx) {
+      const sh = this.svc.settings.resolve('shader', ctx);
+      const vf = this.svc.settings.resolve('videoFilter', ctx);
+      const active = sh.value ? sh : vf;
+      const label = sh.value
+        ? (this.svc.shaders.list().find((x) => x.value === sh.value)?.label ?? sh.value)
+        : (this.svc.pictureFilters().find((x) => x.value === vf.value)?.label ?? vf.value);
+      const from = active.source === 'default' ? 'default' : `from ${active.source}`;
+      return { hint: `${label} · ${from}`, active };
+    },
+
+    /**
+     * ONE question: what should the game look like?
+     *
+     * CPU filters and GPU shader presets are different subsystems that cannot
+     * both apply — retroemu enforces that, and RetroArch does the same — so
+     * choosing either clears the other. Presenting them as two independent
+     * controls would let a user set both and quietly get only one.
+     *
+     * SCOPE IS EXPLICIT. RetroArch's loudest UX complaint is that a setting
+     * saves into a scope you did not pick; here the menu says which scope it
+     * is writing, and every row shows where its current value came from.
+     */
+    openPictureMenu(rom = null) {
+      const ctx = rom ? { platform: rom.short, gameKey: this.svc.gameKey(rom) } : {};
+      const scope = rom ? `game:${this.svc.gameKey(rom)}` : 'global';
+      const cur = {
+        shader: this.svc.settings.resolve('shader', ctx),
+        filter: this.svc.settings.resolve('videoFilter', ctx),
+      };
+      const choose = (kind, value) => {
+        // Mutually exclusive: setting one clears the other in THIS scope.
+        if (kind === 'shader') {
+          this.svc.settings.set('shader', value, scope);
+          this.svc.settings.set('videoFilter', undefined, scope);
+        } else {
+          this.svc.settings.set('videoFilter', value, scope);
+          this.svc.settings.set('shader', undefined, scope);
+        }
+        this.menus.closeAll();
+        this.toast('Picture', `${value ?? 'clean'} — ${rom ? rom.name : 'all games'}`);
+      };
+
+      const mark = (on) => (on ? '● ' : '  ');
+      const items = [];
+
+      for (const f of this.svc.pictureFilters()) {
+        items.push({
+          label: mark(!cur.shader.value && cur.filter.value === f.value) + f.label,
+          hint: 'CPU effect',
+          action: () => choose('filter', f.value),
+        });
+      }
+
+      const featured = this.svc.shaders.featured();
+      if (featured.length) {
+        items.push({ label: '— Shaders (GPU) —', disabled: true });
+        for (const sPreset of featured) {
+          items.push({
+            label: mark(cur.shader.value === sPreset.value) + sPreset.label,
+            hint: 'shader',
+            action: () => choose('shader', sPreset.value),
+          });
+        }
+        items.push({
+          label: 'All shaders…',
+          hint: `${this.svc.shaders.list().length} installed`,
+          action: () => this.openAllShadersMenu(rom),
+        });
+      } else if (this.svc.shaders.installed()) {
+        items.push({ label: 'No .glslp presets found', disabled: true });
+      } else {
+        items.push({
+          label: 'Shaders not installed',
+          hint: `drop presets in ${this.svc.shaders.installDir() ?? 'the shaders folder'}`,
+          disabled: true,
+        });
+      }
+
+      // The other scope is one hop away rather than hidden in another screen.
+      if (rom) {
+        items.push({
+          label: `Set for all ${rom.system} games instead…`,
+          action: () => this.openPictureScopeMenu(rom),
+        });
+      }
+
+      this.menus.open_({
+        title: 'Picture',
+        subtitle: rom ? `${rom.name} only` : 'all games',
+        items,
+      });
+    },
+
+    /** The platform scope — "every Game Boy game", RetroArch's core preset. */
+    openPictureScopeMenu(rom) {
+      const ctx = { platform: rom.short };
+      const scope = `platform:${rom.short}`;
+      const cur = {
+        shader: this.svc.settings.resolve('shader', ctx),
+        filter: this.svc.settings.resolve('videoFilter', ctx),
+      };
+      const choose = (kind, value) => {
+        if (kind === 'shader') {
+          this.svc.settings.set('shader', value, scope);
+          this.svc.settings.set('videoFilter', undefined, scope);
+        } else {
+          this.svc.settings.set('videoFilter', value, scope);
+          this.svc.settings.set('shader', undefined, scope);
+        }
+        this.menus.closeAll();
+        this.toast('Picture', `${value ?? 'clean'} — all ${rom.system} games`);
+      };
+      const mark = (on) => (on ? '● ' : '  ');
+      const items = this.svc.pictureFilters().map((f) => ({
+        label: mark(!cur.shader.value && cur.filter.value === f.value) + f.label,
+        hint: 'CPU effect',
+        action: () => choose('filter', f.value),
+      }));
+      for (const sPreset of this.svc.shaders.featured()) {
+        items.push({
+          label: mark(cur.shader.value === sPreset.value) + sPreset.label,
+          hint: 'shader',
+          action: () => choose('shader', sPreset.value),
+        });
+      }
+      this.menus.open_({
+        title: 'Picture',
+        subtitle: `all ${rom.system} games`,
+        items,
+      });
+    },
+
+    /** The full corpus, for when the featured list is not enough. */
+    openAllShadersMenu(rom = null) {
+      const ctx = rom ? { platform: rom.short, gameKey: this.svc.gameKey(rom) } : {};
+      const scope = rom ? `game:${this.svc.gameKey(rom)}` : 'global';
+      const cur = this.svc.settings.resolve('shader', ctx).value;
+      const items = this.svc.shaders.list().map((sPreset) => ({
+        label: (cur === sPreset.value ? '● ' : '  ') + sPreset.label,
+        action: () => {
+          this.svc.settings.set('shader', sPreset.value, scope);
+          this.svc.settings.set('videoFilter', undefined, scope);
+          this.menus.closeAll();
+          this.toast('Picture', `${sPreset.label} — ${rom ? rom.name : 'all games'}`);
+        },
+      }));
+      this.menus.open_({
+        title: 'All shaders',
+        subtitle: rom ? `${rom.name} only` : 'all games',
+        items: items.length ? items : [{ label: 'None installed', disabled: true }],
       });
     },
 

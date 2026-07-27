@@ -26,6 +26,23 @@ export const SETTINGS = [
     default: 'none',
   },
   {
+    // A GPU shader preset, stored as a path RELATIVE to the shader dir so a
+    // profile survives being moved between machines.
+    //
+    // Deliberately NOT merged into videoFilter even though the UI presents
+    // them as one "Picture" question: they are different subsystems (CPU
+    // post-process vs GPU multi-pass chain), retroemu takes them as different
+    // flags, and they are mutually exclusive. Keeping them as separate keys
+    // means the cascade can express "CRT filter globally, but a real shader
+    // for SNES" without either one having to encode the other's vocabulary.
+    key: 'shader',
+    label: 'Shader',
+    help: 'GPU shader preset (.glslp). Overrides Picture when set.',
+    type: 'enum',
+    options: [],          // filled at runtime from ShaderStore
+    default: null,
+  },
+  {
     key: 'fullscreen',
     label: 'Start fullscreen',
     help: 'Open games fullscreen instead of in a window.',
@@ -148,6 +165,7 @@ export class SettingsStore {
     const val = (k) => this.resolve(k, ctx).value;
     return {
       videoFilter: val('videoFilter'),
+      shader: val('shader'),
       fullscreen: !!val('fullscreen'),
       resume: !!val('resume'),
       fastForwardSpeed: Number(val('fastForwardSpeed')),
