@@ -126,8 +126,18 @@ function line(text, size, cx, y) {
 }
 
 function svg(top, bottom) {
-  // fill="currentColor" so a theme can tint one asset for every colour
-  // scheme; the renderer also masks these, which wants a single flat shape.
+  // fill="#fff", NOT "currentColor".
+  //
+  // The intent was right — one asset every colour scheme can tint — but
+  // currentColor only means anything inside a CSS cascade. There is no CSS
+  // here: resvg resolves it to BLACK. And <imageColor> MULTIPLIES (ES-DE
+  // semantics, see tintImage), so a black glyph times any tint is still
+  // black. Every system logo rendered as near-black text on a near-black
+  // panel: structurally present, effectively invisible.
+  //
+  // White is the correct source for a multiply tint, because white x tint IS
+  // the tint — which is exactly the "tint one asset for every colour scheme"
+  // behaviour that was wanted in the first place.
   let body;
   if (bottom) {
     // Lines are sized independently but capped relative to each other, so a
@@ -141,7 +151,7 @@ function svg(top, bottom) {
     const size = fitSize(top, MAX_SIZE);
     body = line(top, size, W / 2, H / 2 + size * 0.36);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" fill="currentColor">`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" fill="#fff">`
     + body + '</svg>\n';
 }
 

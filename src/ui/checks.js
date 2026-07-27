@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createRequire } from 'node:module';
 import { createCanvas } from '@napi-rs/canvas';
 import path from 'node:path';
-import { App } from './app.js';
+import { withApp } from './app.js';
 import { Services } from './services.js';
 import { userDataDir } from './paths.js';
 import { HeadlessPresenter, STAGE_W, STAGE_H } from './present.js';
@@ -56,8 +56,7 @@ export async function runChecks(name, ctx) {
 // ── smoke ────────────────────────────────────────────────────────────
 async function smoke({ romsDir }) {
   const r = makeReporter('SMOKE');
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
 
   r.check('services constructed', !!app.svc.sessions && !!app.svc.themes);
   const lib = app.svc.library();
@@ -139,8 +138,8 @@ async function smoke({ romsDir }) {
   const real = app.svc.resolveUrl(`romdeck-theme://${themeName}/theme.xml`);
   r.check('legitimate theme asset resolves', !!real, real ?? '');
 
-  app.dispose();
   return r.done('shell boots, services round-trip, stage paints');
+  });
 }
 
 // ── pathcheck: nobody's saves move ───────────────────────────────────
@@ -177,7 +176,7 @@ async function pathcheck() {
       if (present) r.check(`existing ${label} readable`, probe());
       else console.log(`SKIP: no existing ${label} in this profile`);
     }
-    svc.shutdown();
+    svc.stopSessions();
   }
 
   // retroemu's optional deps. Each one fails SILENTLY at the point of use --
@@ -212,8 +211,7 @@ async function realtheme({ romsDir, argAfter }) {
     ? variantArg : null;
 
   const r = makeReporter('REALTHEME');
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   const res = await app.setTheme(name, { variant });
   // loadTheme() falls back to the bundled theme when one is missing, which is
   // right for a user and WRONG for a check: it reported "modern-es-de renders"
@@ -221,7 +219,7 @@ async function realtheme({ romsDir, argAfter }) {
   const loaded = app.stage.theme?.name;
   r.check(`${name} loads`, !res.error && loaded === name,
     res.error ?? (res.fellBackFrom ? `NOT INSTALLED — fell back to ${loaded}` : app.stage.theme.displayName));
-  if (res.error || loaded !== name) { app.dispose(); return r.done(''); }
+  if (res.error || loaded !== name) return r.done('');
   await app.stage.preload();
 
   const shot = (label) => {
@@ -276,8 +274,8 @@ async function realtheme({ romsDir, argAfter }) {
 
   console.log(`  wrote ${sysShot}`);
   console.log(`  wrote ${gameShot}`);
-  app.dispose();
   return r.done(`${name} renders`);
+  });
 }
 
 /**
@@ -375,8 +373,7 @@ export async function shots({ romsDir, argAfter }) {
   const outDir = next && next !== romsDir ? next : '/tmp/romdeck-shots';
   mkdirSync(outDir, { recursive: true });
 
-  const app = new App({ romsDir, headless: true });
-  await app.start();
+  return withApp({ romsDir, headless: true }, async (app) => {
   // --shots --theme <name> renders these surfaces under a REAL community
   // theme. Without it every run used whatever is in prefs, so three "runs
   // against different themes" silently produced byte-identical numbers.
@@ -388,7 +385,6 @@ export async function shots({ romsDir, argAfter }) {
     await app.setTheme(themeArg, {});
     if (app.stage.theme?.name !== themeArg) {
       console.log(`SKIP: theme ${themeArg} is not installed (got ${app.stage.theme?.name})`);
-      app.dispose();
       return 0;
     }
   }
@@ -499,8 +495,50 @@ export async function shots({ romsDir, argAfter }) {
       console.log(`SKIP: this theme's system art is monochrome (${pct.toFixed(1)}% saturated)`);
     }
   }
+
+  // The selected logo must be VISIBLE against its own card, which "not blank"
+  // cannot tell you: a view full of panels and help text has plenty of colour
+  // variance while every logo on it is invisible. That is not hypothetical --
+  // the bundled logos shipped as fill="currentColor", which has no meaning
+  // outside a CSS cascade and rasterises to BLACK, and <imageColor>
+  // MULTIPLIES, so no tint could ever lift them. Near-black glyphs on a
+  // near-black card passed every check here while the carousel read as empty.
+  //
+  // Measure contrast where the art actually is: the brightest pixels in the
+  // selected card have to stand off that card's own background.
+  {
+    // Sample the INTERIOR of the selected card. The selector border is drawn
+    // in the accent colour and is bright by definition, so a rect that
+    // includes it reports high contrast no matter how invisible the logo is —
+    // that is exactly how a first cut of this check passed a black-on-black
+    // carousel. Inset well inside the border and measure only the art.
+    const b = {
+      x: STAGE_W * 0.415, y: STAGE_H * 0.27, w: STAGE_W * 0.17, h: STAGE_H * 0.30,
+    };
+    const d = readRect(app.render().getContext('2d'), b);
+    if (d) {
+      const lum = [];
+      for (let i = 0; i < d.data.length; i += 4) {
+        lum.push(0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2]);
+      }
+      lum.sort((x, y) => x - y);
+      // Median is the card; the 99th percentile is the glyph strokes on it.
+      const bg = lum[Math.floor(lum.length * 0.5)];
+      const fg = lum[Math.floor(lum.length * 0.99)];
+      r.check('selected system logo is visible on its card', fg - bg > 24,
+        `logo ${fg.toFixed(0)} vs card ${bg.toFixed(0)} (contrast ${(fg - bg).toFixed(0)})`);
+    }
+  }
   app.dispatch('confirm');
   for (let i = 0; i < 2; i++) app.dispatch('down');
+  // Art loads lazily on a cache MISS, so the first paint after moving the
+  // selection has no cover yet. Capturing straight away photographed an empty
+  // plate and shipped it as the reference screenshot of the gamelist — the
+  // view looked like a library with no art at all. Start the fetch, let it
+  // land, then shoot. (The dedicated cover assertion below already did this;
+  // the headline screenshot did not.)
+  app.render();
+  await new Promise((res) => setTimeout(res, 2000));
   const gamelist = capture('gamelist-view');
   r.check('gamelist differs from system view',
     Buffer.compare(system.png, gamelist.png) !== 0);
@@ -959,8 +997,8 @@ export async function shots({ romsDir, argAfter }) {
   }
 
   console.log(`SHOTS wrote ${captured.length} PNGs to ${outDir}`);
-  app.dispose();
   return r.done(`${captured.length} surfaces captured and asserted`);
+  });
 }
 
 // ── --snapcheck: video snaps actually decode ─────────────────────────
