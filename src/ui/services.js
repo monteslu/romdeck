@@ -21,7 +21,7 @@ import { ArtworkStore } from '../services/artwork.js';
 import { Identifier } from '../services/identify.js';
 import { BiosChecker } from '../services/bios.js';
 import { MappingStore, BUTTONS } from '../services/inputmap.js';
-import { ThemeStore, THEME_CATALOG } from '../services/themes.js';
+import { ThemeStore, THEME_CATALOG, DEFAULT_THEME } from '../services/themes.js';
 import { SettingsStore, SETTINGS } from '../services/settings.js';
 import { CheatStore } from '../services/cheats.js';
 import { CoreUpdates } from '../services/coreupdates.js';
@@ -192,30 +192,68 @@ export class Services {
   /**
    * Which theme to use when the user has never chosen one.
    *
-   * NOT unconditionally 'romdeck-default'. Shelf is the bundled FALLBACK — it
-   * ships typographic wordmarks because romdeck cannot redistribute anyone's
-   * console art. It is what you get when nothing else is installed, and it is
-   * emphatically not what a downloaded art theme looks like.
+   * Slate (DEFAULT_THEME) is romdeck's default, matching ES-DE, which ships it
+   * as the desktop default. It is real per-system artwork for ~150 systems in
+   * about 20 MB, so first run looks like a game library rather than a
+   * wireframe. There is no longer a no-art bundled theme to fall back to: the
+   * old 'romdeck-default' (Shelf) was typographic wordmarks and is deleted.
    *
-   * Booting into Shelf while `art-book-next-es-de` sat installed in userData
-   * meant the app looked like a stark black wireframe when the user had
-   * already downloaded the good one and expected to see it.
+   * It is FETCHED, not bundled — Slate is CC-BY-NC-SA and its own CREDITS note
+   * the console logos belong to their respective owners, so romdeck installs
+   * it on the user's behalf rather than redistributing it inside a GPL-3.0 npm
+   * package. See ensureDefaultTheme().
    *
-   * So: prefer a real installed theme, in catalogue order (which puts the
-   * recommended one first), and fall back to Shelf only when there is nothing
-   * else. An explicit choice in prefs always wins over this.
+   * If Slate is not installed yet, prefer any other installed theme (catalogue
+   * order, recommended first) over showing nothing. An explicit choice in
+   * prefs always wins over all of this.
    */
   defaultTheme() {
     try {
-      const installed = new Set(this.themes.list()
-        .map((t) => t.name)
-        .filter((n) => n !== 'romdeck-default'));
-      if (!installed.size) return 'romdeck-default';
+      const installed = new Set(this.themes.list().map((t) => t.name));
+      if (installed.has(DEFAULT_THEME)) return DEFAULT_THEME;
+      if (!installed.size) return DEFAULT_THEME; // nothing yet; it is being fetched
       const preferred = THEME_CATALOG.find((t) => t.recommended && installed.has(t.name))
         ?? THEME_CATALOG.find((t) => installed.has(t.name));
       return preferred?.name ?? [...installed][0];
     } catch {
-      return 'romdeck-default';
+      return DEFAULT_THEME;
+    }
+  }
+
+  /**
+   * Make sure SOME theme is on disk before the first paint.
+   *
+   * romdeck bundles no theme at all now, so a first run with an empty themes
+   * folder has literally nothing to render — the failure mode is the black
+   * void the app used to open with. Fetch Slate once, then get out of the way.
+   *
+   * Resolves to { installed, name } or { error } — it never throws, because a
+   * missing network must not stop the app from starting. The caller decides
+   * what to say; being offline on first run is a real situation and the user
+   * needs a sentence about it, not a stack trace.
+   *
+   * @param {(line: string) => void} [onProgress]
+   */
+  async ensureDefaultTheme(onProgress = null) {
+    try {
+      const installed = new Set(this.themes.list().map((t) => t.name));
+      // Fetch what this run will actually TRY to load. Installing only
+      // DEFAULT_THEME meant a profile whose prefs named another theme still
+      // started with nothing: the fetch "succeeded" and setTheme then failed
+      // with "no such theme". Honour the preference when it names something
+      // in the catalogue; otherwise fall back to the default.
+      const wanted = this.prefs.get('theme');
+      const target = wanted && THEME_CATALOG.some((t) => t.name === wanted)
+        ? wanted
+        : DEFAULT_THEME;
+      if (installed.has(target)) return { installed: false, name: target };
+      // Something else is already on disk — usable, so do not block the boot
+      // on a download the user did not ask for. defaultTheme() will pick it.
+      if (installed.size && target !== wanted) return { installed: false, name: null };
+      const res = await this.themes.install(target, onProgress);
+      return { installed: !res.alreadyInstalled, name: target };
+    } catch (err) {
+      return { error: err.message };
     }
   }
 
@@ -224,19 +262,21 @@ export class Services {
     try {
       return { theme: this.themes.load(wanted, opts) };
     } catch (err) {
-      // A theme can vanish between runs; fall back rather than show nothing.
+      // A theme can vanish between runs; fall back to ANY other installed one
+      // rather than show nothing. There is no bundled theme to fall back to
+      // any more, so the candidates are whatever is in userData.
       //
-      // Do NOT persist the fallback. Writing 'romdeck-default' into prefs made
-      // one transient failure permanent: the user was pinned to the bundled
-      // wireframe theme for every future run, with a perfectly good
-      // art-book-next installed and no indication why the app looked bare.
-      // Falling back is a display decision for THIS run; it is not the user
-      // choosing a theme. Leaving prefs alone means the next launch retries
-      // the real theme, and defaultTheme() can pick a better one.
-      if (wanted !== 'romdeck-default') {
+      // Do NOT persist the fallback. Writing the fallback into prefs made one
+      // transient failure permanent: the user was pinned to it for every
+      // future run, with a perfectly good art-book-next installed and no
+      // indication why the app looked bare. Falling back is a display decision
+      // for THIS run; it is not the user choosing a theme. Leaving prefs alone
+      // means the next launch retries the real theme.
+      for (const candidate of [DEFAULT_THEME, ...this.themes.list().map((t) => t.name)]) {
+        if (candidate === wanted) continue;
         try {
-          return { theme: this.themes.load('romdeck-default', {}), fellBackFrom: wanted };
-        } catch { /* bundled theme missing too */ }
+          return { theme: this.themes.load(candidate, {}), fellBackFrom: wanted };
+        } catch { /* try the next one */ }
       }
       return { error: err.message };
     }

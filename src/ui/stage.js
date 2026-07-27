@@ -41,7 +41,10 @@ let fontsReady = false;
 
 export function initFonts() {
   if (fontsReady) return;
-  const dir = path.join(appDir(), 'themes', 'romdeck-default', 'fonts');
+  // assets/, not inside a theme: these four faces are UI CHROME (menus, the
+  // help bar, the on-screen keyboard) and must exist no matter which theme is
+  // loaded — or whether any theme is installed at all.
+  const dir = path.join(appDir(), 'assets', 'fonts');
   for (const [family, file] of BUNDLED_FONTS) {
     const p = path.join(dir, file);
     if (existsSync(p)) GlobalFonts.registerFromPath(p, family);
@@ -811,29 +814,45 @@ export class Stage {
    * whatever the theme drew.
    */
   drawEmptyState(ctx) {
+    // No theme at all is its own failure, and it outranks an empty library:
+    // with nothing bundled, a first run that could not reach the network has
+    // no artwork and every view is blank no matter how many ROMs were found.
+    // Say what happened rather than painting a void.
+    if (!this.theme) {
+      this._drawNotice(ctx, 'No theme installed',
+        [this.themeError ? `Could not download one: ${this.themeError}` : '',
+          'romdeck fetches its theme on first run and needs a network',
+          'connection and git for that. Press Start › Themes to retry.'].filter(Boolean));
+      return;
+    }
     // allRoms is the field setLibrary() writes — NOT `library`, which does not
     // exist on Stage. Reading the wrong name made this always-true, so the
     // welcome text stayed on screen over a fully populated library.
     if (this.allRoms?.length) return;
     const dir = this.svc.romsDir?.() ?? null;
+    this._drawNotice(ctx,
+      dir ? 'No games found' : 'Welcome to romdeck',
+      dir
+        ? [`Nothing playable under ${dir}`,
+          'Put ROMs in per-system folders (nes/, snes/, gb/ …),',
+          'then press Start › Choose ROMs folder to pick another.']
+        : ['Point romdeck at a folder of ROMs to get started.',
+          'Press Start, then "Choose ROMs folder".',
+          'Or launch it with a path:  romdeck ~/roms']);
+  }
+
+  /** Centred headline + body, for the states a theme cannot describe. */
+  _drawNotice(ctx, title, lines) {
     const cx = STAGE_W / 2;
     const cy = STAGE_H / 2;
-
     ctx.save();
     ctx.textAlign = 'center';
     ctx.fillStyle = '#f4f6fb';
     ctx.font = `600 ${Math.round(STAGE_H * 0.055)}px ${UI_FONT}`;
-    ctx.fillText(dir ? 'No games found' : 'Welcome to romdeck', cx, cy - STAGE_H * 0.045);
+    ctx.fillText(title, cx, cy - STAGE_H * 0.045);
 
     ctx.fillStyle = '#9aa3b2';
     ctx.font = `400 ${Math.round(STAGE_H * 0.028)}px ${UI_FONT}`;
-    const lines = dir
-      ? [`Nothing playable under ${dir}`,
-        'Put ROMs in per-system folders (nes/, snes/, gb/ …),',
-        'then press Start › Choose ROMs folder to pick another.']
-      : ['Point romdeck at a folder of ROMs to get started.',
-        'Press Start, then "Choose ROMs folder".',
-        'Or launch it with a path:  romdeck ~/roms'];
     lines.forEach((t, i) => {
       ctx.fillText(t, cx, cy + STAGE_H * 0.03 + i * STAGE_H * 0.045);
     });

@@ -10,7 +10,7 @@
   "files": [
     "bin/",
     "src/",
-    "themes/",
+    "assets/",
     "docs/",
     "scripts/",
     "README.md",
@@ -20,7 +20,6 @@
     "start": "node src/ui/main.js",
     "smoke": "node src/ui/main.js --smoke",
     "check": "node src/ui/main.js --smoke && node src/ui/main.js --padonly && node src/ui/main.js --pathcheck",
-    "logos": "node scripts/make-shelf-logos.mjs",
     "themes": "node scripts/theme-conformance.mjs",
     "bakeoff": "node scripts/present-bakeoff.mjs",
     "build:video": "./scripts/build-video-decoder.sh"

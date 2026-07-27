@@ -28,6 +28,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const BUNDLED_THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
 
 /**
+ * The theme romdeck uses when the user has not chosen one.
+ *
+ * Slate, matching ES-DE, which ships it as its desktop default: real
+ * per-system artwork for ~150 systems in about 20 MB. It is INSTALLED ON FIRST
+ * RUN rather than bundled — see the licence note on THEME_CATALOG below — so
+ * the first thing a new user sees is a real library, not a wireframe.
+ */
+export const DEFAULT_THEME = 'slate-es-de';
+
+/**
  * Themes romdeck offers to install, the way ES-DE ships a themes list.
  *
  * They are FETCHED, not bundled. Every one is CC-BY-NC-SA or similar: bundling

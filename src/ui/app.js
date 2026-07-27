@@ -51,12 +51,32 @@ export class App {
     const lib = this.svc.library();
     this.stage.setLibrary(lib.roms);
 
+    // romdeck bundles no theme, so on a first run there is nothing on disk to
+    // render at all. Fetch the default (Slate, ~20 MB) BEFORE the first
+    // setTheme, or the app starts with no artwork and no way to have any.
+    //
+    // This never throws: being offline on first run is a real situation, and
+    // the answer to it is a sentence on screen, not a failed launch. themeError
+    // carries it so the stage can say so.
+    this.themeError = null;
+    const boot = await this.svc.ensureDefaultTheme((line) => {
+      this.bootProgress = line;
+      this.invalidate();
+    });
+    this.bootProgress = null;
+    if (boot?.error) this.themeError = boot.error;
+    this.stage.themeError = this.themeError;
+
     const prefs = this.svc.themePrefs();
     const res = await this.stage.setTheme(prefs.theme, {
       variant: prefs.variant,
       colorScheme: prefs.colorScheme,
     });
-    if (res.error) throw new Error(`theme: ${res.error}`);
+    // A missing theme is no longer fatal — with nothing bundled it is the
+    // expected state of a first run that could not reach the network. Record
+    // it and start anyway, so the user gets a window that explains itself.
+    if (res.error) this.themeError = this.themeError ?? res.error;
+    this.stage.themeError = this.themeError;
 
     if (!this.headless) await this._openWindow();
     else this.presenter = await createPresenter({ mode: 'headless' });

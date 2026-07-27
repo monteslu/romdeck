@@ -8,6 +8,7 @@
 // Electron version did through nav(). It no longer needs executeJavaScript or
 // a browser to inject into, which makes it both simpler and faster.
 import { withApp } from './app.js';
+import { DEFAULT_THEME } from '../services/themes.js';
 import { focus } from './focus.js';
 import { HeadlessPresenter } from './present.js';
 import { makeReporter } from './checks.js';
@@ -170,9 +171,9 @@ export async function viewcheck({ romsDir }) {
 
   // The theme preference must round-trip, both ways.
   const before = app.svc.themePrefs().theme;
-  app.svc.prefs.set('theme', 'romdeck-default');
-  await app.setTheme('romdeck-default', {});
-  r.check('theme choice persists', app.svc.prefs.get('theme') === 'romdeck-default');
+  app.svc.prefs.set('theme', DEFAULT_THEME);
+  await app.setTheme(DEFAULT_THEME, {});
+  r.check('theme choice persists', app.svc.prefs.get('theme') === DEFAULT_THEME);
   app.svc.prefs.set('theme', before);
   r.check('restored the original theme preference', app.svc.prefs.get('theme') === before, before);
 

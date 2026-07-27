@@ -25,7 +25,7 @@ import { ThemeStore } from '../src/services/themes.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HEADLESS = process.argv.includes('--headless');
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-const THEME = args[0] ?? 'romdeck-default';
+const THEME = args[0] ?? 'slate-es-de';
 const VARIANT = args[1] ?? null;
 
 const STAGE_W = 1920;
@@ -64,7 +64,7 @@ const BUNDLED = [
   ['romdeck-ui-bold', 'romdeck-ui-bold.ttf'],
   ['romdeck-symbols', 'romdeck-symbols.ttf'],
 ];
-const fontDir = path.join(__dirname, '..', 'themes', 'romdeck-default', 'fonts');
+const fontDir = path.join(__dirname, '..', 'assets', 'fonts');
 for (const [family, file] of BUNDLED) {
   const p = path.join(fontDir, file);
   if (existsSync(p)) GlobalFonts.registerFromPath(p, family);

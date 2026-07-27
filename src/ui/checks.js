@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 import { createCanvas } from '@napi-rs/canvas';
 import path from 'node:path';
 import { withApp } from './app.js';
+import { DEFAULT_THEME } from '../services/themes.js';
 import { Services } from './services.js';
 import { userDataDir } from './paths.js';
 import { HeadlessPresenter, STAGE_W, STAGE_H } from './present.js';
@@ -111,7 +112,7 @@ async function smoke({ romsDir }) {
   // resolvers end in existsSync, so a payload that merely points outside the
   // jail at nothing returns null either way and the check passes without
   // testing the jail at all. Depth is computed, never hardcoded.
-  const themeName = app.stage.theme?.name ?? 'romdeck-default';
+  const themeName = app.stage.theme?.name ?? DEFAULT_THEME;
   const themeDir = app.svc.themes.find(themeName)?.dir ?? process.cwd();
   const up = (dir) => '../'.repeat(dir.split(path.sep).filter(Boolean).length + 1);
   const target = process.platform === 'win32' ? 'Windows/win.ini' : 'etc/passwd';
@@ -168,7 +169,12 @@ async function pathcheck() {
     const entries = readdirSync(dir);
     const svc = new Services({});
     for (const [label, present, probe] of [
-      ['prefs', entries.includes('prefs.json'), () => svc.prefs.get('theme') !== undefined],
+      // The prefs STORE must be readable — not "a theme key exists". romdeck
+      // no longer writes a theme preference until the user picks one
+      // (defaultTheme() supplies it at runtime), so asserting on that key
+      // failed on any profile that had never chosen a theme. Read the file
+      // itself instead, which is what "existing prefs readable" means.
+      ['prefs', entries.includes('prefs.json'), () => Object.keys(svc.prefs.data).length > 0],
       ['states', entries.includes('states'), () => true],
       ['themes', entries.includes('themes'), () => svc.themes.list().length > 0],
       ['media', entries.includes('media'), () => true],
@@ -205,7 +211,7 @@ function retroemuDir() {
 
 // ── realtheme: render a real theme, assert on PIXELS ──────────────────
 async function realtheme({ romsDir, argAfter }) {
-  const name = argAfter('realtheme') ?? 'romdeck-default';
+  const name = argAfter('realtheme') ?? DEFAULT_THEME;
   const variantArg = process.argv[process.argv.indexOf('--realtheme') + 2];
   const variant = variantArg && !variantArg.startsWith('-') && !existsSync(variantArg)
     ? variantArg : null;
@@ -466,9 +472,8 @@ export async function shots({ romsDir, argAfter }) {
       if (mx > 40 && mx - mn > 30) saturated++;
     }
     const pct = sampled ? (saturated / sampled) * 100 : 0;
-    // Only meaningful where the SOURCE art is colour. romdeck-default's own
-    // logos are fill="currentColor" monochrome tinted with a grey token, so
-    // 0.5% saturation there is the theme rendering exactly as designed --
+    // Only meaningful where the SOURCE art is colour. A monochrome logo set
+    // tinted with a grey token is the theme rendering exactly as designed --
     // asserting on it would be demanding colour the theme never had. Decide
     // from the file on disk, not from the render being graded.
     const carousel = app.stage.elements().find((e) => e.type === 'carousel');
