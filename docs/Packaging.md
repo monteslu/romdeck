@@ -85,29 +85,22 @@ Electron installer.
 Both are additive. Neither changes the source layout, and neither is on the
 critical path, so neither has been built.
 
-## Blocker: retroemu 0.5.1 must be published before romdeck can be
+## Publishing: unblocked
 
-**Resolved once, now open again for a different reason.** The original blocker
-was `dependencies.retroemu = file:../retroemu`, which cannot ship, because the
-published `0.4.8` predated the `--control` session contract. Publishing
-`retroemu@0.5.0` cleared that: the dependency is a real semver range and the
-session flags (`--control`, `--input-map`, `--cheats`, `--ff-speed`,
-`--no-rewind`) are all in the published player.
+Both historical blockers are cleared.
 
-What is open now: **`retroemu@0.5.0` cannot load a zipped ROM larger than
-roughly 80 KB.** yauzl's inflate pipeline stalls part-way through the entry on
-Node 24 and the promise never settles, so the player exits 13 with an
-unsettled top-level await and the session never becomes ready. From a
-frontend, a launch just goes quiet. Practically every real ROM except a bare
-Game Boy cart is affected.
+1. `dependencies.retroemu` was `file:../retroemu`, which cannot ship, because
+   the published `0.4.8` predated the `--control` session contract.
+   **`retroemu@0.5.0` fixed that** — the dependency is a real semver range and
+   every session flag romdeck passes (`--control`, `--input-map`, `--cheats`,
+   `--ff-speed`, `--no-rewind`) is in the published player.
+2. `0.5.0` could not load a zipped ROM larger than roughly 80 KB: yauzl's
+   inflate pipeline stalled part-way through the entry on Node 24 and the
+   promise never settled, so the player exited 13 and the session never became
+   ready — a launch that simply went quiet. **`retroemu@0.5.1` fixed that** and
+   is published; romdeck requires `^0.5.1`.
 
-The fix is committed in the retroemu tree and the version is bumped to
-**0.5.1**; `dependencies.retroemu` here is `^0.5.1`. Until 0.5.1 is on npm, a
-fresh `npm install -g romdeck` resolves to the broken 0.5.0 and most launches
-hang. Publishing is a retroemu release decision, so it is deliberately not
-made here.
-
-romdeck itself runs correctly from a checkout against the local retroemu.
+There is nothing left blocking a publish.
 
 ## Verification
 
