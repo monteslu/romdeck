@@ -37,6 +37,14 @@ const names = readdirSync(dir).filter((n) => existsSync(path.join(dir, n, 'capab
 let failures = 0;
 const rows = [];
 
+// Print each row AS IT LANDS. Buffering to the end meant a single theme that
+// hung took the whole run's output with it: the first attempt sat for fifty
+// minutes with an empty log and no way to tell which theme was stuck.
+const w = Math.max(...names.map((n) => n.length), 10);
+console.log(`${'theme'.padEnd(w)}  ${'system'.padEnd(14)} ${'gamelist'.padEnd(14)} notes`);
+console.log('-'.repeat(w + 56));
+const fmt = (s) => `${String(s.colors).padStart(4)}c ${((1 - s.dominance) * 100).toFixed(1).padStart(5)}%`;
+
 for (const name of names) {
   const app = new App({ romsDir, headless: true });
   try {
@@ -44,7 +52,9 @@ for (const name of names) {
     app.svc.themes.dirs = [dir, ...app.svc.themes.dirs];
     const res = await app.stage.setTheme(name, {});
     if (res.error || app.stage.theme?.name !== name) {
-      rows.push({ name, note: `did not load: ${res.error ?? 'fell back'}` });
+      const note = `did not load: ${res.error ?? 'fell back'}`;
+      rows.push({ name, note });
+      console.log(`${name.padEnd(w)}  ${note}`);
       failures++;
       continue;
     }
@@ -70,23 +80,19 @@ for (const name of names) {
     }
     if (out.threw.length || out.unresolved.length) failures++;
     rows.push(out);
+    const notes = [...new Set([...out.threw, ...out.unresolved.map((u) => `unresolved ${u}`)])];
+    console.log(`${name.padEnd(w)}  ${fmt(out.system).padEnd(14)} ${fmt(out.gamelist).padEnd(14)} ${notes.join(' | ')}`);
   } catch (err) {
     rows.push({ name, note: `crashed: ${err.message}` });
+    console.log(`${name.padEnd(w)}  crashed: ${err.message}`);
     failures++;
   } finally {
-    try { app.svc.shutdown(); } catch { /* already down */ }
+    // dispose(), not svc.shutdown(): the latter leaves this App's timers armed,
+    // which pins it and its decoded-image cache for the rest of the run.
+    try { app.dispose(); } catch { /* already down */ }
   }
 }
 
-const w = Math.max(...rows.map((r) => r.name.length), 10);
-console.log(`\n${'theme'.padEnd(w)}  ${'system'.padEnd(16)} ${'gamelist'.padEnd(16)} notes`);
-console.log('-'.repeat(w + 60));
-for (const r of rows) {
-  if (r.note) { console.log(`${r.name.padEnd(w)}  ${r.note}`); continue; }
-  const f = (s) => `${String(s.colors).padStart(5)}c ${((1 - s.dominance) * 100).toFixed(1).padStart(5)}%`;
-  const notes = [...new Set([...r.threw, ...r.unresolved.map((u) => `unresolved ${u}`)])];
-  console.log(`${r.name.padEnd(w)}  ${f(r.system).padEnd(16)} ${f(r.gamelist).padEnd(16)} ${notes.join(' | ')}`);
-}
 console.log('');
 if (failures) {
   console.log(`RENDER SWEEP — ${failures} of ${rows.length} themes have problems`);

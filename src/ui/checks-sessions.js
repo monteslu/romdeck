@@ -47,7 +47,7 @@ export async function autoplay({ romsDir, dev = false }) {
     const tail = ready?.logTail?.length ? `\n  ${ready.logTail.join('\n  ')}` : '';
     r.check('session ready', false,
       (ready ? `${ready.type}: ${ready.message ?? ready.code}` : 'timed out') + tail);
-    app.svc.shutdown();
+    app.dispose();
     return r.done('');
   }
   r.check('session ready', true, `core=${ready.core}`);
@@ -113,7 +113,7 @@ export async function autoplay({ romsDir, dev = false }) {
   await sessions.stop(id);
   await waitFor(sessions, id, ['closed', 'crashed'], 12000);
 
-  app.svc.shutdown();
+  app.dispose();
   return r.done(dev ? 'memory API works against a live game' : 'all session features verified');
 }
 
@@ -163,7 +163,7 @@ export async function cartcheck({ romsDir }) {
     await sleep(1000);
   }
 
-  app.svc.shutdown();
+  app.dispose();
   return r.done('ROM, wasmcart and jsgame all play from one library');
 }
 
@@ -177,12 +177,12 @@ export async function joincheck({ romsDir, argAfter }) {
   await app.start();
   const res = app.doJoin(code);
   r.check('guest session spawned', !res.error, res.error ?? res.code);
-  if (res.error) { app.svc.shutdown(); return r.done(''); }
+  if (res.error) { app.dispose(); return r.done(''); }
 
   const ready = await waitFor(app.svc.sessions, res.id, ['ready', 'crashed', 'error'], 30000);
   r.check('connected to the host', ready?.type === 'ready',
     ready ? (ready.message ?? ready.type) : 'timed out');
   await app.svc.sessions.stop(res.id);
-  app.svc.shutdown();
+  app.dispose();
   return r.done(`joined ${code}`);
 }

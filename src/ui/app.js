@@ -433,14 +433,42 @@ export class App {
     return res;
   }
 
-  quit(code = 0) {
+  /**
+   * Release everything this App holds, WITHOUT exiting the process.
+   *
+   * Every long-lived handle an App opens is a GC root: a live setInterval keeps
+   * its closure — and therefore the whole App, its stage and the stage's
+   * decoded-image cache — reachable forever. That is why headless harnesses
+   * that build one App per iteration (the theme sweep builds 64) used to climb
+   * from 480 MB to 7.8 GB in 45 seconds and eventually get OOM-killed: they
+   * called svc.shutdown(), which only stops child sessions, so every previous
+   * App stayed pinned by its own timers.
+   *
+   * Anything that constructs an App in a loop must call this, not svc.shutdown().
+   */
+  dispose() {
     this.running = false;
     for (const t of this._timers) clearInterval(t);
     this._timers = [];
+    // These three are tracked in _timers too, but they are re-armed
+    // independently, so a live one can outlast the array it was pushed to.
+    for (const k of ['_carouselTimer', '_scrollTimer', '_snapTimer']) {
+      if (this[k]) { clearInterval(this[k]); this[k] = null; }
+    }
     this.padNav?.stop();
     this.svc.shutdown();
     this.presenter?.destroy?.();
     try { this.window?.destroy(); } catch { /* already gone */ }
+    this.window = null;
+    this.presenter = null;
+    // Drop the heavy retained graphics: decoded artwork dominates an App's
+    // footprint, and the stage outlives this call in any harness that kept a
+    // reference to it.
+    try { this.stage?._images?.clear(); } catch { /* nothing cached */ }
+  }
+
+  quit(code = 0) {
+    this.dispose();
     // Give the player processes a moment to take their quit RPC.
     setTimeout(() => process.exit(code), 250);
   }

@@ -148,7 +148,7 @@ export async function padonly({ romsDir }) {
   shot.write('/tmp/romdeck-native-padonly.png');
   console.log('  wrote /tmp/romdeck-native-padonly.png');
 
-  app.svc.shutdown();
+  app.dispose();
   return r.done(`every surface reachable without a pointer (${total} controls registered)`);
 }
 
@@ -178,6 +178,6 @@ export async function viewcheck({ romsDir }) {
   app.svc.prefs.set('theme', before);
   r.check('restored the original theme preference', app.svc.prefs.get('theme') === before, before);
 
-  app.svc.shutdown();
+  app.dispose();
   return r.done('the themed view is the product');
 }

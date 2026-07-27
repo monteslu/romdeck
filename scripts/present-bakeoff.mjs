@@ -94,5 +94,5 @@ console.log(`  CPU worst case ${worstCpu.toFixed(2)} ms/present`
   + ` — ${worstCpu < 8 ? 'comfortably under a 120 Hz frame' : worstCpu < 16 ? 'under a 60 Hz frame' : 'ABOVE a 60 Hz frame budget'}`);
 console.log('  Repaint is event-driven, so this cost is paid on interaction, not continuously.');
 
-app.svc.shutdown();
+app.dispose();
 process.exit(0);

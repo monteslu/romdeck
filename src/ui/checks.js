@@ -139,7 +139,7 @@ async function smoke({ romsDir }) {
   const real = app.svc.resolveUrl(`romdeck-theme://${themeName}/theme.xml`);
   r.check('legitimate theme asset resolves', !!real, real ?? '');
 
-  app.svc.shutdown();
+  app.dispose();
   return r.done('shell boots, services round-trip, stage paints');
 }
 
@@ -221,7 +221,7 @@ async function realtheme({ romsDir, argAfter }) {
   const loaded = app.stage.theme?.name;
   r.check(`${name} loads`, !res.error && loaded === name,
     res.error ?? (res.fellBackFrom ? `NOT INSTALLED — fell back to ${loaded}` : app.stage.theme.displayName));
-  if (res.error || loaded !== name) { app.svc.shutdown(); return r.done(''); }
+  if (res.error || loaded !== name) { app.dispose(); return r.done(''); }
   await app.stage.preload();
 
   const shot = (label) => {
@@ -276,7 +276,7 @@ async function realtheme({ romsDir, argAfter }) {
 
   console.log(`  wrote ${sysShot}`);
   console.log(`  wrote ${gameShot}`);
-  app.svc.shutdown();
+  app.dispose();
   return r.done(`${name} renders`);
 }
 
@@ -388,7 +388,7 @@ export async function shots({ romsDir, argAfter }) {
     await app.setTheme(themeArg, {});
     if (app.stage.theme?.name !== themeArg) {
       console.log(`SKIP: theme ${themeArg} is not installed (got ${app.stage.theme?.name})`);
-      app.svc.shutdown();
+      app.dispose();
       return 0;
     }
   }
@@ -959,7 +959,7 @@ export async function shots({ romsDir, argAfter }) {
   }
 
   console.log(`SHOTS wrote ${captured.length} PNGs to ${outDir}`);
-  app.svc.shutdown();
+  app.dispose();
   return r.done(`${captured.length} surfaces captured and asserted`);
 }
 
