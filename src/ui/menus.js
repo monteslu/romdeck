@@ -341,7 +341,12 @@ export class FileBrowser {
       subtitle: this.dir,
       footer: 'Ⓐ open      Ⓑ back',
     });
-    focus.group(this.name, { onBack: () => this.close() });
+    // scrollable, like MenuStack: without it live() filters the ring down to
+    // the widgets currently ON SCREEN, so `down` walked to the bottom of the
+    // first page and wrapped straight back to the top. Every entry past the
+    // first ~10 was unreachable — which in a FOLDER PICKER means the user
+    // cannot reach their ROMs at all.
+    focus.group(this.name, { onBack: () => this.close(), scrollable: true });
 
     const add = (label, hint, fn) => {
       const widget = new Widget({ x: 0, y: 0, w, h: 56, label, hint, onActivate: fn });
@@ -380,7 +385,9 @@ export class FileBrowser {
     }
 
     for (const e of entries) {
-      add(e.dir ? `📁 ${e.name}` : e.name, '', () => {
+      // "/" not an emoji folder glyph: romdeck ships four text fonts and no
+      // emoji font, so 📁 rendered as a tofu box on every row of the picker.
+      add(e.dir ? `${e.name}/` : e.name, '', () => {
         if (e.dir) { this.dir = e.full; this._rebuild(); }
         else { const f = e.full; this.close(); this.onPick?.(f); }
       });

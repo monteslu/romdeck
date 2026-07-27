@@ -794,7 +794,50 @@ export class Stage {
       }
       ctx.restore();
     }
+    this.drawEmptyState(ctx);
     return this.canvas;
+  }
+
+  /**
+   * First run has no ROMs folder, so every themed element resolves to nothing
+   * and the app paints a BLACK VOID with a help bar. That is what a new user
+   * sees on `node bin/romdeck.js`: no library, no error, no instruction, no
+   * evidence the thing even works. The one control that fixes it — "Choose
+   * ROMs folder" — is inside a menu you can only reach by already knowing to
+   * press Start.
+   *
+   * Themes cannot solve this: a theme describes how to lay out a library, and
+   * there is no library. So the shell says so itself, over the top of
+   * whatever the theme drew.
+   */
+  drawEmptyState(ctx) {
+    // allRoms is the field setLibrary() writes — NOT `library`, which does not
+    // exist on Stage. Reading the wrong name made this always-true, so the
+    // welcome text stayed on screen over a fully populated library.
+    if (this.allRoms?.length) return;
+    const dir = this.svc.romsDir?.() ?? null;
+    const cx = STAGE_W / 2;
+    const cy = STAGE_H / 2;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f4f6fb';
+    ctx.font = `600 ${Math.round(STAGE_H * 0.055)}px ${UI_FONT}`;
+    ctx.fillText(dir ? 'No games found' : 'Welcome to romdeck', cx, cy - STAGE_H * 0.045);
+
+    ctx.fillStyle = '#9aa3b2';
+    ctx.font = `400 ${Math.round(STAGE_H * 0.028)}px ${UI_FONT}`;
+    const lines = dir
+      ? [`Nothing playable under ${dir}`,
+        'Put ROMs in per-system folders (nes/, snes/, gb/ …),',
+        'then press Start › Choose ROMs folder to pick another.']
+      : ['Point romdeck at a folder of ROMs to get started.',
+        'Press Start, then "Choose ROMs folder".',
+        'Or launch it with a path:  romdeck ~/roms'];
+    lines.forEach((t, i) => {
+      ctx.fillText(t, cx, cy + STAGE_H * 0.03 + i * STAGE_H * 0.045);
+    });
+    ctx.restore();
   }
 
   drawElement(ctx, el) {

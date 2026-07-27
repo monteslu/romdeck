@@ -64,6 +64,20 @@ export class App {
     this._startSessions();
     this.running = true;
     this.invalidate();
+
+    // FIRST RUN: no ROMs folder has ever been chosen, so there is no library
+    // and every themed element resolves to nothing. Without this the app
+    // opens on a black screen with a help bar — no library, no error, no
+    // instruction, and no way to guess that the fix is behind Start › Choose
+    // ROMs folder. Ask for the folder instead of waiting to be asked.
+    //
+    // Only when the folder was never SET. A configured folder that is empty
+    // or has gone missing is a different situation: the stage says so (see
+    // Stage.drawEmptyState) and the user keeps control of the app.
+    if (!this.headless && !this.svc.romsDir()) {
+      this.openRomsFolderPicker();
+      this.invalidate();
+    }
     return this;
   }
 

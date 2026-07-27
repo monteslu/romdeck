@@ -21,7 +21,7 @@ import { ArtworkStore } from '../services/artwork.js';
 import { Identifier } from '../services/identify.js';
 import { BiosChecker } from '../services/bios.js';
 import { MappingStore, BUTTONS } from '../services/inputmap.js';
-import { ThemeStore } from '../services/themes.js';
+import { ThemeStore, THEME_CATALOG } from '../services/themes.js';
 import { SettingsStore, SETTINGS } from '../services/settings.js';
 import { CheatStore } from '../services/cheats.js';
 import { CoreUpdates } from '../services/coreupdates.js';
@@ -183,10 +183,40 @@ export class Services {
   // ── theme ──────────────────────────────────────────────────────────
   themePrefs() {
     return {
-      theme: this.prefs.get('theme') ?? 'romdeck-default',
+      theme: this.prefs.get('theme') ?? this.defaultTheme(),
       variant: this.prefs.get('themeVariant') ?? null,
       colorScheme: this.prefs.get('themeColorScheme') ?? null,
     };
+  }
+
+  /**
+   * Which theme to use when the user has never chosen one.
+   *
+   * NOT unconditionally 'romdeck-default'. Shelf is the bundled FALLBACK — it
+   * ships typographic wordmarks because romdeck cannot redistribute anyone's
+   * console art. It is what you get when nothing else is installed, and it is
+   * emphatically not what a downloaded art theme looks like.
+   *
+   * Booting into Shelf while `art-book-next-es-de` sat installed in userData
+   * meant the app looked like a stark black wireframe when the user had
+   * already downloaded the good one and expected to see it.
+   *
+   * So: prefer a real installed theme, in catalogue order (which puts the
+   * recommended one first), and fall back to Shelf only when there is nothing
+   * else. An explicit choice in prefs always wins over this.
+   */
+  defaultTheme() {
+    try {
+      const installed = new Set(this.themes.list()
+        .map((t) => t.name)
+        .filter((n) => n !== 'romdeck-default'));
+      if (!installed.size) return 'romdeck-default';
+      const preferred = THEME_CATALOG.find((t) => t.recommended && installed.has(t.name))
+        ?? THEME_CATALOG.find((t) => installed.has(t.name));
+      return preferred?.name ?? [...installed][0];
+    } catch {
+      return 'romdeck-default';
+    }
   }
 
   loadTheme(name = null, opts = {}) {
@@ -194,15 +224,18 @@ export class Services {
     try {
       return { theme: this.themes.load(wanted, opts) };
     } catch (err) {
-      // A theme can vanish between runs; fall back rather than show nothing,
-      // and correct the preference so it cannot fail twice.
+      // A theme can vanish between runs; fall back rather than show nothing.
+      //
+      // Do NOT persist the fallback. Writing 'romdeck-default' into prefs made
+      // one transient failure permanent: the user was pinned to the bundled
+      // wireframe theme for every future run, with a perfectly good
+      // art-book-next installed and no indication why the app looked bare.
+      // Falling back is a display decision for THIS run; it is not the user
+      // choosing a theme. Leaving prefs alone means the next launch retries
+      // the real theme, and defaultTheme() can pick a better one.
       if (wanted !== 'romdeck-default') {
         try {
-          const theme = this.themes.load('romdeck-default', {});
-          this.prefs.set('theme', 'romdeck-default');
-          this.prefs.set('themeVariant', null);
-          this.prefs.set('themeColorScheme', null);
-          return { theme, fellBackFrom: wanted };
+          return { theme: this.themes.load('romdeck-default', {}), fellBackFrom: wanted };
         } catch { /* bundled theme missing too */ }
       }
       return { error: err.message };

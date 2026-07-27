@@ -113,8 +113,18 @@ export class Panel {
     const footH = this.footer ? 46 : 12;
     const viewH = this.h - headH - footH;
     const perPage = Math.max(1, Math.floor(viewH / (this.rowH + this.gap)));
-    if (focusedIndex < this.scroll) this.scroll = focusedIndex;
-    if (focusedIndex >= this.scroll + perPage) this.scroll = focusedIndex - perPage + 1;
+    // Keep a margin of rows visible either side of the cursor instead of
+    // scrolling only once it hits the very edge. Clamping alone meant the
+    // list sat still, then jumped a whole row exactly at the boundary, with
+    // the cursor pinned to the last line and no sight of what came next —
+    // which is what makes long lists feel like they scroll badly. With a
+    // margin the list starts moving before the cursor is trapped, and you can
+    // always see where you are going.
+    const margin = Math.min(2, Math.floor((perPage - 1) / 2));
+    if (focusedIndex - margin < this.scroll) this.scroll = focusedIndex - margin;
+    if (focusedIndex + margin >= this.scroll + perPage) {
+      this.scroll = focusedIndex + margin - perPage + 1;
+    }
     this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, this.items.length - perPage)));
 
     this.items.forEach((w, i) => {
