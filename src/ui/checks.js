@@ -204,7 +204,7 @@ async function pathcheck() {
 }
 
 /** retroemu's own directory, where its optional deps are installed. */
-function retroemuDir() {
+export function retroemuDir() {
   try { return path.dirname(req.resolve('retroemu/package.json')); }
   catch { return process.cwd(); }
 }

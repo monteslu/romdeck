@@ -61,7 +61,8 @@ Self-checks (no display required for the render ones):
   --shots [dir]  capture AND assert every visual surface (PNGs for review)
   --autoplay     full session surface against a real core
   --devcheck     memory read/write against a live game
-  --joincheck <CODE>   join a live remote-play host
+  --joincheck [CODE]   remote play end to end: hosts a game and joins it.
+                       Pass a code to join a real host on another machine.
 
 Options:
   --headless     never open a window

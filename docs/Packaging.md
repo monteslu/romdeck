@@ -110,16 +110,14 @@ against the source tree that will be published:
 ```bash
 node src/ui/main.js --smoke      --pathcheck   --padonly
 node src/ui/main.js --viewcheck  --autoplay    --devcheck
-node src/ui/main.js --cartcheck  --snapcheck
+node src/ui/main.js --cartcheck  --snapcheck  --joincheck
 node src/ui/main.js --realtheme <theme>
 node scripts/theme-conformance.mjs /tmp/es-themes
 npx romdeck --smoke              # the entry point users actually hit
 ```
 
-Two gaps to know about:
+One gap to know about:
 
-- **Remote play has no automated self-check.** `--joincheck` needs a live
-  host. Verify by hand before a release.
 - **`npm pack` is the real payload test.** `files` in package.json decides
   what ships; `npm pack --dry-run --json` reports exactly what a user gets.
   A file that only exists in your working tree will not be there.

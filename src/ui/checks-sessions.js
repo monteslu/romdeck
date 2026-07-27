@@ -6,9 +6,11 @@
 // channel. What changes is that they call the session manager directly
 // instead of through IPC, which makes them shorter and removes the window
 // they used to need.
+import { createRequire } from 'node:module';
 import { withApp } from './app.js';
-import { makeReporter } from './checks.js';
+import { makeReporter, retroemuDir } from './checks.js';
 
+const req = createRequire(import.meta.url);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Wait for a specific session event, or give up. */
@@ -171,20 +173,138 @@ export async function cartcheck({ romsDir }) {
 }
 
 // ── --joincheck ──────────────────────────────────────────────────────
+/**
+ * Remote play, end to end, with no human in the loop.
+ *
+ * This used to require a share code typed in by hand from a host someone
+ * started on another machine — so P2P co-op was the ONE feature verified only
+ * by a person remembering to test it, and it depends on WebRTC, an hsync
+ * signalling server, and two optional deps (`hsync`, `node-datachannel`) that
+ * fail SILENTLY when absent. The failure mode is a launch that connects to
+ * nothing, which is exactly what an automated check should catch.
+ *
+ * romdeck can be both ends: launch a game, ask that session to host over the
+ * control channel (which returns the share code), then join it as a guest and
+ * assert the data channel actually came up. `--joincheck <CODE>` still works
+ * for testing against a real remote host on another machine.
+ *
+ * Needs the network. It says so and skips rather than failing when the
+ * signalling server cannot be reached — a check that goes red on a train is a
+ * check people learn to ignore.
+ */
 export async function joincheck({ romsDir, argAfter }) {
-  const code = argAfter('joincheck');
+  // `--joincheck <roms>` passes the LIBRARY, not a code — argAfter cannot tell
+  // them apart and handed back "../roms-real", which was then dialled as a
+  // share code and timed out. A code is base24 XXX-XXX-XXX and never a path,
+  // so require the shape rather than trusting position.
+  const arg = argAfter('joincheck');
+  const given = arg && /^[A-Za-z0-9]{3}-[A-Za-z0-9]{3}-[A-Za-z0-9]{3}$/.test(arg.trim())
+    ? arg.trim().toUpperCase()
+    : null;
   const r = makeReporter('JOINCHECK');
-  if (!code) { console.error('JOINCHECK needs a share code'); return 1; }
+
+  // The optional deps are what make this feature exist at all, and they fail
+  // quietly. Say so up front rather than letting it surface as "timed out".
+  for (const [mod, why] of [['hsync', 'signalling'], ['node-datachannel', 'WebRTC transport']]) {
+    let ok = true;
+    try { req.resolve(mod, { paths: [retroemuDir(), process.cwd()] }); } catch { ok = false; }
+    if (!r.check(`${mod} resolvable (${why})`, ok)) {
+      console.log('SKIP: remote play cannot work without it — install it in retroemu');
+      return r.done('');
+    }
+  }
 
   return withApp({ romsDir, headless: true }, async (app) => {
-  const res = app.doJoin(code);
-  r.check('guest session spawned', !res.error, res.error ?? res.code);
-  if (res.error) return r.done('');
+    const { sessions } = app.svc;
 
-  const ready = await waitFor(app.svc.sessions, res.id, ['ready', 'crashed', 'error'], 30000);
-  r.check('connected to the host', ready?.type === 'ready',
-    ready ? (ready.message ?? ready.type) : 'timed out');
-  await app.svc.sessions.stop(res.id);
-  return r.done(`joined ${code}`);
+    // ── the host half ────────────────────────────────────────────────
+    // Given a code, trust it and only exercise the guest (a real host on
+    // another machine). Otherwise be both ends.
+    let code = given;
+    let hostId = null;
+    if (!code) {
+      const rom = app.svc.library().roms.find((x) => x.short) ?? app.svc.library().roms[0];
+      if (!rom) { console.error('JOINCHECK needs a library to host from'); return 1; }
+
+      const launched = sessions.launch(rom, { resume: false });
+      if (launched.error) { r.check('host session launched', false, launched.error); return r.done(''); }
+      hostId = launched.id;
+      const ready = await waitFor(sessions, hostId, ['ready', 'crashed', 'error']);
+      if (!r.check('host session launched', ready?.type === 'ready',
+        ready?.type === 'ready' ? `${rom.name} on ${ready.core}` : 'never became ready')) {
+        return r.done('');
+      }
+      await sleep(1500); // let it run frames before anyone watches them
+
+      let info;
+      try {
+        info = await sessions.rpc(hostId, 'remoteHost', {});
+      } catch (err) {
+        // Reaching the signalling server is the network-dependent part.
+        r.check('hosting started', false, err.message);
+        console.log('SKIP: could not reach the signalling server — is this machine online?');
+        await sessions.stop(hostId).catch(() => {});
+        return r.done('');
+      }
+      code = info?.code ?? null;
+      // A share code is base24 XXX-XXX-XXX. Asserting the SHAPE catches a host
+      // that "started" but published nothing to join.
+      r.check('hosting started', !!code && /^[A-Z0-9]{3}-[A-Z0-9]{3}-[A-Z0-9]{3}$/.test(code),
+        code ?? 'no code returned');
+      if (!code) { await sessions.stop(hostId).catch(() => {}); return r.done(''); }
+
+      const status = await sessions.rpc(hostId, 'remoteStatus', {}).catch(() => null);
+      r.check('host reports itself hosting', status?.hosting === true,
+        status ? JSON.stringify(status) : 'no status');
+    }
+
+    // ── the guest half ───────────────────────────────────────────────
+    const res = app.doJoin(code);
+    r.check('guest session spawned', !res.error, res.error ?? res.code);
+    if (!res.error) {
+      const joined = await waitFor(sessions, res.id, ['ready', 'crashed', 'error'], 45000);
+      r.check('guest connected to the host', joined?.type === 'ready',
+        joined ? (joined.message ?? joined.type) : 'timed out waiting for the data channel');
+
+      // A guest that connects and then dies is not a working feature. Give it
+      // a moment of real streaming before calling it good.
+      if (joined?.type === 'ready') {
+        await sleep(2500);
+        r.check('guest still alive after streaming', !!sessions.get(res.id));
+
+        // "Connected" is not "working". A data channel can come up and carry
+        // nothing, which looks identical from the guest side — so ask the HOST
+        // whether it saw the peer and actually pushed frames down the wire.
+        // Sampling status before the guest arrives (as the earlier assertion
+        // does) always reads guests:0 framesSent:0, and would pass forever.
+        if (hostId) {
+          const live = await sessions.rpc(hostId, 'remoteStatus', {}).catch(() => null);
+          r.check('host sees the guest', (live?.guests ?? 0) > 0, `guests=${live?.guests ?? 0}`);
+          r.check('host is streaming frames', (live?.framesSent ?? 0) > 0,
+            `${live?.framesSent ?? 0} frames, ${live?.kbSent ?? 0} kB`);
+        }
+      }
+
+      // The code is remembered so it can be rejoined from the menu.
+      if (!given) {
+        r.check('share code remembered for rejoin',
+          (app.svc.prefs.get('recentCodes') ?? []).includes(code));
+      }
+      await sessions.stop(res.id).catch(() => {});
+      await waitFor(sessions, res.id, ['closed', 'crashed'], 10000);
+    }
+
+    // ── teardown ─────────────────────────────────────────────────────
+    if (hostId) {
+      // Hosting must be stoppable without killing the game — the host goes
+      // back to playing alone.
+      const stopped = await sessions.rpc(hostId, 'remoteStop', {}).catch((e) => ({ error: e.message }));
+      r.check('hosting stops cleanly', !stopped?.error, stopped?.error ?? '');
+      r.check('host session survives its guests leaving', !!sessions.get(hostId));
+      await sessions.stop(hostId).catch(() => {});
+      await waitFor(sessions, hostId, ['closed', 'crashed'], 12000);
+    }
+
+    return r.done(given ? `joined ${code}` : `hosted and joined ${code}`);
   });
 }
