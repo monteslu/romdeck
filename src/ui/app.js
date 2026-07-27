@@ -204,10 +204,20 @@ export class App {
   async _onAchievement(ev) {
     this.toast('Achievement unlocked', ev.title ?? `#${ev.achievementId}`, { ms: 6000 });
     // Submitting is the frontend's job and must never take the session down.
+    // It also must not silently claim success: an unlock that did not reach
+    // the site is a different thing from one that did, and the player is
+    // entitled to know which happened.
     try {
-      await this.svc.ra.award(ev.rom, ev.achievementId);
+      const res = await this.svc.ra.award(ev.rom, ev.achievementId);
+      if (res.status === 'ok') {
+        if (res.score != null) this.toast('Submitted', `${res.score} points`, { ms: 4000 });
+      } else if (res.status === 'no-token') {
+        this.toast('Not submitted', 'sign in to RetroAchievements first', { error: true });
+      } else if (res.status !== 'not-configured') {
+        this.toast('Not submitted', res.message ?? res.status, { error: true });
+      }
     } catch (err) {
-      this.toast('Achievement not submitted', err.message, { error: true });
+      this.toast('Not submitted', err.message, { error: true });
     }
   }
 

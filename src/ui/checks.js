@@ -200,6 +200,50 @@ async function pathcheck() {
     catch { found = false; }
     r.check(`${mod} resolvable (${breaks})`, found);
   }
+
+  // ── RetroAchievements submission protocol ──────────────────────────
+  // Unlocks go to dorequest.php, NOT the read-only Web API. Two things about
+  // that endpoint are easy to get wrong and impossible to notice locally:
+  //
+  //   1. It 403s an HTML page when the request has no User-Agent. Every
+  //      submission would fail and the JSON parse would fail after it.
+  //   2. The `v` signature is md5(achievementId + username + hardcore) as
+  //      concatenated DECIMAL STRINGS. A wrong signature is simply rejected.
+  //
+  // Both are asserted against the LIVE server with deliberately invalid
+  // credentials: a well-formed rejection proves the shape is right without
+  // needing anyone's account. Network failures SKIP — a check that goes red
+  // on a train is a check people learn to ignore.
+  try {
+    const probe = await fetch('https://retroachievements.org/dorequest.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'romdeck-selfcheck',
+      },
+      body: new URLSearchParams({ r: 'login2', u: 'romdeck_selfcheck_nobody', p: 'x' }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await probe.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* asserted below */ }
+    r.check('RA dorequest answers JSON with a User-Agent', !!json,
+      json ? `${probe.status} ${json.Code ?? ''}` : `${probe.status} ${text.slice(0, 60)}`);
+    r.check('RA dorequest rejects bad credentials cleanly',
+      json?.Success === false && !!json?.Code,
+      json ? `${json.Code}` : 'no JSON error body');
+  } catch (err) {
+    console.log(`SKIP: could not reach RetroAchievements (${err.message})`);
+  }
+
+  // The unlock signature, against rcheevos' own algorithm. Fixed vector: if
+  // this ever changes, submissions start being rejected server-side and
+  // nothing local would otherwise notice.
+  const { createHash } = await import('node:crypto');
+  const sig = createHash('md5').update('12345monteslu0', 'utf8').digest('hex');
+  r.check('RA unlock signature matches rcheevos',
+    sig === 'b13f11635dbbd81b8bec7d99cef2bdcc', sig);
+
   return r.done(`userData is ${dir}`);
 }
 

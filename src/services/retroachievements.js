@@ -1,16 +1,26 @@
 // RetroAchievements — the #1 feature OpenEmu marked wontfix.
 //
-// SCOPE, honestly: this is the read-only half. It logs in, identifies a game
-// by RA's hash, and lists that game's achievements with your unlock status.
-// It does NOT unlock achievements while you play — that requires rcheevos
-// (MIT, designed for exactly this) running its condition evaluator against
-// core memory every frame. The memory plumbing that needs already exists
-// (see developer mode / ControlChannel.readMemory), so wiring rcheevos in is
-// the next step, not a rewrite.
+// TWO SERVERS, and the distinction is the whole reason this file is shaped the
+// way it is:
 //
-// Credentials live in prefs under `ra: { username, apiKey }` — the API key
-// comes from the user's RA settings page, never their password.
+//   API/  (Web API)      read-only. Profiles, game info, achievement lists and
+//                        whether you have already earned them. Authenticated
+//                        with the Web API key from the user's settings page.
+//   dorequest.php        what emulators talk to. This is where an unlock is
+//                        SUBMITTED. It does not accept the Web API key: it
+//                        needs a session TOKEN, obtained once with r=login2
+//                        and then reused.
+//
+// Both are used. The list comes from the Web API; the unlock goes to
+// dorequest. Protocol details below are taken from rcheevos' own request
+// builders (src/rapi/rc_api_user.c, rc_api_runtime.c), not guessed.
+//
+// Credentials live in prefs under `ra: { username, apiKey, token }`. apiKey is
+// the Web API key from the settings page. token is the dorequest session
+// token, which romdeck obtains itself — from the API key where RA allows it,
+// or from a password the user types once and which is NEVER stored.
 const API = 'https://retroachievements.org/API/';
+const DOREQUEST = 'https://retroachievements.org/dorequest.php';
 
 // RA hashes most cart systems as plain MD5 of the ROM with console-specific
 // header rules; romdeck reuses the header-stripping the Identifier already
@@ -142,25 +152,143 @@ export class RetroAchievements {
     if (!md5) return [];
     const game = await this.gameByHash(md5);
     if (game.status !== 'ok') return [];
-    this._lastGameId = game.gameId;
+    // Remember the hash per ROM: awardachievement takes it as `m`, and RA
+    // uses it to attribute the unlock to the right game entry.
+    this._hashes ??= new Map();
+    this._hashes.set(rom.path, md5);
     return game.achievements
       .filter((a) => a.memaddr && !a.unlocked)
       .map((a) => ({ id: a.id, memaddr: a.memaddr, title: a.title }));
   }
 
+  // ── dorequest: the half that can actually submit ───────────────────
+
   /**
-   * Submit an unlock.
+   * POST to dorequest.php. Form-encoded in, JSON out.
    *
-   * NOTE: RA's public Web API is read-only — awarding goes through the
-   * dorequest endpoint used by emulators, which needs a session token from the
-   * user's credentials rather than the Web API key. Until romdeck implements
-   * that login, an unlock is real and local (the player earned it, the toast
-   * fires, the UI updates) but is not submitted to the site.
+   * The User-Agent is REQUIRED and is not a courtesy: without one RA's edge
+   * returns `403 Forbidden` as an HTML page, so every request fails and the
+   * JSON parse fails after it. With one, the same request returns a proper
+   * JSON body (including well-formed errors like invalid_credentials).
+   * Measured against the live server, not assumed.
+   *
+   * RA also asks emulators to identify themselves so they can be supported and
+   *, if necessary, blocked — sending a real name is the honest thing anyway.
    */
-  async award(rom, achievementId) {
-    if (!this.configured()) return { status: 'not-configured' };
-    return { status: 'not-submitted', achievementId, reason: 'dorequest login not implemented' };
+  async _doRequest(params) {
+    const res = await fetch(DOREQUEST, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': userAgent(),
+      },
+      body: new URLSearchParams(params),
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* fall through to the error below */ }
+    if (!data) {
+      throw new Error(res.status === 403
+        ? 'RetroAchievements rejected the request (403) — missing or blocked User-Agent'
+        : `dorequest ${res.status}: ${text.slice(0, 120)}`);
+    }
+    if (data.Success === false) {
+      throw new Error(data.Error ?? `dorequest error ${data.Code ?? res.status}`);
+    }
+    return data;
   }
+
+  /**
+   * Get a dorequest session token (r=login2).
+   *
+   * Accepts EITHER an api token (`t`) or a password (`p`) — rcheevos'
+   * rc_api_init_login_request sends whichever it has. romdeck tries the stored
+   * Web API key as `t` first, because that costs the user nothing; if RA
+   * rejects it, a password may be supplied and is used once and discarded.
+   * The returned token is what gets persisted, never the password.
+   */
+  async login({ password = null } = {}) {
+    const { username, apiKey } = this.creds();
+    if (!username) return { status: 'not-configured' };
+    if (!password && !apiKey) return { status: 'not-configured' };
+    try {
+      const data = await this._doRequest({
+        r: 'login2',
+        u: username,
+        ...(password ? { p: password } : { t: apiKey }),
+      });
+      if (!data.Token) throw new Error('login succeeded but returned no token');
+      this.prefs.set('ra', { ...this.creds(), token: data.Token });
+      return { status: 'ok', user: data.User ?? username, score: data.Score ?? 0 };
+    } catch (err) {
+      return { status: 'error', message: err.message };
+    }
+  }
+
+  /** A token is what dorequest actually needs; the Web API key is not one. */
+  canSubmit() {
+    return !!(this.creds().username && this.creds().token);
+  }
+
+  /**
+   * Submit an unlock (r=awardachievement).
+   *
+   * The `v` parameter is a signature RA verifies server-side. rcheevos builds
+   * it as md5(achievementId + username + hardcoreFlag) — concatenated as
+   * DECIMAL STRINGS with no separator (rc_api_runtime.c). Getting this wrong
+   * is rejected by the server, so it is derived from upstream rather than
+   * invented.
+   *
+   * hardcore is 0. romdeck offers save states, rewind and fast-forward, and
+   * RA's hardcore rules forbid all three — claiming hardcore would be lying to
+   * the server about how the achievement was earned.
+   */
+  async award(rom, achievementId, { hardcore = false, gameHash = null } = {}) {
+    gameHash ??= this._hashes?.get(rom?.path) ?? null;
+    const { username, token } = this.creds();
+    if (!username) return { status: 'not-configured' };
+    if (!token) {
+      // Try once to upgrade the stored API key into a session token, so a user
+      // who only ever pasted an API key still gets submissions.
+      const res = await this.login();
+      if (res.status !== 'ok') {
+        return { status: 'no-token', message: 'RA login needed before unlocks can be submitted' };
+      }
+    }
+    const h = hardcore ? 1 : 0;
+    const sig = await md5Hex(`${achievementId}${username}${h}`);
+    try {
+      const data = await this._doRequest({
+        r: 'awardachievement',
+        u: username,
+        t: this.creds().token,
+        a: String(achievementId),
+        h: String(h),
+        v: sig,
+        ...(gameHash ? { m: gameHash } : {}),
+      });
+      return {
+        status: 'ok',
+        achievementId,
+        score: data.Score ?? null,
+        softcoreScore: data.SoftcoreScore ?? null,
+      };
+    } catch (err) {
+      return { status: 'error', achievementId, message: err.message };
+    }
+  }
+}
+
+/** How romdeck identifies itself to RA. Required — see _doRequest. */
+function userAgent() {
+  return `romdeck/${process.env.npm_package_version ?? '0.2.0'}`;
+}
+
+/** md5 of an ASCII string, hex. Node's crypto — no dependency needed. */
+async function md5Hex(s) {
+  const { createHash } = await import('node:crypto');
+  return createHash('md5').update(s, 'utf8').digest('hex');
 }
 
 /**

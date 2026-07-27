@@ -42,6 +42,12 @@ export function installMenus(App) {
           { label: 'Homebrew', action: () => this.openFeedMenu() },
           { label: 'Join a game', hint: 'remote play', action: () => this.openJoinMenu() },
           { label: 'Developer mode', hint: 'live memory viewer', action: () => this.openDevMenu() },
+          {
+            label: 'RetroAchievements',
+            hint: this.svc.ra.canSubmit() ? `signed in as ${this.svc.ra.creds().username}`
+              : this.svc.ra.configured() ? 'sign in to submit unlocks' : 'not configured',
+            action: () => this.openAchievementsMenu(),
+          },
           { label: 'Choose ROMs folder', action: () => this.openRomsFolderPicker() },
           {
             label: this.window?.fullscreen ? 'Leave fullscreen' : 'Fullscreen',
@@ -528,6 +534,89 @@ export function installMenus(App) {
           },
           ...recent.map((c) => ({ label: c, hint: 'rejoin', action: () => { this.menus.closeAll(); this.doJoin(c); } })),
         ],
+      });
+    },
+
+    /**
+     * RetroAchievements sign-in.
+     *
+     * Two credentials, and conflating them is the trap: the WEB API KEY (from
+     * the settings page) reads profiles and achievement lists, but dorequest —
+     * the endpoint that accepts an unlock — will not take it. That needs a
+     * session TOKEN from r=login2. romdeck tries the API key first because it
+     * costs the user nothing, and only asks for a password if RA refuses it.
+     *
+     * The password is used for exactly one request and never stored; the token
+     * it returns is what gets persisted.
+     */
+    openAchievementsMenu() {
+      const ra = this.svc.ra;
+      const { username, apiKey } = ra.creds();
+      const items = [];
+
+      items.push({
+        label: 'Username',
+        hint: username ?? 'not set',
+        action: () => {
+          this.menus.closeAll();
+          this.keyboard.open({
+            title: 'RetroAchievements username',
+            value: username ?? '',
+            onCommit: (v) => {
+              this.svc.prefs.set('ra', { ...ra.creds(), username: v.trim() });
+              this.openAchievementsMenu();
+            },
+          });
+        },
+      });
+
+      items.push({
+        label: 'Web API key',
+        hint: apiKey ? 'set' : 'from your RA settings page',
+        action: () => {
+          this.menus.closeAll();
+          this.keyboard.open({
+            title: 'Web API key (RA settings page)',
+            value: '',
+            onCommit: (v) => {
+              this.svc.prefs.set('ra', { ...ra.creds(), apiKey: v.trim() });
+              this.openAchievementsMenu();
+            },
+          });
+        },
+      });
+
+      items.push({
+        label: ra.canSubmit() ? 'Signed in — unlocks will submit' : 'Sign in to submit unlocks',
+        hint: ra.canSubmit() ? 'tap to sign in again' : 'needed for dorequest',
+        action: async () => {
+          this.menus.closeAll();
+          if (!ra.creds().username) { this.toast('RetroAchievements', 'set a username first', { error: true }); return; }
+          this.toast('RetroAchievements', 'signing in…', { ms: 8000 });
+          let res = await ra.login();
+          if (res.status === 'ok') { this.toast('Signed in', `${res.user} — ${res.score} points`); return; }
+          // RA would not take the API key as a token; ask for the password,
+          // which is used once and never written to disk.
+          this.keyboard.open({
+            title: 'RetroAchievements password (used once, never stored)',
+            value: '',
+            mask: true,
+            onCommit: async (pw) => {
+              const r2 = await ra.login({ password: pw });
+              this.toast(r2.status === 'ok' ? 'Signed in' : 'Sign-in failed',
+                r2.status === 'ok' ? `${r2.user} — ${r2.score} points` : (r2.message ?? ''),
+                { error: r2.status !== 'ok' });
+            },
+          });
+        },
+      });
+
+      this.menus.open_({
+        title: 'RetroAchievements',
+        subtitle: ra.canSubmit()
+          ? 'unlocks are submitted as you play'
+          : 'listing works with an API key; submitting needs a sign-in',
+        items,
       });
     },
 

@@ -162,11 +162,16 @@ export class Keyboard {
     this.name = 'osk';
   }
 
-  open({ layout = 'text', title = 'Enter text', value = '', onCommit = null, onInput = null } = {}) {
+  open({ layout = 'text', title = 'Enter text', value = '', onCommit = null, onInput = null,
+    mask = false } = {}) {
     const rows = LAYOUTS[layout] ?? LAYOUTS.text;
     this.active = true;
     this.value = value;
     this.title = title;
+    // Shoulder-surfing is a real threat model for a device plugged into a TV.
+    // The value is still held in the clear (it has to be sent), but it is not
+    // painted in the clear.
+    this.mask = mask;
     this.onCommit = onCommit;
     this.onInput = onInput;
     this.keys = [];
@@ -263,7 +268,7 @@ export class Keyboard {
     ctx.stroke();
     ctx.font = fontStack(34, { weight: 700 });
     ctx.fillStyle = hex(tokens.ink, '#e8ecf4');
-    ctx.fillText(this.value || ' ', STAGE_W / 2, 280);
+    ctx.fillText((this.mask ? '•'.repeat(this.value.length) : this.value) || ' ', STAGE_W / 2, 280);
 
     // An OPAQUE plate behind the keys.
     //
