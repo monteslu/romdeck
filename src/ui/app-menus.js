@@ -828,7 +828,45 @@ export function installMenus(App) {
           this.svc.setRomsDir(dir);
           await this.refresh();
           this.toast('ROMs folder', dir);
+          this.offerSystemDirs(dir);
         },
+      });
+    },
+
+    /**
+     * Offer to create the per-system folders, once a ROMs folder is chosen.
+     *
+     * romdeck reads the FOLDER to decide a game's system, so this layout is
+     * what makes a library sort itself — and a user who has never seen ES-DE
+     * has no way to guess it. ES-DE offers the same thing at setup.
+     *
+     * An OFFER, never automatic: this writes to the user's own files, and a
+     * folder picked by mistake must not leave 30 empty directories behind.
+     * Skipped entirely when the folder already looks like a library, so people
+     * who arrived with one are not nagged.
+     */
+    offerSystemDirs(dir) {
+      const missing = this.svc.missingSystemDirs(dir);
+      // Nothing to add, or the folder is ALREADY organised (some system dirs
+      // exist) — either way the user does not need this. Only a folder with no
+      // system layout at all gets the offer.
+      if (!missing.length || missing.length < this.svc.systemDirCount()) return;
+      this.menus.open_({
+        title: 'Set up system folders?',
+        subtitle: `${missing.length} folders under ${dir}`,
+        items: [
+          {
+            label: `Create them (${missing.map((s) => s.short).slice(0, 4).join(', ')}…)`,
+            hint: 'each gets a note saying which games belong in it',
+            action: async () => {
+              const made = this.svc.createSystemDirs(dir);
+              this.menus.close();
+              await this.refresh();
+              this.toast('System folders', `created ${made.length}`);
+            },
+          },
+          { label: 'No thanks', hint: 'romdeck still finds loose ROMs by extension', action: () => this.menus.close() },
+        ],
       });
     },
 

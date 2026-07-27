@@ -155,6 +155,18 @@ function cleanName(file) {
     .trim();
 }
 
+/**
+ * The extensions this scanner recognises for a system, derived from the same
+ * table the scan uses so the two can never disagree. Ambiguous extensions are
+ * included: they DO work inside the right system folder, which is exactly what
+ * a per-folder readme needs to say.
+ */
+export function extensionsFor(systemDisplay) {
+  return Object.entries(SYSTEM_BY_EXT)
+    .filter(([, sys]) => sys === systemDisplay)
+    .map(([ext]) => ext);
+}
+
 export function scanRoms(romsDir, { maxDepth = 4, maxFiles = 5000 } = {}) {
   const roms = [];
   const walk = (dir, depth) => {

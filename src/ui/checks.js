@@ -9,8 +9,10 @@
 // a real theme, a real core — and asserts observable behaviour. Anything
 // visual also gets written to /tmp for eyeballing, because five bugs in this
 // project were invisible to green assertions and obvious in a screenshot.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
+import { scanRoms } from '../services/scanner.js';
 import { createCanvas } from '@napi-rs/canvas';
 import path from 'node:path';
 import { withApp } from './app.js';
@@ -122,6 +124,30 @@ async function smoke({ romsDir }) {
   }
   r.check('picture options offered', app.svc.pictureFilters().length >= 4,
     `${app.svc.pictureFilters().length} CPU filters, ${app.svc.shaders.list().length} shaders`);
+
+  // System-folder scaffolding. The folder names the system (see scanner.js), so
+  // these directories are what makes a library sort itself -- and creating them
+  // WRITES to the user's ROM folder, which is why it is an offer and not a
+  // side effect of picking a directory. Asserted in a throwaway dir.
+  {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'romdeck-scaffold-'));
+    const total = app.svc.systemDirCount();
+    r.check('every system has a folder', total >= 25 && app.svc.missingSystemDirs(tmp).length === total,
+      `${total} systems`);
+    const made = app.svc.createSystemDirs(tmp);
+    r.check('scaffolding creates them', made.length === total && app.svc.missingSystemDirs(tmp).length === 0,
+      `created ${made.length}`);
+    // The point of the folders: a disc extension that names no system on its
+    // own must resolve through the folder it was placed in.
+    writeFileSync(path.join(tmp, 'psx', 'x.cue'), 'x');
+    const found = scanRoms(tmp);
+    r.check('a disc in psx/ scans as PlayStation',
+      found.length === 1 && found[0].system === 'PlayStation',
+      found.map((f) => f.system).join(',') || 'nothing scanned');
+    // systeminfo.txt is a readme, not a game.
+    r.check('systeminfo.txt is not a ROM', !found.some((f) => /systeminfo/.test(f.file)));
+    rmSync(tmp, { recursive: true, force: true });
+  }
 
   // Path jailing. This used to be enforced by the custom protocol handlers;
   // it is now resolveUrl's job, and a theme is still untrusted input. The

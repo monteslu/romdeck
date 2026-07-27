@@ -13,7 +13,7 @@
 // move across untouched.
 import path from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { scanRoms } from '../services/scanner.js';
+import { scanRoms, extensionsFor } from '../services/scanner.js';
 import { GameSessionManager } from '../services/sessions.js';
 import { StateStore } from '../services/statestore.js';
 import { GamelistStore } from '../services/gamelist.js';
@@ -29,7 +29,7 @@ import { CoreUpdates } from '../services/coreupdates.js';
 import { HomebrewFeed } from '../services/feed.js';
 import { RetroAchievements } from '../services/retroachievements.js';
 import { ScreenScraper } from '../services/screenscraper.js';
-import { shortnameOf, libretroNameOf } from '../services/systems.js';
+import { SYSTEMS, shortnameOf, libretroNameOf } from '../services/systems.js';
 import { MetadataStore } from '../services/metadata.js';
 import { CollectionStore } from '../services/collections.js';
 import { deviceStatus } from '../services/devicestatus.js';
@@ -90,6 +90,65 @@ export class Services {
     this._cliRomsDir = null;
     this._library = null;
     return this.library();
+  }
+
+  /**
+   * Which per-system folders are missing under the ROMs directory.
+   *
+   * The scanner reads the FOLDER to decide a game's system (that is how ES-DE,
+   * RetroDECK and Batocera all work), so these directories are the thing that
+   * makes a library sort itself. A user who has never seen that layout has no
+   * way to guess it, and the empty state already tells them to build it.
+   *
+   * Read-only on purpose — the caller decides whether to create anything.
+   */
+  missingSystemDirs(dir = this.romsDir()) {
+    if (!dir || !existsSync(dir)) return [];
+    return this._systemDirs(dir).filter((s) => !existsSync(s.path));
+  }
+
+  /** How many system folders a fully-scaffolded library has. */
+  systemDirCount() { return this._systemDirs('').length; }
+
+  _systemDirs(dir) {
+    return Object.entries(SYSTEMS)
+      // Not real systems, just scanner outcomes: no one files games under them.
+      .filter(([name]) => name !== 'Archive' && name !== 'Unknown')
+      .map(([name, { short }]) => ({ name, short, path: path.join(dir, short) }));
+  }
+
+  /**
+   * Create the per-system folders, each with a systeminfo.txt saying what it
+   * is for. ES-DE does exactly this (its own generator drops a systeminfo.txt
+   * per folder), and the note matters more here than the folder: an empty
+   * `pcengine/` is a mystery, one that names the system and its extensions is
+   * an instruction.
+   *
+   * NEVER automatic. Picking a folder is a read; this writes to the user's
+   * files, and 30 empty directories appearing unbidden in someone's library
+   * is a surprise — worse if they picked the wrong folder by mistake.
+   */
+  createSystemDirs(dir = this.romsDir()) {
+    const missing = this.missingSystemDirs(dir);
+    const made = [];
+    for (const s of missing) {
+      try {
+        mkdirSync(s.path, { recursive: true });
+        const exts = extensionsFor(s.name);
+        writeFileSync(path.join(s.path, 'systeminfo.txt'),
+          `${s.name}\n${'='.repeat(s.name.length)}\n\n` +
+          `Put ${s.name} games in this folder.\n\n` +
+          `Folder name: ${s.short}\n` +
+          (exts.length ? `Extensions:  ${exts.join(' ')}\n` : '') +
+          '\nromdeck reads the FOLDER to decide which system a game belongs to,\n' +
+          'so a disc image (.cue/.chd/.iso) only works if it sits in the right\n' +
+          'one — those extensions are shared by several consoles.\n' +
+          '\nThis file is not needed. Delete it if you like.\n');
+        made.push(s);
+      } catch { /* a folder we cannot create is reported by staying missing */ }
+    }
+    this._library = null;
+    return made;
   }
 
   /**
