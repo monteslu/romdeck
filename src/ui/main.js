@@ -5,6 +5,7 @@
 // no browser. The render checks now work with NO DISPLAY at all, because a
 // screenshot is canvas.toBuffer() rather than a browser capturePage().
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { App } from './app.js';
 import { runChecks } from './checks.js';
 
@@ -65,6 +66,7 @@ Self-checks (no display required for the render ones):
                        Pass a code to join a real host on another machine.
 
 Options:
+  --live-profile checks write to the REAL profile (default: a throwaway copy)
   --headless     never open a window
   --debug        draw the debug overlay (fps, focus, element boxes)
   --gl           force the GL present path
@@ -73,6 +75,57 @@ Options:
 }
 
 if (check) {
+  // Checks run against a THROWAWAY profile by default.
+  //
+  // They write real settings, prefs and save states, and a check that leaves
+  // `videoFilter: crt` in the global layer breaks the NEXT run of --smoke
+  // ("settings resolve" expects a pristine default). Worse, it silently
+  // changes how the user's own games launch. Nothing that only runs during a
+  // test should be able to do that.
+  //
+  // Seeded by COPYING the real profile, so checks still exercise realistic
+  // state — installed themes, scraped media, existing states — rather than an
+  // empty directory that hides every state-dependent bug.
+  //
+  // --live-profile opts out, for deliberately testing the real one.
+  // --pathcheck ignores all of this on purpose: its whole job is asserting the
+  // real per-platform userData path.
+  if (!flag('live-profile')) {
+    const { mkdtempSync, cpSync, symlinkSync, rmSync, existsSync: hasPath } = await import('node:fs');
+    const os = await import('node:os');
+    const { userDataDir } = await import('./paths.js');
+    const real = userDataDir();
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'romdeck-check-'));
+    if (hasPath(real)) {
+      // Big READ-ONLY trees are symlinked, not copied: themes are ~300 MB and
+      // shaders ~60 MB, and --realtheme and the Picture checks genuinely need
+      // them present. Everything a check WRITES (settings, prefs, states,
+      // media, saves) is copied, so the real profile is never mutated.
+      const linkOnly = new Set(['themes', 'shaders']);
+      cpSync(real, tmp, {
+        recursive: true,
+        filter: (src) => !linkOnly.has(path.basename(src)) || src === real,
+      });
+      for (const name of linkOnly) {
+        const from = path.join(real, name);
+        if (!hasPath(from)) continue;
+        try { symlinkSync(from, path.join(tmp, name), 'dir'); } catch { /* copied already */ }
+      }
+    }
+    process.env.ROMDECK_USERDATA = tmp;
+    if (process.env.ROMDECK_DEBUG) console.log(`[check] throwaway profile: ${tmp}`);
+
+    // Remove it on the way out. A failed check keeps its profile when
+    // ROMDECK_DEBUG is set, because "what did the check actually write?" is
+    // usually the next question after a failure.
+    process.on('exit', (code) => {
+      if (code !== 0 && process.env.ROMDECK_DEBUG) {
+        console.log(`[check] kept profile for inspection: ${tmp}`);
+        return;
+      }
+      try { rmSync(tmp, { recursive: true, force: true }); } catch { /* nothing to clean */ }
+    });
+  }
   runChecks(check, { romsDir, argAfter, flag }).then(
     (code) => process.exit(code),
     (err) => { console.error(`${check.toUpperCase()} FAIL — ${err.stack ?? err.message}`); process.exit(1); },
