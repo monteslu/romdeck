@@ -75,6 +75,78 @@ the shape most homebrew *should* have:
 That last line is the one that matters: it grants redistribution of the ROM
 itself, which most "free" homebrew never says either way.
 
+---
+
+# Round 2 — the other 23 systems (2026-07-27)
+
+## ADDED (1)
+
+| Game | System | Author | Licence | Note |
+|---|---|---|---|---|
+| Stalactites | mastersystem | Haroldo de Oliveira Pinheiro | MIT | zipped, `archive` handles it |
+
+Booted in genesis_plus_gx at 256x192 and looked at: real title screen, "MADE
+FOR THE SMS POWER! COMPETITION 2026 / PRESS BUTTON 1 OR 2 TO START". Installs
+through the real feed path, scanner reads it as Master System.
+
+## Licence is fine, BLOCKED on romdeck (2)
+
+| Game | System | Licence | Blocker |
+|---|---|---|---|
+| Corridor Runner | msx | MIT (h1romas4) | renders NOTHING |
+| Digital Invader | msx | MIT (Hitoshi Iwai) | renders NOTHING |
+
+Both are MIT with clear copyright holders and both are `dist/*.rom` committed
+in-tree, so they are easy to add the moment MSX works. They do not work now:
+
+fmsx loads both and returns frames, and **every frame is entirely black — 0
+lit pixels at frames 120, 600, 1200 and 1800**. Tried with the (empty)
+`<userData>/bios` and again pointed straight at retroemu's own
+`build/fmsx/src/fMSX/ROMs` containing MSX.ROM: no change. This is the known
+open MSX problem, not these ROMs, and no MSX game ROM exists on this machine
+to control against — so "the ROMs are fine" is inference from the licence and
+the file sizes, not something proven here.
+
+**This is exactly why the screenshots get opened.** Both reported `BOOT OK`
+with a plausible 272x228 geometry. A frame count is not a picture.
+
+## Licence UNRESOLVED — needs a human call (1)
+
+**Desolate** (ZX Spectrum, nzeemin/spectrum-desolate) — a port of tr1p1ea's
+TI-83 game. The evidence contradicts itself:
+
+- The README credits the original author but records **no permission**:
+  "Thanks a lot to tr1p1ea for the original game!" and nothing more.
+- The LICENSE file says **"Copyright (c) 2020-2021 Nikita Zimin, Patrick
+  Prendergast"** — naming the original author as a joint MIT copyright holder,
+  which would be consent.
+
+But Prendergast has **zero commits** (nzeemin: 58, sole contributor), so that
+name rests entirely on Zimin having added it. That is probably fine and it is
+not mine to decide. Ask, or skip it.
+
+Separately: `.tap` is not a recognised extension, so `Unsupported ROM file`.
+ZX Spectrum needs `.tap` added alongside `.tzx`/`.z80`/`.sna` before any
+Spectrum game can be added at all.
+
+## Nothing found (20 systems)
+
+snes, gb, gbc, n64, gamegear, sg-1000, atari2600, atari5200, atari7800,
+atari800, atarilynx, pcengine, ngp, ngpc, wonderswan, wonderswancolor,
+colecovision, vectrex, psx, gametank.
+
+The pattern, which is the useful finding: for most retro platforms the
+homebrew scene distributes **built ROMs on forums and itch.io, and source on
+GitHub with no release binaries**. Searching GitHub by licence finds engines,
+toolchains and emulators far more often than games — devkitSMS (314★), PSGlib,
+picotool all rank above any actual game. Several promising repos (gbjam8,
+exolon, KobutaRescue) are MIT with no built ROM anywhere.
+
+So the bottleneck is not licences, it is **downloadable builds with a stable
+URL**. The remaining sources worth mining are per-platform archives
+(SMS Power!, PDRoms, itch.io) rather than GitHub search, and those mostly need
+per-game permission — the same wall Tobu Tobu Girl hit.
+
 ## Rejected, with reasons
 
 **`retrobrews/nes-games`** (52★, ~100 ROMs) — the obvious bulk source, and it

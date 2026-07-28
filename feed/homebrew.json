@@ -136,6 +136,22 @@
       "license": "mit",
       "source": "https://github.com/fritzem/Google-Dino-GBA",
       "description": "The Chrome offline dinosaur, on a Game Boy Advance. Sprites are BSD-3-Clause from Chromium."
+    },
+    {
+      "id": "sms-stalactites",
+      "title": "Stalactites",
+      "kind": "rom",
+      "system": "mastersystem",
+      "systemLabel": "Master System",
+      "file": "stalactites.sms",
+      "url": "https://github.com/haroldo-ok/stalactites-sms/releases/download/v0.6/stalactites-0.6.sms.zip",
+      "archive": "stalactites-0.6.sms",
+      "sha256": "1c0e172d660430c1f7a142ec46cd940a3e3e4ad669ac73369b7246af3ffc6f7a",
+      "size": 16966,
+      "author": "Haroldo de Oliveira Pinheiro",
+      "license": "mit",
+      "source": "https://github.com/haroldo-ok/stalactites-sms",
+      "description": "Dodge the falling stalactites. Made for the SMS Power! competition."
     }
   ]
 }
