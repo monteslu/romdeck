@@ -52,12 +52,13 @@ the scanner picked all three up as NES out of `homebrew/nes/`.
 }
 ```
 
-## Blocked on a format gap — the ROM is inside a .zip (2)
+## ADDED 2026-07-27 — were blocked on the .zip gap, now unblocked (2)
 
-Both are redistributable and both are good. `install()` writes the downloaded
-bytes straight to `<file>`, so a zipped release lands in the library as a .zip
-that no core can open. Supporting these needs an `archive` field naming the
-member to extract, which is a real feature and not a manifest edit.
+The `archive` field landed (docs/Feed.md → Archives), so both of these now
+install: the zip is downloaded, hash-checked, and the named member extracted
+into the library. Both were then booted in their real cores and looked at —
+Speedrun Tower's own splash screen states "Licensed under CC BY-SA 4.0", which
+corroborates the licence research from the ROM itself.
 
 | Game | System | Licence | Note |
 |---|---|---|---|

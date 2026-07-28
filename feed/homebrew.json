@@ -104,6 +104,38 @@
       "license": "mit",
       "source": "https://github.com/mike42/8bit-table-tennis",
       "description": "Two-player table tennis. Grab a second controller."
+    },
+    {
+      "id": "genesis-speedrun-tower",
+      "title": "Speedrun Tower",
+      "kind": "rom",
+      "system": "genesis",
+      "systemLabel": "Genesis",
+      "file": "SpeedrunTower.bin",
+      "url": "https://github.com/huguesjohnson/speedrun-tower/releases/download/SG-1.0/SpeedrunTower.zip",
+      "archive": "SpeedrunTower.bin",
+      "sha256": "45df34675e94b34e04636b0382feec5ae503c4093b28a7cdc0f6e5a0cf5d531d",
+      "size": 90608,
+      "author": "Hugues Johnson",
+      "license": "cc-by-sa",
+      "source": "https://github.com/huguesjohnson/speedrun-tower",
+      "description": "Climb the tower against the clock. The compiled game is CC BY-SA 4.0."
+    },
+    {
+      "id": "gba-dino",
+      "title": "Google Dino Advance",
+      "kind": "rom",
+      "system": "gba",
+      "systemLabel": "Game Boy Advance",
+      "file": "Google-Dino-Advance.gba",
+      "url": "https://github.com/fritzem/Google-Dino-GBA/releases/download/1.1/Google-Dino-Advance.1.1.zip",
+      "archive": "Google-Dino-Advance 1.1/Google-Dino-Advance.gba",
+      "sha256": "e3a6571294fac02a8585ca53367c8b0b85352277286fc6d61cdc4cd8ede3ca5e",
+      "size": 50684,
+      "author": "fritzem",
+      "license": "mit",
+      "source": "https://github.com/fritzem/Google-Dino-GBA",
+      "description": "The Chrome offline dinosaur, on a Game Boy Advance. Sprites are BSD-3-Clause from Chromium."
     }
   ]
 }

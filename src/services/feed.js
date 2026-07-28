@@ -95,9 +95,28 @@ export class HomebrewFeed {
 
     // Hash BEFORE the file reaches the library. Writing first and checking
     // after would leave the bad file on disk for the scanner to pick up.
+    //
+    // The hash is always of the DOWNLOAD, never of the extracted member: it
+    // certifies what the author published, and re-zipping is not reproducible
+    // (timestamps, order, compression level all vary). For an archive entry,
+    // sha256 covers the .zip and extraction happens after it passes.
     const got = createHash('sha256').update(buf).digest('hex');
     if (got !== String(entry.sha256).toLowerCase()) {
       throw new Error(`checksum mismatch — expected ${entry.sha256}, got ${got}`);
+    }
+
+    // Several homebrew releases ship the ROM inside a zip next to a LICENSE
+    // and a README. Without this the zip lands in the library as a .zip that
+    // the core cannot open.
+    if (entry.archive) {
+      const { readZipEntry } = await import('./zip.js');
+      const wanted = typeof entry.archive === 'string' ? entry.archive : null;
+      const ext = path.extname(entry.file).toLowerCase();
+      const { name, data } = readZipEntry(buf, wanted,
+        (n) => n.toLowerCase().endsWith(ext));
+      if (!data.length) throw new Error(`${name} was empty inside the archive`);
+      writeFileSync(dest, data);
+      return { file: dest, bytes: data.length, from: name };
     }
 
     writeFileSync(dest, buf);

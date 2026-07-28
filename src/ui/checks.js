@@ -57,6 +57,53 @@ export async function runChecks(name, ctx) {
 }
 
 // ── smoke ────────────────────────────────────────────────────────────
+/**
+ * A minimal ZIP, built here so the archive checks need no network and no
+ * fixture file. Entries are STORED (method 0), which a reader must handle
+ * anyway and which keeps this to header arithmetic.
+ *
+ * Sizes go in the local headers AND the central directory, deliberately: the
+ * real feed zips leave the local ones zero and only the central directory is
+ * true, so a reader that passes this must still be read from the right place.
+ */
+function buildTestZip(files) {
+  const CRC = (buf) => {
+    let c = ~0;
+    for (const b of buf) {
+      c ^= b;
+      for (let i = 0; i < 8; i++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+    return ~c >>> 0;
+  };
+  const locals = [];
+  const central = [];
+  let offset = 0;
+  for (const [name, data] of files) {
+    const n = Buffer.from(name);
+    const crc = CRC(data);
+    const lfh = Buffer.alloc(30);
+    lfh.writeUInt32LE(0x04034b50, 0); lfh.writeUInt16LE(20, 4);
+    lfh.writeUInt32LE(crc, 14);
+    lfh.writeUInt32LE(data.length, 18); lfh.writeUInt32LE(data.length, 22);
+    lfh.writeUInt16LE(n.length, 26);
+    locals.push(lfh, n, data);
+
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 6);
+    cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(n.length, 28); cd.writeUInt32LE(offset, 42);
+    central.push(cd, n);
+    offset += 30 + n.length + data.length;
+  }
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8); eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cdBuf, eocd]);
+}
+
 async function smoke({ romsDir }) {
   const r = makeReporter('SMOKE');
   return withApp({ romsDir, headless: true }, async (app) => {
@@ -174,6 +221,30 @@ async function smoke({ romsDir }) {
     } catch (err) { refused = /sha256/.test(err.message); }
     r.check('an unhashed download is refused', refused);
     rmSync(tmpRoms, { recursive: true, force: true });
+
+    // Archive entries: the ROM ships inside a zip, so `archive` names the
+    // member to pull out. Asserted on a zip built here rather than downloaded.
+    const { readZipEntry, isMacJunk } = await import('../services/zip.js');
+    const zip = buildTestZip([
+      ['__MACOSX/._game.gba', Buffer.alloc(176, 1)], // the decoy, same extension
+      ['game.gba', Buffer.from('REAL ROM CONTENT, and longer than the decoy')],
+      ['README.md', Buffer.from('# readme')],
+    ]);
+    const picked = readZipEntry(zip, null, (n) => n.endsWith('.gba'));
+    // The failure this prevents: a macOS zip carries a ._<name> twin with the
+    // SAME extension, so "first .gba" grabs a 176-byte AppleDouble stub and
+    // the core is handed garbage.
+    r.check('archive skips macOS junk twins', picked.name === 'game.gba', picked.name);
+    r.check('archive extracts by exact name',
+      readZipEntry(zip, 'README.md').data.toString() === '# readme');
+    r.check('mac junk is recognised', isMacJunk('__MACOSX/._x.gba') && !isMacJunk('x.gba'));
+    // Every archive entry in the manifest must name a member that its own
+    // extension test would accept, or the install lands the wrong file.
+    const archived = entries.filter((e) => e.archive);
+    r.check('archive entries name a matching member',
+      archived.every((e) => typeof e.archive !== 'string'
+        || e.archive.toLowerCase().endsWith(path.extname(e.file).toLowerCase())),
+      `${archived.length} archive entries`);
   }
 
   // Path jailing. This used to be enforced by the custom protocol handlers;

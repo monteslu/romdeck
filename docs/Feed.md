@@ -51,6 +51,11 @@ them is wrong about most of them.
       "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
       "size": 45231,
 
+      // Optional: the download is a .zip and the ROM is inside it. A string
+      // names the member exactly; `true` picks the largest file matching the
+      // extension of `file`. See "Archives" below.
+      // "archive": "SpeedrunTower.bin",
+
       // Rights. Both REQUIRED. See "Curation".
       "license": "freeware",      // an id from the table below
       "source": "https://www.lexaloffle.com/bbs/?tid=2145",
@@ -81,6 +86,34 @@ Note for the current file: `feed/homebrew.json` has a `verifyBeforeUse: true`
 field on its one remote entry. **Nothing reads it** — it appears exactly once in
 the repo, in data. It reads like a safety guarantee and enforces nothing, so it
 is dropped in v2 and replaced by `sha256`, which the installer actually checks.
+
+## Archives
+
+Homebrew is often released as a .zip with the ROM next to a LICENSE and a
+README. `archive` says which member is the game:
+
+```jsonc
+"file":    "SpeedrunTower.bin",             // what it is called in the library
+"archive": "SpeedrunTower.bin",             // exact member path inside the zip
+// or
+"archive": true                              // largest file matching file's extension
+```
+
+Two rules that are easy to get wrong:
+
+- **`sha256` always covers the DOWNLOAD, never the extracted member.** It
+  certifies what the author published; re-zipping is not reproducible
+  (timestamps, entry order and compression level all vary), so hashing the
+  archive is the only stable check. Extraction happens after it passes.
+- **`__MACOSX/._<name>` twins are skipped.** A zip made on macOS carries a
+  resource-fork shadow for every file, with the *same extension* and a couple
+  of hundred bytes. "First file ending in .gba" picks the AppleDouble stub over
+  the real 109 KB ROM, and the core gets handed garbage.
+
+Reading is done by `src/services/zip.js` with `node:zlib` and no new
+dependency. It reads the **central directory**, not the local headers —
+streaming zip writers (including both feed candidates) leave the local
+sizes at zero and only the central directory is true.
 
 ## Curation
 
