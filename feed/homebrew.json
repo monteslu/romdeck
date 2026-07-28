@@ -59,6 +59,51 @@
       "license": "freeware",
       "source": "https://www.lexaloffle.com/bbs/?tid=2145",
       "description": "The original PICO-8 Celeste — the prototype that became the full game."
+    },
+    {
+      "id": "nes-stallar",
+      "title": "Stallar",
+      "kind": "rom",
+      "system": "nes",
+      "systemLabel": "NES",
+      "file": "stallar.nes",
+      "url": "https://github.com/wendelscardua/stallar/releases/download/0.1.0/stallar.nes",
+      "sha256": "b5584e142db178fc356b70d635cb290f250a85569461b5915969617740c551f0",
+      "size": 73744,
+      "author": "Wendel Scardua",
+      "license": "mit",
+      "source": "https://github.com/wendelscardua/stallar",
+      "description": "Steer a falling star through a collapsing sky. Made for Ludum Dare 50."
+    },
+    {
+      "id": "nes-file-fixers",
+      "title": "File Fixers",
+      "kind": "rom",
+      "system": "nes",
+      "systemLabel": "NES",
+      "file": "file-fixers.nes",
+      "url": "https://github.com/wendelscardua/file-fixers/releases/download/0.1.0/file-fixers.nes",
+      "sha256": "ba6c88a13bb63f180e5e542258c53e5676e3f1514898bfd16aba4da43c34cc34",
+      "size": 81936,
+      "author": "Wendel Scardua",
+      "license": "mit",
+      "source": "https://github.com/wendelscardua/file-fixers",
+      "description": "A computer-themed RPG: repair corrupted files by fighting what got into them."
+    },
+    {
+      "id": "nes-table-tennis",
+      "title": "8-Bit Table Tennis",
+      "kind": "rom",
+      "system": "nes",
+      "systemLabel": "NES",
+      "file": "table_tennis.nes",
+      "url": "https://github.com/mike42/8bit-table-tennis/releases/download/v1.0/table_tennis_v1.0.nes",
+      "sha256": "05122457672f95fcf2ee518c3f37e506617725c2d031100b1b1c8b7785068ea3",
+      "size": 40976,
+      "author": "Michael Billington",
+      "license": "mit",
+      "source": "https://github.com/mike42/8bit-table-tennis",
+      "description": "Two-player table tennis. Grab a second controller."
     }
   ]
 }

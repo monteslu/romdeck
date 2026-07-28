@@ -5,12 +5,16 @@ booted in fceumm. **Nothing here is in the catalog yet** — adding a game to
 `homebrew.json` is a curation decision (see docs/Feed.md), so this is the
 evidence, not the shipping list.
 
-## Ready to add (3)
+## ADDED to homebrew.json on 2026-07-27 (3)
 
 All three: MIT, permanent GitHub release URLs, verified boot + real title
 screen rendered. MIT grants redistribution, so these could be bundled — but
 they are listed as `url` anyway, since linking to the author's release costs
 nothing and keeps attribution pointing at them.
+
+Hashes were re-downloaded and re-verified at the point of adding, then the
+whole path was exercised: install() fetched each one, verified the hash, and
+the scanner picked all three up as NES out of `homebrew/nes/`.
 
 | Game | System | Author | Licence | Bytes |
 |---|---|---|---|---|
