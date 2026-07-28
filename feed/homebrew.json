@@ -152,6 +152,36 @@
       "license": "mit",
       "source": "https://github.com/haroldo-ok/stalactites-sms",
       "description": "Dodge the falling stalactites. Made for the SMS Power! competition."
+    },
+    {
+      "id": "msx-corridor-runner",
+      "title": "Corridor Runner",
+      "kind": "rom",
+      "system": "msx",
+      "systemLabel": "MSX",
+      "file": "corridor-runner.rom",
+      "url": "https://raw.githubusercontent.com/aburi6800/msx-CorridorRunner/228a6d0af038263f860944d89adc4081af87979f/dist/c-runner.rom",
+      "sha256": "ccbb22ec2475c7ad7827abb59c09f7020dd068fe75514a9ec5b203c87906140f",
+      "size": 32768,
+      "author": "ABURI GAMES",
+      "license": "mit",
+      "source": "https://github.com/aburi6800/msx-CorridorRunner",
+      "description": "Run the corridor, dodge what runs at you. Needs an MSX BIOS in your bios folder."
+    },
+    {
+      "id": "msx-digital-invader",
+      "title": "Digital Invader",
+      "kind": "rom",
+      "system": "msx",
+      "systemLabel": "MSX",
+      "file": "digital-invader.rom",
+      "url": "https://raw.githubusercontent.com/aburi6800/msx-digitalinvader/86543e76d2417826fc5efcd6aa81d9a6fcf244ed/dist/dgtl-inv.rom",
+      "sha256": "eff7c341f1181892fcda40c2d08838a7e4bdcdac838acf16de89825b736e39e0",
+      "size": 16384,
+      "author": "Hitoshi Iwai",
+      "license": "mit",
+      "source": "https://github.com/aburi6800/msx-digitalinvader",
+      "description": "A calculator-styled shooter. Needs an MSX BIOS in your bios folder."
     }
   ]
 }

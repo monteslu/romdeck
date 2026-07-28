@@ -32,12 +32,16 @@ function resolveNode() {
 }
 
 export class GameSessionManager extends EventEmitter {
-  constructor({ stateStore, saveDir, mappings, settings, cheats, shaders } = {}) {
+  constructor({ stateStore, saveDir, biosDir, mappings, settings, cheats, shaders } = {}) {
     super();
     this.sessions = new Map();
     this.nextId = 1;
     this.stateStore = stateStore ?? null;
     this.saveDir = saveDir ?? null; // shared SRAM/battery-save dir
+    // Where cores look for BIOS/system ROMs. Without this a core that needs
+    // one (MSX wants MSX.ROM) is handed the GAME's own folder and finds
+    // nothing, which shows up as a game that loads and renders black.
+    this.biosDir = biosDir ?? null;
     this.mappings = mappings ?? null; // MappingStore
     this.settings = settings ?? null; // SettingsStore (cascade)
     this.cheats = cheats ?? null; // CheatStore
@@ -110,6 +114,7 @@ export class GameSessionManager extends EventEmitter {
     }
     if (cfg.rewindEnabled === false) args.push('--no-rewind');
     if (this.saveDir) args.push('--save-dir', this.saveDir);
+    if (this.biosDir) args.push('--bios-dir', this.biosDir);
     if (this.mappings) {
       const map = this.mappings.playerConfig(ctx);
       if (Object.keys(map.devices).length || map.portOrder.length) {

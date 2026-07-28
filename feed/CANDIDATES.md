@@ -89,26 +89,34 @@ Booted in genesis_plus_gx at 256x192 and looked at: real title screen, "MADE
 FOR THE SMS POWER! COMPETITION 2026 / PRESS BUTTON 1 OR 2 TO START". Installs
 through the real feed path, scanner reads it as Master System.
 
-## Licence is fine, BLOCKED on romdeck (2)
+## ADDED — MSX was broken on our side, now fixed (2)
 
-| Game | System | Licence | Blocker |
+| Game | System | Licence | Bytes |
 |---|---|---|---|
-| Corridor Runner | msx | MIT (h1romas4) | renders NOTHING |
-| Digital Invader | msx | MIT (Hitoshi Iwai) | renders NOTHING |
+| Corridor Runner | msx | MIT (ABURI GAMES) | 32768 |
+| Digital Invader | msx | MIT (Hitoshi Iwai) | 16384 |
 
-Both are MIT with clear copyright holders and both are `dist/*.rom` committed
-in-tree, so they are easy to add the moment MSX works. They do not work now:
+Both were dead on arrival: fmsx loaded them, reported a plausible 272x228,
+returned frames, and every frame was **0 lit pixels at 120/600/1200/1800**.
 
-fmsx loads both and returns frames, and **every frame is entirely black — 0
-lit pixels at frames 120, 600, 1200 and 1800**. Tried with the (empty)
-`<userData>/bios` and again pointed straight at retroemu's own
-`build/fmsx/src/fMSX/ROMs` containing MSX.ROM: no change. This is the known
-open MSX problem, not these ROMs, and no MSX game ROM exists on this machine
-to control against — so "the ROMs are fine" is inference from the licence and
-the file sizes, not something proven here.
+That was never these ROMs. `GET_SYSTEM_DIRECTORY` was answering with a HOST
+path, which does not exist inside a wasm core's MEMFS, so fmsx `chdir`ed
+somewhere imaginary and never found MSX.ROM. Fixed in retroemu (892cc28) by
+mirroring the system directory into MEMFS at `/system`, plus a `--bios-dir`
+flag so the directory can actually be set — nothing passed `systemDir` at all
+before, so it defaulted to the game's own folder.
 
-**This is exactly why the screenshots get opened.** Both reported `BOOT OK`
-with a plausible 272x228 geometry. A frame count is not a picture.
+Now 3909 and 4742 lit pixels, both rendering real title screens
+("CorridorRunner / PUSH SPACE OR TRIGGER / (c)ABURI GAMES 2022").
+
+URLs are pinned to a commit SHA, since these are `dist/*.rom` files in-tree
+rather than release assets — a branch URL would change under the hash.
+
+**Users must supply their own `MSX.ROM`** in `<userData>/bios`; it is not
+redistributable. Both entries say so in their description.
+
+**This is why the screenshots get opened.** Both reported `BOOT OK` with sane
+geometry and were completely black.
 
 ## Licence UNRESOLVED — needs a human call (1)
 

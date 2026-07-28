@@ -65,6 +65,7 @@ export class Services {
     this.sessions = new GameSessionManager({
       stateStore: this.stateStore,
       saveDir,
+      biosDir: this.bios.userBiosDir,
       mappings: this.mappings,
       settings: this.settings,
       cheats: this.cheats,
