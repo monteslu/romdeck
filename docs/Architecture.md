@@ -67,6 +67,24 @@ not a process boundary: services never import from `ui/`.
 - `present.js` — the present seam. `GlPresenter` (webgl-node) is the default,
   `CpuPresenter` (SDL blit) the fallback, `HeadlessPresenter` the one every
   self-check uses. The stage paint is identical for all three.
+
+  **GL currency is process-global.** native-gles dispatches every GL call
+  against whichever context was made current last, and GL object names are
+  plain integers carrying no context identity -- two contexts both allocate
+  texture name 1, 2, 3... independently. So a presenter sharing a process with
+  another GL consumer (an emulator core, a wasmcart cart) must `makeCurrent()`
+  before its own GL work, and so must anything tearing a context down:
+  deleting "your" texture 3 while another context is current destroys
+  **theirs**. `present-gl.js` keeps `res.makeCurrent` from the context wrapper
+  for exactly this.
+
+  Needs **webgl-node >= 1.5.1**, which also exposes `makeCurrent` on the
+  context object itself -- consumers that keep only `gl` and discard the
+  wrapper were otherwise calling a silent no-op. The failure is worth
+  recognising because it misleads: the window goes **black at a healthy
+  60fps** (`GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT`) while a CPU
+  readback of the same content still shows a perfect picture, since the
+  readback reads the source FBO and the window presents by a separate blit.
 - `stage.js` — theme model → skia canvas via `@napi-rs/canvas`. Fonts are
   bundled, so text renders identically on a bare handheld and a dev machine.
 - `focus.js` — the **focus ring**: named groups on a stack, geometric
