@@ -22,7 +22,8 @@
     "check": "node src/ui/main.js --smoke && node src/ui/main.js --padonly && node src/ui/main.js --pathcheck",
     "themes": "node scripts/theme-conformance.mjs",
     "bakeoff": "node scripts/present-bakeoff.mjs",
-    "build:video": "./scripts/build-video-decoder.sh"
+    "build:video": "./scripts/build-video-decoder.sh",
+    "test": "node --test test/unit/*.test.js"
   },
   "keywords": [
     "emulator",
@@ -57,7 +58,7 @@
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
     "rcheevos": "^0.1.4",
-    "retroemu": "^0.5.1",
-    "webgl-node": "^1.2.0"
+    "retroemu": "^0.6.0",
+    "webgl-node": "^1.5.1"
   }
 }
