@@ -47,20 +47,18 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          export ROMDECK_ROMS="$RUNNER_TEMP/roms"
           # strip node from PATH so only the bundled runtime can answer
           export PATH=/usr/bin:/bin
-          ./dist/romdeck-${{ matrix.target }}/romdeck --pathcheck
-          ./dist/romdeck-${{ matrix.target }}/romdeck --smoke
+          ./dist/romdeck-${{ matrix.target }}/romdeck --pathcheck "$RUNNER_TEMP/roms"
+          ./dist/romdeck-${{ matrix.target }}/romdeck --smoke "$RUNNER_TEMP/roms"
       - name: Smoke the bundle through its own launcher (Windows)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          set ROMDECK_ROMS=%RUNNER_TEMP%\roms
           set PATH=C:\Windows\System32;C:\Windows
-          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --pathcheck
+          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --pathcheck "%RUNNER_TEMP%\roms"
           if errorlevel 1 exit /b 1
-          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --smoke
+          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --smoke "%RUNNER_TEMP%\roms"
           if errorlevel 1 exit /b 1
       - uses: actions/upload-artifact@v4
         with:
