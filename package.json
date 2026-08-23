@@ -1,6 +1,6 @@
 {
   "name": "romdeck",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A zero-config cross-platform retro game library. Every game runs in its own crash-isolated player window, powered by retroemu's libretro WASM cores.",
   "type": "module",
   "main": "src/ui/main.js",
