@@ -29,6 +29,8 @@ import { XMLParser } from 'fast-xml-parser';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const BUNDLED_THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
+// Per-theme supplemental assets for systems the theme does not cover.
+export const SUPPLEMENTS_DIR = path.join(__dirname, '..', '..', 'assets', 'theme-supplements');
 
 /**
  * The theme romdeck uses when the user has not chosen one.
@@ -769,6 +771,15 @@ export class ThemeStore {
     if (!theme) return null;
     const target = path.normalize(path.join(theme.dir, rel));
     if (!target.startsWith(theme.dir + path.sep)) return null; // jail
-    return existsSync(target) ? target : null;
+    if (existsSync(target)) return target;
+    // Supplement fallback: romdeck ships art for systems the community
+    // themes have never heard of (wasmcart, gametank). A missing theme
+    // asset is answered from assets/theme-supplements/<theme>/<same rel>,
+    // so downloaded themes are never mutated and a theme update wins the
+    // moment it starts shipping the file itself.
+    const supDir = path.join(SUPPLEMENTS_DIR, theme.name);
+    const sup = path.normalize(path.join(supDir, rel));
+    if (!sup.startsWith(supDir + path.sep)) return null; // same jail
+    return existsSync(sup) ? sup : null;
   }
 }
