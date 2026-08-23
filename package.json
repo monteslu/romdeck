@@ -59,7 +59,7 @@
     "fast-xml-parser": "^5.10.1",
     "gamepad-node": "^1.5.0",
     "rcheevos": "^0.1.4",
-    "retroemu": "^0.6.0",
+    "retroemu": "^0.6.1",
     "webgl-node": "^1.5.1"
   }
 }
