@@ -1,10 +1,10 @@
-// gamelist.xml metadata — the EmulationStation lineage format, never our own.
+// gamelist.xml metadata -- the EmulationStation lineage format, never our own.
 //
 // READ: any gamelist.xml living next to the ROMs (Batocera/RetroPie style:
 // <system-folder>/gamelist.xml) plus romdeck's own per-system gamelists in
 // userData (ES-DE style). In-dir data is the base; romdeck's layer wins.
 // WRITE: only romdeck's own layer (<userData>/gamelists/<short>/gamelist.xml),
-// ES-DE dialect — user files next to their ROMs are never touched.
+// ES-DE dialect -- user files next to their ROMs are never touched.
 //
 // <game> fields handled: path, name, desc, rating, releasedate, developer,
 // publisher, genre, players, favorite, hidden, playcount, lastplayed.

@@ -1,7 +1,7 @@
 // GL present path.
 //
 // The CPU path copies a 1920x1080 RGBA stage into a window-sized buffer on
-// every frame — fine on a desktop, measurable at 4K, and worse on a handheld
+// every frame -- fine on a desktop, measurable at 4K, and worse on a handheld
 // where the copy competes with an emulator for memory bandwidth. GL uploads
 // the stage once per repaint as a texture and lets the GPU do the scaling,
 // which is the same lesson jsgame-libretro already learned with its gl_blit
@@ -47,9 +47,9 @@ export class GlPresenter {
    * because that order is what makes this work on handhelds as well as
    * desktops:
    *
-   *   1. fbdev window surface — Mali/embedded, and it must be attempted
+   *   1. fbdev window surface -- Mali/embedded, and it must be attempted
    *      BEFORE SDL takes the display.
-   *   2. the SDL window's native GL handle — X11/Wayland desktops.
+   *   2. the SDL window's native GL handle -- X11/Wayland desktops.
    *
    * Async because the binding is imported on demand: a machine with no
    * working GL stack must fall back to the CPU path, not fail to start.

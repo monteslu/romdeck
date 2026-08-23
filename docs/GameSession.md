@@ -1,4 +1,4 @@
-# GameSession — the player-process contract
+# GameSession -- the player-process contract
 
 romdeck never runs a game inside its own process. Every launch spawns an
 isolated **player process** (`retroemu --control`, SDL window) and talks to it
@@ -37,13 +37,13 @@ speed). The manager also passes, when relevant:
 | `--ff-speed <n>` | fast-forward multiplier (`0` = uncapped) |
 | `--no-rewind` | passed when rewind is switched off for that context |
 
-`launch()` is refused if that ROM already has a live session — one window per
+`launch()` is refused if that ROM already has a live session -- one window per
 game, since each session is a real process and a duplicate is confusing rather
 than useful.
 
 ---
 
-## Methods — `sessions.rpc(id, method, params)`
+## Methods -- `sessions.rpc(id, method, params)`
 
 All RPCs reject after **15 s**. Errors come back as `{ id, error }` and
 surface as a rejected promise.
@@ -52,14 +52,14 @@ surface as a rejected promise.
 
 | Method | Params | Result | Notes |
 |---|---|---|---|
-| `getStatus` | — | `{romPath, core, system, frameCount, paused, speed, rewindDepth, rewindEnabled, ffSpeed, fullscreen}` | cheap; safe to poll |
-| `pause` | — | `{paused:true}` | core stops; SDL events keep pumping |
-| `resume` | — | `{paused:false}` | |
-| `reset` | — | `{}` | clears rewind history |
+| `getStatus` | -- | `{romPath, core, system, frameCount, paused, speed, rewindDepth, rewindEnabled, ffSpeed, fullscreen}` | cheap; safe to poll |
+| `pause` | -- | `{paused:true}` | core stops; SDL events keep pumping |
+| `resume` | -- | `{paused:false}` | |
+| `reset` | -- | `{}` | clears rewind history |
 | `setSpeed` | `{x}` | `{speed}` | `0` = uncapped, else `0.25`–`8`; audio mutes when `x !== 1` |
 | `setFullscreen` | `{on}` | `{fullscreen}` | SDL window only |
 | `setVideoFilter` | `{filter}` | `{filter}` | `none` \| `sharp` \| `scanlines` \| `crt` |
-| `quit` | — | `{}` | replies first, then shuts down (autosave fires) |
+| `quit` | -- | `{}` | replies first, then shuts down (autosave fires) |
 
 ### State
 
@@ -68,14 +68,14 @@ surface as a rejected promise.
 | `saveState` | `{screenshot?}` | `{stateB64, screenshotPngB64, frameCount, size}` | throws if the core can't serialize |
 | `loadState` | `{stateB64}` | `{}` | throws if the core rejects the blob |
 | `rewind` | `{steps}` | `{frame, depth}` | 1 step ≈ 0.5 s; throws when history is empty |
-| `screenshot` | — | `{pngB64, width, height}` | captures the overlay if it's open |
+| `screenshot` | -- | `{pngB64, width, height}` | captures the overlay if it's open |
 
 ### Cheats and core options
 
 | Method | Params | Result | Notes |
 |---|---|---|---|
 | `setCheats` | `{cheats:[{code, enabled}]}` | `{applied}` | passed to `retro_cheat_set`; **the core decodes the format** |
-| `listCoreOptions` | — | `{options:[{key, description, options, value}]}` | the core's own declared variables |
+| `listCoreOptions` | -- | `{options:[{key, description, options, value}]}` | the core's own declared variables |
 | `setCoreOption` | `{key, value}` | `{key, value}` | validated against the declared list |
 
 ### Input
@@ -83,14 +83,14 @@ surface as a rejected promise.
 | Method | Params | Result | Notes |
 |---|---|---|---|
 | `setInputMap` | `{map}` | `{applied}` | live remap, no relaunch; `null` clears |
-| `listPads` | — | `{pads:[{port, id, key, buttons, axes}]}` | what the player currently sees |
+| `listPads` | -- | `{pads:[{port, id, key, buttons, axes}]}` | what the player currently sees |
 | `menu` | `{op, action?}` | `{open, selected}` | `toggle`\|`open`\|`close`\|`nav` on the in-game overlay |
 
 ### Developer mode
 
 | Method | Params | Result | Notes |
 |---|---|---|---|
-| `memoryInfo` | — | `{regions:[{id, name, size}]}` | only regions the core actually exposes |
+| `memoryInfo` | -- | `{regions:[{id, name, size}]}` | only regions the core actually exposes |
 | `readMemory` | `{region, offset, length}` | `{region, offset, length, dataB64}` | live memory |
 | `writeMemory` | `{region, offset, dataB64}` | `{written}` | |
 
@@ -101,14 +101,14 @@ Region ids follow libretro: `0` save RAM, `1` RTC, `2` system RAM, `3` video RAM
 | Method | Params | Result | Notes |
 |---|---|---|---|
 | `remoteHost` | `{audio?, fps?, guestPort?}` | `{code, hostName, url, guests, …}` | starts hosting, returns the share code |
-| `remoteStatus` | — | `{hosting, code, guests, framesSent, kbSent, audio, audioKbSent}` | |
-| `remoteStop` | — | `{hosting:false}` | |
+| `remoteStatus` | -- | `{hosting, code, guests, framesSent, kbSent, audio, audioKbSent}` | |
+| `remoteStop` | -- | `{hosting:false}` | |
 
 ---
 
 ## Events (child → parent)
 
-**`ready`** — the core is loaded and running:
+**`ready`** -- the core is loaded and running:
 
 ```js
 { event:'ready', romPath, core, system, stateSupported, av }
@@ -117,7 +117,7 @@ Region ids follow libretro: `0` save RAM, `1` RTC, `2` system RAM, `3` video RAM
 `stateSupported` is false for wasmcart/jsgame sessions, which accept the
 channel but have no libretro state surface.
 
-**`autosave`** — pushed during shutdown, *before* teardown, on **every** exit
+**`autosave`** -- pushed during shutdown, *before* teardown, on **every** exit
 path (window close, ESC, pad chord, `quit`):
 
 ```js
@@ -126,12 +126,12 @@ path (window close, ESC, pad chord, `quit`):
 
 romdeck persists this as the `auto` state, which powers resume-on-launch.
 
-**`remote`** — human-readable remote-play progress lines (`{ event:'remote',
+**`remote`** -- human-readable remote-play progress lines (`{ event:'remote',
 line }`), surfaced in logs.
 
 ---
 
-## Manager events — `sessions.on('update', …)`
+## Manager events -- `sessions.on('update', …)`
 
 | Type | Meaning |
 |---|---|
@@ -139,7 +139,7 @@ line }`), surfaced in logs.
 | `ready` | core up (or, for a guest, the stream connected) |
 | `resumed` / `resume-failed` | auto-state restored, or couldn't be |
 | `closed` | clean exit |
-| `crashed` | abnormal exit — carries `code`, `signal`, `logTail` (last 8 lines) |
+| `crashed` | abnormal exit -- carries `code`, `signal`, `logTail` (last 8 lines) |
 | `error` | the process couldn't be spawned at all |
 
 Events for remote-play guests carry `remote: true`, so the UI can present them
@@ -150,7 +150,7 @@ as connections rather than library games.
 ## Guest sessions (remote play)
 
 `sessions.joinRemote(code, { watch })` spawns `retroemu --join <CODE>` (or
-`--watch`). A guest runs **no ROM and no core** — the host is emulating — so:
+`--watch`). A guest runs **no ROM and no core** -- the host is emulating -- so:
 
 - it has **no control channel**; `rpc()` is not available for it
 - `stop()` simply closes its window
@@ -160,7 +160,7 @@ as connections rather than library games.
 
 ## Shutdown
 
-`sessions.stop(id)` sends `quit` (graceful — the autosave lands), falls back to
+`sessions.stop(id)` sends `quit` (graceful -- the autosave lands), falls back to
 `SIGTERM` if the channel is unresponsive, and escalates to `SIGKILL` after 5 s.
 Guest sessions skip straight to `SIGTERM`.
 

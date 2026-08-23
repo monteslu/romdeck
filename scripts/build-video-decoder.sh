@@ -4,7 +4,7 @@
 # WHY THIS EXISTS
 #
 # Video snaps were the one thing Electron genuinely provided (<video> and its
-# decoder). Replacing it must not mean bundling an executable — that rule is
+# decoder). Replacing it must not mean bundling an executable -- that rule is
 # absolute in this project, and `ffmpeg-static` was proposed once and
 # correctly rejected. So the decoder is built from source to WASM, exactly the
 # way romdev builds every emulator core: upstream is FETCHED and pinned, never
@@ -19,7 +19,7 @@
 # Demuxing is done in JS (src/ui/video/mp4.js) because container parsing is
 # pure structure and does not need native code.
 #
-# The result is libavcodec's h264 decoder and nothing more — a few hundred KB
+# The result is libavcodec's h264 decoder and nothing more -- a few hundred KB
 # rather than a general-purpose media stack.
 #
 # Output: src/ui/video/wasm/h264.{js,wasm}

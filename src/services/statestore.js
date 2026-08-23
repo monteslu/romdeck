@@ -6,7 +6,7 @@
 //     state.bin        the raw core state blob
 //
 // "auto" is the reserved name for exit-autosave (resume-on-launch).
-// gameKey is sha1(basename + size) for M1 — stable across library moves;
+// gameKey is sha1(basename + size) for M1 -- stable across library moves;
 // replaced by real ROM-hash identity in the library milestone.
 import {
   mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, existsSync,
@@ -27,7 +27,7 @@ export class StateStore {
    * Prefers the CRC-verified ROM identity: two copies of the same game keep
    * one set of saves however they are named, and renaming a file no longer
    * strands its progress. Falls back to the old basename+size hash when a ROM
-   * hasn't been identified — most libraries are only partly verified, and a
+   * hasn't been identified -- most libraries are only partly verified, and a
    * key that changes the moment identification runs would be worse than one
    * that is merely weak.
    *
@@ -64,7 +64,7 @@ export class StateStore {
    *
    * Runs once per game, the first time it's touched after identification.
    * A user who identifies their library must not watch their save states
-   * disappear — that is the failure mode that makes this change dangerous,
+   * disappear -- that is the failure mode that makes this change dangerous,
    * and the reason it ships with migration rather than a version bump.
    *
    * @returns {string|null} the key data was moved FROM, or null if nothing moved

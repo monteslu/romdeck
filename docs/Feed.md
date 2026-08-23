@@ -4,7 +4,7 @@ romdeck can install freely-distributable games straight into the library. The
 catalog is a JSON manifest: bundled at `feed/homebrew.json`, optionally replaced
 by a URL in prefs (`feedUrl`), cached to `<userData>/feed-cache.json`.
 
-This document is the format. It is a **draft for review** — the curation policy
+This document is the format. It is a **draft for review** -- the curation policy
 in [Curation](#curation) is a licensing decision, not a technical one, and needs
 a human to sign off before any list ships.
 
@@ -28,14 +28,14 @@ them is wrong about most of them.
   "updated": "2026-07-27",
   "entries": [
     {
-      // Identity — `id` is the stable key. Never reuse one for different
+      // Identity -- `id` is the stable key. Never reuse one for different
       // content; the installer treats a known id as "already have it".
       "id": "pico8-celeste",
       "title": "Celeste Classic",
       "author": "Maddy Thorson & Noel Berry",
       "description": "The original PICO-8 prototype that became the full game.",
 
-      // Placement. `system` MUST be a shortname from systems.js — it decides
+      // Placement. `system` MUST be a shortname from systems.js -- it decides
       // the install folder, and the folder decides which core runs the game
       // (see scanner.js: the folder names the system).
       "kind": "rom",              // rom | wasmcart | jsgame
@@ -43,7 +43,7 @@ them is wrong about most of them.
       "systemLabel": "PICO-8",    // display only
       "file": "celeste.p8.png",   // the name it lands under
 
-      // Where it comes from — exactly ONE of these.
+      // Where it comes from -- exactly ONE of these.
       "url": "https://www.lexaloffle.com/bbs/cposts/ce/celeste_classic.p8.png",
       // "localPath": "feed/files/starfall.d64",   // shipped in the app tree
 
@@ -83,7 +83,7 @@ writes whatever arrives is a remote-file-drop into the user's library.
 `size` is advisory (shown in the UI before download); `sha256` is the gate.
 
 Note for the current file: `feed/homebrew.json` has a `verifyBeforeUse: true`
-field on its one remote entry. **Nothing reads it** — it appears exactly once in
+field on its one remote entry. **Nothing reads it** -- it appears exactly once in
 the repo, in data. It reads like a safety guarantee and enforces nothing, so it
 is dropped in v2 and replaced by `sha256`, which the installer actually checks.
 
@@ -111,7 +111,7 @@ Two rules that are easy to get wrong:
   the real 109 KB ROM, and the core gets handed garbage.
 
 Reading is done by `src/services/zip.js` with `node:zlib` and no new
-dependency. It reads the **central directory**, not the local headers —
+dependency. It reads the **central directory**, not the local headers --
 streaming zip writers (including both feed candidates) leave the local
 sizes at zero and only the central directory is true.
 
@@ -124,20 +124,20 @@ sizes at zero and only the central directory is true.
 | `public-domain` | released to PD / CC0 | yes |
 | `cc-by`, `cc-by-sa` | Creative Commons, attribution required | yes, with attribution |
 | `gpl`, `mit`, `bsd` | an actual open-source licence, source available | yes |
-| `freeware` | free to download from the author, no redistribution right | **no — link only** |
+| `freeware` | free to download from the author, no redistribution right | **no -- link only** |
 | `unknown` | rights not established | **not eligible for the catalog** |
 
 The rule that follows: **`localPath` is only permitted for entries we have the
-right to redistribute** — everything else must be a `url` pointing at the
+right to redistribute** -- everything else must be a `url` pointing at the
 author's own host. `freeware` is the common case and is exactly the case that
 may not be bundled.
 
-`source` is the page the entry was found on — the author's post or release page,
+`source` is the page the entry was found on -- the author's post or release page,
 not the file URL. It is what makes a rights claim auditable later, and what a
 user follows to check the game is really free.
 
 Entries with `license: "unknown"` do not go in the catalog. Not as a
-placeholder, not "pending review" — an entry whose rights nobody has checked is
+placeholder, not "pending review" -- an entry whose rights nobody has checked is
 the one that causes the problem.
 
 ### On the Batocera list
@@ -145,7 +145,7 @@ the one that causes the problem.
 Batocera ships a set of free games and it is a genuinely good list. It is not
 copyable wholesale: the games are individually licensed and the collection mixes
 all of the rows above. Anything taken from it needs the per-game licence
-checked, which is the work the table exists to record — and the reason this
+checked, which is the work the table exists to record -- and the reason this
 document stops at the format and leaves the list itself to a human decision.
 
 ## Install behaviour
@@ -158,7 +158,7 @@ Unchanged from v1 except for verification:
 4. The library rescans, and the game appears under its system like any other.
 
 Because the install folder is `<romsDir>/homebrew/<system>/`, the scanner reads
-the system from the folder exactly as it does for the rest of the library — a
+the system from the folder exactly as it does for the rest of the library -- a
 `.p8.png` under `pico8/` needs no special case.
 
 ## Compatibility

@@ -2,7 +2,7 @@
 //
 // Deliberately tiny: feed it Annex-B, get RGBA back. Everything structural
 // (container parsing, sample timing, looping) is JS, because that work is
-// pure bookkeeping and does not need native code — see mp4.js.
+// pure bookkeeping and does not need native code -- see mp4.js.
 //
 // Colour conversion happens here rather than in a shader for v1. It is one
 // pass over the frame and keeps the GL path free of a YUV special case; if it
@@ -43,7 +43,7 @@ static inline uint8_t clamp8(int v) {
  * Real snaps come in both: broadcast/limited (Y 16-235) and full/JPEG
  * (Y 0-255, historically the YUVJ420P format). Applying the limited-range
  * matrix to a full-range frame crushes blacks and clips highlights, so the
- * range is read from the frame rather than assumed — the assumption is what
+ * range is read from the frame rather than assumed -- the assumption is what
  * made the first version reject half its input outright.
  */
 static void yuv_to_rgba(const AVFrame *f, int full_range, int sub_x, int sub_y) {
@@ -88,7 +88,7 @@ static void yuv_to_rgba(const AVFrame *f, int full_range, int sub_x, int sub_y) 
 int h264_decode(const uint8_t *data, int size) {
     if (!ctx) return -1;
     // A packet must be padded: the bitstream reader over-reads by design, and
-    // an unpadded buffer makes it walk into whatever follows — which shows up
+    // an unpadded buffer makes it walk into whatever follows -- which shows up
     // as "decode_slice_header error / no frame" on perfectly valid input
     // rather than as a crash. This cost an hour; ffmpeg documents the
     // requirement, and it is the single most common way to misuse the API.
@@ -102,7 +102,7 @@ int h264_decode(const uint8_t *data, int size) {
     if (rc < 0) return rc;
     // Handle every planar YUV layout H.264 actually produces, rather than
     // assuming 4:2:0. Real encoders emit 4:2:2 and 4:4:4 too, and hardcoding
-    // the chroma shift silently mangles those — a check that only accepted
+    // the chroma shift silently mangles those -- a check that only accepted
     // 4:2:0 rejected a perfectly good 4:4:4 clip outright.
     //
     // The J-suffixed formats are the deprecated full-range spelling; both

@@ -16,7 +16,7 @@
 //   plus:      <variables>, ${var} substitution, <include>, variant/
 //              colorScheme/aspectRatio filtering
 //
-// Anything unrecognized is ignored rather than fatal — an unsupported theme
+// Anything unrecognized is ignored rather than fatal -- an unsupported theme
 // renders partially instead of blowing up.
 import { readFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -32,7 +32,7 @@ export const BUNDLED_THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
  *
  * Slate, matching ES-DE, which ships it as its desktop default: real
  * per-system artwork for ~150 systems in about 20 MB. It is INSTALLED ON FIRST
- * RUN rather than bundled — see the licence note on THEME_CATALOG below — so
+ * RUN rather than bundled -- see the licence note on THEME_CATALOG below -- so
  * the first thing a new user sees is a real library, not a wireframe.
  */
 export const DEFAULT_THEME = 'slate-es-de';
@@ -44,7 +44,7 @@ export const DEFAULT_THEME = 'slate-es-de';
  * would make romdeck a redistributor of other people's artwork, with the
  * attribution and share-alike obligations that follow, and art-book-next alone
  * is 220 MB against an app that is otherwise about one. Downloading on request
- * keeps romdeck a client — the same posture ES-DE takes — and keeps `npx
+ * keeps romdeck a client -- the same posture ES-DE takes -- and keeps `npx
  * romdeck` small.
  *
  * Each entry carries its licence and author so the UI can show them BEFORE
@@ -86,7 +86,7 @@ const parser = new XMLParser({
   attributeNamePrefix: '@_',
   parseTagValue: false,
   // `fontSize` is BOTH a conditional wrapper (<fontSize name="medium">) and a
-  // scalar element property (<fontSize>0.032</fontSize>) — ES-DE's own
+  // scalar element property (<fontSize>0.032</fontSize>) -- ES-DE's own
   // ThemeData.cpp lists it as FLOAT among element properties while also
   // accepting it as a variables wrapper. Forcing it to an array made every
   // element-level fontSize parse as ["0.032"], which Number() coerces to 0
@@ -124,7 +124,7 @@ const WRAPPER_TAGS = {
 
 // romdeck extension: ES-DE's format has no desktop/mouse view, so a theme can
 // declare <view name="desktop"> with a <colors> block (and a few layout hints)
-// to skin the windowed library. Themes that don't are still fully supported —
+// to skin the windowed library. Themes that don't are still fully supported --
 // their <variables> are mapped onto the same tokens by convention, so every
 // ES-DE theme changes the desktop look without being written for romdeck.
 const DESKTOP_TOKENS = [
@@ -293,7 +293,7 @@ export class ThemeStore {
       child.on('error', (err) => {
         rmSync(dest, { recursive: true, force: true });
         reject(new Error(err.code === 'ENOENT'
-          ? 'git is not installed — themes are fetched with git'
+          ? 'git is not installed -- themes are fetched with git'
           : err.message));
       });
 
@@ -310,7 +310,7 @@ export class ThemeStore {
           reject(new Error('downloaded, but it contains no theme.xml'));
           return;
         }
-        // Drop the git metadata — it is dead weight once cloned.
+        // Drop the git metadata -- it is dead weight once cloned.
         rmSync(path.join(dest, '.git'), { recursive: true, force: true });
         resolve({ name: entry.name, displayName: entry.displayName });
       });
@@ -368,7 +368,7 @@ export class ThemeStore {
     const theme = this.find(name);
     if (!theme) throw new Error(`no such theme: ${name}`);
     // ES-DE semantics: when the user hasn't chosen, the theme's FIRST declared
-    // variant/colorScheme is the default — not "match everything", which would
+    // variant/colorScheme is the default -- not "match everything", which would
     // let every conditional block apply at once.
     const ctx = {
       variant: variant ?? theme.variants[0]?.name ?? null,
@@ -472,7 +472,7 @@ export class ThemeStore {
   _walk(node, file, themeDir, ctx, variables, views, depth) {
     if (!node || typeof node !== 'object') return;
 
-    // <variables> — a theme declares several blocks (a base one plus
+    // <variables> -- a theme declares several blocks (a base one plus
     // variant/colorScheme/fontSize-specific overrides); later matches win.
     for (const block of node.variables ?? []) {
       if (!this._matches(block, ctx)) continue;
@@ -485,7 +485,7 @@ export class ThemeStore {
       }
     }
 
-    // <include> — relative to the INCLUDING file, at any depth.
+    // <include> -- relative to the INCLUDING file, at any depth.
     for (const inc of node.include ?? []) {
       const raw = typeof inc === 'string' ? inc : inc['#text'];
       if (!raw) continue;
@@ -505,7 +505,7 @@ export class ThemeStore {
       this._loadFile(resolved, themeDir, ctx, variables, views, depth + 1);
     }
 
-    // <view> — may name several views at once: <view name="system, gamelist">
+    // <view> -- may name several views at once: <view name="system, gamelist">
     for (const view of node.view ?? []) {
       if (!this._matches(view, ctx)) continue;
       const names = String(view['@_name'] ?? '').split(',').map((s) => s.trim());
@@ -575,7 +575,7 @@ export class ThemeStore {
       const list = String(spec).split(',').map((s) => s.trim());
       if (list.includes('all')) return true;
       // A node scoped to a specific variant/scheme applies only when that one
-      // is selected — with nothing selected it stays out.
+      // is selected -- with nothing selected it stays out.
       return selected ? list.includes(selected) : false;
     };
     return (
@@ -589,7 +589,7 @@ export class ThemeStore {
     const el = { type, name: name ?? raw['@_name'] ?? type, props: {} };
     for (const [key, value] of Object.entries(raw)) {
       if (key.startsWith('@_') || key === '#text') continue;
-      // <customBadgeIcon badge="favorite">path</customBadgeIcon> — several of
+      // <customBadgeIcon badge="favorite">path</customBadgeIcon> -- several of
       // these appear per element, distinguished only by their attribute, so
       // they'd collapse onto one another without being keyed by it.
       if (key === 'customBadgeIcon' || key === 'customControllerIcon') {
@@ -605,7 +605,7 @@ export class ThemeStore {
       const v = typeof value === 'object' ? value['#text'] ?? '' : value;
       // A prop written as ${variable} must stay a STRING until _substitute()
       // resolves it. Parsing it now turns "${systemViewLogoPos}" into [0, 0]
-      // and silently pins the element to the top-left corner — the variable is
+      // and silently pins the element to the top-left corner -- the variable is
       // then never seen again, because it is no longer a string to substitute.
       if (typeof v === 'string' && v.includes('${')) el.props[key] = v;
       else if (PAIR_PROPS.has(key)) el.props[key] = parsePair(v);
@@ -614,7 +614,7 @@ export class ThemeStore {
     }
     // Asset paths become protocol URLs the renderer can fetch. Paths holding
     // a ${variable} are left for _substitute(), which runs once every file has
-    // contributed its <variables> — rewriting them here would bake in a name
+    // contributed its <variables> -- rewriting them here would bake in a name
     // that hasn't been resolved yet.
     for (const key of Object.keys(el.props)) {
       // Badge/controller icons are keyed dynamically (customBadgeIcon:favorite)
@@ -641,9 +641,9 @@ export class ThemeStore {
       if (typeof v === 'string' && v.includes('${')) {
         const resolved = sub(v);
         // A path built from variables (./${artDirectory}/${system.theme}.webp)
-        // can only become a URL once its variables are known — which is why
+        // can only become a URL once its variables are known -- which is why
         // this runs after every file has contributed its <variables>.
-        // A path can still hold ${system.theme} — that one is per-system and
+        // A path can still hold ${system.theme} -- that one is per-system and
         // only the renderer knows it. Convert to a URL anyway so the renderer
         // just substitutes the system name into an already-valid URL, rather
         // than having to know where the theme lives on disk.

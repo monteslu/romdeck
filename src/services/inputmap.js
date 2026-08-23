@@ -1,7 +1,7 @@
 // Controller mapping store.
 //
 // Bindings are keyed by DEVICE (SDL GUID when available, else the pad's name)
-// so a controller keeps its layout across replugs and port shuffles — OS
+// so a controller keeps its layout across replugs and port shuffles -- OS
 // enumeration order is never trusted.
 //
 // Cascade, most specific wins:  global → platform:<short> → game:<gameKey>
@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-// libretro RETRO_DEVICE_ID_JOYPAD_* — the vocabulary the UI and player share
+// libretro RETRO_DEVICE_ID_JOYPAD_* -- the vocabulary the UI and player share
 export const BUTTONS = [
   { id: 0, name: 'B', hint: 'south' },
   { id: 1, name: 'Y', hint: 'west' },
@@ -44,7 +44,7 @@ export class MappingStore {
     }
     this.data.devices ??= {}; // deviceKey → { name, deadzone }
     this.data.layers ??= {}; // layerKey → { deviceKey → { bindings } }
-    this.data.portOrder ??= []; // deviceKey[] — player 1 first
+    this.data.portOrder ??= []; // deviceKey[] -- player 1 first
     this.data.chords ??= {}; // action → { type:'button', index } (future)
   }
 

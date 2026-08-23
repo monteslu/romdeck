@@ -1,8 +1,8 @@
 # Themes
 
 romdeck's themed view is an EmulationStation/ES-DE frontend reimplemented in
-browser tech. Themes are the **ES-DE XML format** — romdeck invents no format of
-its own — rendered as DOM + CSS instead of OpenGL.
+browser tech. Themes are the **ES-DE XML format** -- romdeck invents no format of
+its own -- rendered as DOM + CSS instead of OpenGL.
 
 Real community themes render. `modern-es-de` and `slate-es-de` are verified by
 a conformance harness on every change:
@@ -25,9 +25,9 @@ broken, and that carousel items actually show their system logos.
 
 ## Getting themes
 
-The theme picker (**Start → Themes**) downloads community themes on request —
-Art Book Next, Modern and Slate — showing each one's author, licence and size
-before anything is fetched. They are **downloaded rather than bundled**: every
+The theme picker (**Start → Themes**) downloads community themes on request
+(Art Book Next, Modern and Slate), showing each one's author, licence and
+size before anything is fetched. They are **downloaded rather than bundled**: every
 one is CC-BY-NC-SA, so shipping them would make romdeck a redistributor of
 other people's artwork, and Art Book Next alone is 220 MB against an app that
 is otherwise about one.
@@ -35,7 +35,7 @@ is otherwise about one.
 romdeck bundles **no theme at all**. On first run it installs **Slate**, the
 theme ES-DE ships as its own desktop default: about 20 MB of real per-system
 artwork, logos and console/controller illustrations for ~150 systems. That is
-a download on the user's behalf, not a redistribution — Slate is CC-BY-NC-SA
+a download on the user's behalf, not a redistribution -- Slate is CC-BY-NC-SA
 and its own CREDITS note the console logos belong to their respective owners,
 so it may not ship inside a GPL-3.0 npm package.
 
@@ -55,16 +55,16 @@ appears in the picker.
 ## Supported subset
 
 The engine renders a documented subset and **ignores anything it doesn't know**
-— an unsupported theme renders partially rather than failing.
+so an unsupported theme renders partially rather than failing.
 
-**Views:** `system`, `gamelist`, `desktop` (romdeck extension — see below).
+**Views:** `system`, `gamelist`, `desktop` (romdeck extension -- see below).
 A view block may name several at once: `<view name="system, gamelist">`.
 
 **Elements:** `image`, `text`, `carousel`, `textlist`, `video`, `rating`,
 `datetime`, `gamelistinfo`, `badges`, `helpsystem`, `clock`, `systemstatus`
 
-**Structure:** the conditional wrappers real themes are built from —
-`<variant>`, `<aspectRatio>`, `<fontSize>`, `<colorScheme>` — nesting to any
+**Structure:** the conditional wrappers real themes are built from --
+`<variant>`, `<aspectRatio>`, `<fontSize>`, `<colorScheme>` -- nesting to any
 depth, with `<include>` followed at every level. A wrapper's condition applies
 to everything inside it. Redeclaring an element name later **merges** onto the
 earlier declaration, which is how themes set shared properties once and then
@@ -173,7 +173,7 @@ names, all of which resolve: `gamecount`, `name`, `description`, `genre`,
 `developer`, `publisher`, `players`, `releasedate`, `rating`, `playcount`.
 `<defaultValue>` covers a game with nothing recorded.
 
-A `<text>` body may also carry a runtime binding — `${system.fullName}` and its
+A `<text>` body may also carry a runtime binding -- `${system.fullName}` and its
 collection-scoped siblings. These are **not** theme variables (those resolve in
 the main process); they are filled in at paint time. romdeck has no
 collections, so `${system.fullName.autoCollections}` and its custom equivalent
@@ -183,8 +183,8 @@ position and rely on the inapplicable ones staying blank.
 ## Fonts and images
 
 `<fontPath>` files are registered as `@font-face` and applied per element.
-Carousel logos come from `<staticImage>` with `${system.theme}` — the ES-DE
-shortname — substituted per system; a system the theme has no art for falls
+Carousel logos come from `<staticImage>` with `${system.theme}` -- the ES-DE
+shortname -- substituted per system; a system the theme has no art for falls
 back to its name rather than an empty slot. A 1×1 image tinted with `<color>`
 (the `box.png` idiom) is rendered as a solid fill.
 

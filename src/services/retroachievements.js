@@ -1,4 +1,4 @@
-// RetroAchievements — the #1 feature OpenEmu marked wontfix.
+// RetroAchievements -- the #1 feature OpenEmu marked wontfix.
 //
 // TWO SERVERS, and the distinction is the whole reason this file is shaped the
 // way it is:
@@ -17,7 +17,7 @@
 //
 // Credentials live in prefs under `ra: { username, apiKey, token }`. apiKey is
 // the Web API key from the settings page. token is the dorequest session
-// token, which romdeck obtains itself — from the API key where RA allows it,
+// token, which romdeck obtains itself -- from the API key where RA allows it,
 // or from a password the user types once and which is NEVER stored.
 const API = 'https://retroachievements.org/API/';
 const DOREQUEST = 'https://retroachievements.org/dorequest.php';
@@ -119,7 +119,7 @@ export class RetroAchievements {
    * RA's hash for a ROM, using rcheevos' own rules.
    *
    * The `rcheevos` npm package is hash-only, which made it useless for
-   * unlocking — but it is exactly right for THIS, and it is RA's own code, so
+   * unlocking -- but it is exactly right for THIS, and it is RA's own code, so
    * it agrees with the server about what a game is. That matters: romdeck's
    * hand-rolled SIMPLE_MD5_SYSTEMS list only ever covered the systems whose
    * rule is "MD5 of the raw ROM", and got everything else wrong.
@@ -135,7 +135,7 @@ export class RetroAchievements {
       return hasher.computeHash(Console[key], bytes.buffer.slice(
         bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
     } catch {
-      return null; // optional dep, unreadable ROM, unknown console — all "no hash"
+      return null; // optional dep, unreadable ROM, unknown console -- all "no hash"
     }
   }
 
@@ -173,7 +173,7 @@ export class RetroAchievements {
    * Measured against the live server, not assumed.
    *
    * RA also asks emulators to identify themselves so they can be supported and
-   *, if necessary, blocked — sending a real name is the honest thing anyway.
+   *, if necessary, blocked -- sending a real name is the honest thing anyway.
    */
   async _doRequest(params) {
     const res = await fetch(DOREQUEST, {
@@ -190,7 +190,7 @@ export class RetroAchievements {
     try { data = JSON.parse(text); } catch { /* fall through to the error below */ }
     if (!data) {
       throw new Error(res.status === 403
-        ? 'RetroAchievements rejected the request (403) — missing or blocked User-Agent'
+        ? 'RetroAchievements rejected the request (403) -- missing or blocked User-Agent'
         : `dorequest ${res.status}: ${text.slice(0, 120)}`);
     }
     if (data.Success === false) {
@@ -202,7 +202,7 @@ export class RetroAchievements {
   /**
    * Get a dorequest session token (r=login2).
    *
-   * Accepts EITHER an api token (`t`) or a password (`p`) — rcheevos'
+   * Accepts EITHER an api token (`t`) or a password (`p`) -- rcheevos'
    * rc_api_init_login_request sends whichever it has. romdeck tries the stored
    * Web API key as `t` first, because that costs the user nothing; if RA
    * rejects it, a password may be supplied and is used once and discarded.
@@ -235,13 +235,13 @@ export class RetroAchievements {
    * Submit an unlock (r=awardachievement).
    *
    * The `v` parameter is a signature RA verifies server-side. rcheevos builds
-   * it as md5(achievementId + username + hardcoreFlag) — concatenated as
+   * it as md5(achievementId + username + hardcoreFlag) -- concatenated as
    * DECIMAL STRINGS with no separator (rc_api_runtime.c). Getting this wrong
    * is rejected by the server, so it is derived from upstream rather than
    * invented.
    *
    * hardcore is 0. romdeck offers save states, rewind and fast-forward, and
-   * RA's hardcore rules forbid all three — claiming hardcore would be lying to
+   * RA's hardcore rules forbid all three -- claiming hardcore would be lying to
    * the server about how the achievement was earned.
    */
   async award(rom, achievementId, { hardcore = false, gameHash = null } = {}) {
@@ -280,12 +280,12 @@ export class RetroAchievements {
   }
 }
 
-/** How romdeck identifies itself to RA. Required — see _doRequest. */
+/** How romdeck identifies itself to RA. Required -- see _doRequest. */
 function userAgent() {
   return `romdeck/${process.env.npm_package_version ?? '0.2.0'}`;
 }
 
-/** md5 of an ASCII string, hex. Node's crypto — no dependency needed. */
+/** md5 of an ASCII string, hex. Node's crypto -- no dependency needed. */
 async function md5Hex(s) {
   const { createHash } = await import('node:crypto');
   return createHash('md5').update(s, 'utf8').digest('hex');

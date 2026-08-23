@@ -2,7 +2,7 @@
 //
 // Shaders are GPU multi-pass .glslp presets run by retroemu; the CPU
 // "video filter" family (none/sharp/scanlines/crt) is a DIFFERENT subsystem
-// and the two are mutually exclusive — see internal-romdeck/SHADERS.md §1.
+// and the two are mutually exclusive -- see internal-romdeck/SHADERS.md §1.
 // The UI presents them as one "Picture" question because to a player they are
 // one question, and this module is what makes that possible: it hands the
 // settings layer a single flat option list covering both.
@@ -27,21 +27,21 @@ export const CPU_FILTERS = [
  *
  * 619 presets in a gamepad menu is not a feature, it is a wall. These are the
  * ones worth surfacing first; everything else is still reachable under "All
- * shaders". Order is deliberate — cheapest and most legible first, because a
+ * shaders". Order is deliberate -- cheapest and most legible first, because a
  * handheld user scrolling this list is usually after "make it look like a CRT"
  * rather than a specific algorithm.
  */
 const FEATURED = [
-  ['crt/crt-geom-mini.glslp', 'CRT — Geom (light)'],
-  ['crt/crt-geom.glslp', 'CRT — Geom'],
-  ['crt/crt-hyllian.glslp', 'CRT — Hyllian'],
-  ['crt/crt-easymode.glslp', 'CRT — Easymode'],
-  ['crt/zfast_crt.glslp', 'CRT — zfast (handheld-friendly)'],
-  ['handheld/lcd-grid.glslp', 'Handheld — LCD grid'],
-  ['handheld/dot.glslp', 'Handheld — dot matrix'],
-  ['ntsc/ntsc-simple.glslp', 'NTSC — composite'],
-  ['xbr/xbr-lv2.glslp', 'Smoothing — xBR level 2'],
-  ['scalefx/scalefx.glslp', 'Smoothing — ScaleFX'],
+  ['crt/crt-geom-mini.glslp', 'CRT -- Geom (light)'],
+  ['crt/crt-geom.glslp', 'CRT -- Geom'],
+  ['crt/crt-hyllian.glslp', 'CRT -- Hyllian'],
+  ['crt/crt-easymode.glslp', 'CRT -- Easymode'],
+  ['crt/zfast_crt.glslp', 'CRT -- zfast (handheld-friendly)'],
+  ['handheld/lcd-grid.glslp', 'Handheld -- LCD grid'],
+  ['handheld/dot.glslp', 'Handheld -- dot matrix'],
+  ['ntsc/ntsc-simple.glslp', 'NTSC -- composite'],
+  ['xbr/xbr-lv2.glslp', 'Smoothing -- xBR level 2'],
+  ['scalefx/scalefx.glslp', 'Smoothing -- ScaleFX'],
 ];
 
 export class ShaderStore {
@@ -68,7 +68,7 @@ export class ShaderStore {
    * Every .glslp under the shader dirs, as { value, label, kind }.
    *
    * `value` is the path RELATIVE to its root, so a preset chosen on one
-   * machine still resolves on another with a different userData location —
+   * machine still resolves on another with a different userData location --
    * absolute paths in a settings file do not survive a profile move.
    */
   list() {
@@ -105,7 +105,7 @@ export class ShaderStore {
 
   /**
    * Resolve a stored value to an absolute path retroemu can open.
-   * Returns null when the preset is gone — a profile can outlive its files.
+   * Returns null when the preset is gone -- a profile can outlive its files.
    */
   resolve(rel) {
     if (!rel) return null;

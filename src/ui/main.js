@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// romdeck — entry point.
+// romdeck -- entry point.
 //
 // Replaces Electron's main.js. Same self-check flags, same acceptance tests,
 // no browser. The render checks now work with NO DISPLAY at all, because a
@@ -46,7 +46,7 @@ const check = CHECKS.find((c) => flag(c));
 
 if (flag('help') || flag('h')) {
   console.log(`
-romdeck — a retro game library
+romdeck -- a retro game library
 
   romdeck [romsDir]              run
   romdeck --fullscreen [romsDir] run fullscreen
@@ -84,7 +84,7 @@ if (check) {
   // test should be able to do that.
   //
   // Seeded by COPYING the real profile, so checks still exercise realistic
-  // state — installed themes, scraped media, existing states — rather than an
+  // state -- installed themes, scraped media, existing states -- rather than an
   // empty directory that hides every state-dependent bug.
   //
   // --live-profile opts out, for deliberately testing the real one.
@@ -128,7 +128,7 @@ if (check) {
   }
   runChecks(check, { romsDir, argAfter, flag }).then(
     (code) => process.exit(code),
-    (err) => { console.error(`${check.toUpperCase()} FAIL — ${err.stack ?? err.message}`); process.exit(1); },
+    (err) => { console.error(`${check.toUpperCase()} FAIL -- ${err.stack ?? err.message}`); process.exit(1); },
   );
 } else {
   const app = new App({ romsDir, headless: flag('headless') });

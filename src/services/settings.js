@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-// The settings romdeck understands, with plain-language labels — no jargon
+// The settings romdeck understands, with plain-language labels -- no jargon
 // like "content" or "RetroPad".
 export const SETTINGS = [
   {
@@ -125,7 +125,7 @@ export class SettingsStore {
     return out;
   }
 
-  /** Every setting resolved for a context — what the Settings UI renders. */
+  /** Every setting resolved for a context -- what the Settings UI renders. */
   resolveAll(ctx = {}) {
     return SETTINGS.map((s) => ({ ...s, ...this.resolve(s.key, ctx) }));
   }
@@ -152,7 +152,7 @@ export class SettingsStore {
     const from = this.data.layers[`game:${fromKey}`];
     if (!from || !Object.keys(from).length) return false;
     const to = this.data.layers[`game:${toKey}`] ?? {};
-    // Values already set under the new key win — they're the more recent
+    // Values already set under the new key win -- they're the more recent
     // expression of intent.
     this.data.layers[`game:${toKey}`] = { ...from, ...to };
     delete this.data.layers[`game:${fromKey}`];

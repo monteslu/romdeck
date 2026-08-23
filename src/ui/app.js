@@ -1,7 +1,7 @@
 // romdeck's frontend, without a browser.
 //
 // One plain Node process: SDL window, skia stage, services called directly.
-// Games still run in their own crash-isolated player processes — that was
+// Games still run in their own crash-isolated player processes -- that was
 // never the browser's doing and it does not change.
 //
 // Repaint is EVENT-DRIVEN, not a render loop. The UI is motionless almost
@@ -72,7 +72,7 @@ export class App {
       variant: prefs.variant,
       colorScheme: prefs.colorScheme,
     });
-    // A missing theme is no longer fatal — with nothing bundled it is the
+    // A missing theme is no longer fatal -- with nothing bundled it is the
     // expected state of a first run that could not reach the network. Record
     // it and start anyway, so the user gets a window that explains itself.
     if (res.error) this.themeError = this.themeError ?? res.error;
@@ -87,7 +87,7 @@ export class App {
 
     // FIRST RUN: no ROMs folder has ever been chosen, so there is no library
     // and every themed element resolves to nothing. Without this the app
-    // opens on a black screen with a help bar — no library, no error, no
+    // opens on a black screen with a help bar -- no library, no error, no
     // instruction, and no way to guess that the fix is behind Start › Choose
     // ROMs folder. Ask for the folder instead of waiting to be asked.
     //
@@ -249,7 +249,7 @@ export class App {
   dispatch(action) {
     if (action === 'fullscreen') { this.toggleFullscreen(); return true; }
 
-    // Overlays float above every view and take input FIRST — otherwise `back`
+    // Overlays float above every view and take input FIRST -- otherwise `back`
     // inside a menu would navigate the view behind it.
     if (this.keyboard.active || this.browser.active || this.menus.open) {
       const handled = this._navFocus(action);
@@ -476,7 +476,7 @@ export class App {
    *
    * Snaps are decoration: they animate only while a theme asks for one and a
    * game has one, and they stop the moment the selection moves. That keeps
-   * the event-driven repaint policy intact — the only thing in the app that
+   * the event-driven repaint policy intact -- the only thing in the app that
    * schedules continuous frames, and only while it is visible.
    */
   async updateSnap() {
@@ -520,14 +520,14 @@ export class App {
    * Release everything this App holds, WITHOUT exiting the process.
    *
    * Every long-lived handle an App opens is a GC root: a live setInterval keeps
-   * its closure — and therefore the whole App, its stage and the stage's
-   * decoded-image cache — reachable forever. That is why headless harnesses
+   * its closure -- and therefore the whole App, its stage and the stage's
+   * decoded-image cache -- reachable forever. That is why headless harnesses
    * that build one App per iteration (the theme sweep builds 64) used to climb
    * from 480 MB to 7.8 GB in 45 seconds and eventually get OOM-killed: they
    * called svc.shutdown(), which only stops child sessions, so every previous
    * App stayed pinned by its own timers.
    *
-   * Prefer withApp() over calling this by hand — it cannot be forgotten on an
+   * Prefer withApp() over calling this by hand -- it cannot be forgotten on an
    * early return or a throw. This is idempotent, so the two compose safely.
    */
   dispose() {
@@ -573,8 +573,8 @@ installMenus(App);
 /**
  * Run `fn` with a started App and dispose it on EVERY exit path.
  *
- * An App owns OS resources — interval timers, a gamepad poller, an SDL window,
- * a GL context, child player processes — so "who releases this, and when?"
+ * An App owns OS resources -- interval timers, a gamepad poller, an SDL window,
+ * a GL context, child player processes -- so "who releases this, and when?"
  * needs an answer that does not depend on remembering. Fifteen headless call
  * sites independently reached for svc.shutdown(), which only stops child
  * sessions; the result was a harness that grew to 7.8 GB and was OOM-killed.

@@ -1,4 +1,4 @@
-// Homebrew feed — legal games you can play immediately, and romdeck's
+// Homebrew feed -- legal games you can play immediately, and romdeck's
 // three-cart-type advantage in one shelf:
 //
 //   rom      a real console ROM run by a libretro core
@@ -77,7 +77,7 @@ export class HomebrewFeed {
 
     // A remote entry MUST declare its hash. The manifest can be served from
     // anywhere, upstream hosts change hands, and a URL that pointed at a game
-    // once can point at anything later — without this, installing is a
+    // once can point at anything later -- without this, installing is a
     // remote-file-drop into the user's library. Refusing is the whole point,
     // so an entry that forgot the hash does not get a pass.
     //
@@ -85,7 +85,7 @@ export class HomebrewFeed {
     // field that looks like a guarantee and enforces nothing is worse than no
     // field: see docs/Feed.md.)
     if (!entry.sha256) {
-      throw new Error('entry has no sha256 — refusing to install an unverified download');
+      throw new Error('entry has no sha256 -- refusing to install an unverified download');
     }
 
     const res = await fetch(entry.url, { signal: AbortSignal.timeout(60000) });
@@ -102,7 +102,7 @@ export class HomebrewFeed {
     // sha256 covers the .zip and extraction happens after it passes.
     const got = createHash('sha256').update(buf).digest('hex');
     if (got !== String(entry.sha256).toLowerCase()) {
-      throw new Error(`checksum mismatch — expected ${entry.sha256}, got ${got}`);
+      throw new Error(`checksum mismatch -- expected ${entry.sha256}, got ${got}`);
     }
 
     // Several homebrew releases ship the ROM inside a zip next to a LICENSE

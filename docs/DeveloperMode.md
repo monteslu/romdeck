@@ -24,7 +24,7 @@ ticking in RAM is visible at a glance.
 
 ## Regions
 
-Names and ids follow libretro. Only regions the core provides are listed —
+Names and ids follow libretro. Only regions the core provides are listed --
 `memoryInfo` filters out anything with a null pointer or zero size, so the
 picker never offers something that would fail.
 
@@ -42,7 +42,7 @@ The classic workflow, now without leaving the app:
 1. Start the game and get to a screen with the value you care about (lives,
    rings, health).
 2. Open developer mode, pick `system_ram`.
-3. Press **Find changed bytes** while *not* doing anything — note what churns
+3. Press **Find changed bytes** while *not* doing anything -- note what churns
    on its own (timers, RNG, animation counters).
 4. Now cause the value to change (lose a life), and scan again.
 5. Cross-reference: the address that changed *only* on step 4 is your
@@ -54,7 +54,7 @@ The classic workflow, now without leaving the app:
 
 Developer mode is three control-channel methods
 (`memoryInfo`, `readMemory`, `writeMemory`) implemented on `LibretroHost` over
-`retro_get_memory_data` / `retro_get_memory_size` — the same libretro surface
+`retro_get_memory_data` / `retro_get_memory_size` -- the same libretro surface
 that cheats and RetroAchievements ride on.
 
 The renderer can't call arbitrary session methods: main filters developer
@@ -63,7 +63,7 @@ requests through a `DEV_METHODS` allowlist.
 ## Caveats
 
 - **Writes are live and unvalidated.** Poking arbitrary bytes into a running
-  game can crash it — which costs one window, since every game is its own
+  game can crash it -- which costs one window, since every game is its own
   process, but will lose unsaved progress. Save state first.
 - Reads are point-in-time; with `live` off you're looking at a snapshot.
 - Cores expose different regions. Some expose none, in which case the panel

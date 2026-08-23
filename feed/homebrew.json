@@ -1,7 +1,7 @@
 {
   "version": 2,
   "updated": "2026-07-27",
-  "note": "Freely distributable homebrew. Entries may be console ROMs, wasmcart (.wasc) cartridges, or sandboxed JS games — romdeck plays all three from one library.",
+  "note": "Freely distributable homebrew. Entries may be console ROMs, wasmcart (.wasc) cartridges, or sandboxed JS games -- romdeck plays all three from one library.",
   "entries": [
     {
       "id": "starfall-c64",
@@ -27,7 +27,7 @@
       "localPath": "feed/files/snake.wasc",
       "author": "wasmcart examples",
       "license": "mit",
-      "description": "The classic, as a native WASM cartridge — any language, compiled once, runs at native speed.",
+      "description": "The classic, as a native WASM cartridge -- any language, compiled once, runs at native speed.",
       "size": 4223,
       "source": "https://github.com/wasmcart/wasmcart"
     },
@@ -41,7 +41,7 @@
       "localPath": "feed/files/simple-jsgame-starter.jsgame",
       "author": "monteslu",
       "license": "mit",
-      "description": "A sandboxed JavaScript game running in the same library as your ROMs — canvas, WebAudio and gamepad, no browser.",
+      "description": "A sandboxed JavaScript game running in the same library as your ROMs -- canvas, WebAudio and gamepad, no browser.",
       "size": 13951,
       "source": "https://github.com/monteslu/jsgame-libretro"
     },
@@ -58,7 +58,7 @@
       "author": "Maddy Thorson & Noel Berry",
       "license": "freeware",
       "source": "https://www.lexaloffle.com/bbs/?tid=2145",
-      "description": "The original PICO-8 Celeste — the prototype that became the full game."
+      "description": "The original PICO-8 Celeste -- the prototype that became the full game."
     },
     {
       "id": "nes-stallar",

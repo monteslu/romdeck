@@ -6,7 +6,7 @@
 //
 // Degradation is the important property. If the WASM decoder has not been
 // built, or a file is a container we do not handle, or a frame fails to
-// decode, the element falls back to the game's static image — which is what
+// decode, the element falls back to the game's static image -- which is what
 // ES-DE does before a snap starts anyway. A missing snap must never be a
 // crash or a black hole in the layout.
 import { readFileSync, existsSync } from 'node:fs';
@@ -22,7 +22,7 @@ let decoderState = 'unknown'; // unknown | ready | unavailable
 /**
  * Load the WASM decoder once.
  *
- * Returns null when it has not been built — callers treat that as "no snaps",
+ * Returns null when it has not been built -- callers treat that as "no snaps",
  * not as an error, because the build is optional
  * (scripts/build-video-decoder.sh).
  */
@@ -117,7 +117,7 @@ export class SnapPlayer {
     }
     if (samples[this.index].pts > elapsed) return false;
 
-    // Catch up by decoding (not skipping) — H.264 frames depend on their
+    // Catch up by decoding (not skipping) -- H.264 frames depend on their
     // predecessors, so dropping input produces garbage rather than a jump.
     let produced = false;
     let guard = 0;

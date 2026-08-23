@@ -11,11 +11,12 @@
 //   unresolved ${...} left in visible text, i.e. a binding we do not support
 //
 // Usage: node scripts/theme-render-sweep.mjs [themesDir]
+import { tmpdir } from 'node:os';
 import { readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { withApp } from '../src/ui/app.js';
 
-const dir = process.argv[2] ?? '/tmp/all-themes';
+const dir = process.argv[2] ?? `${tmpdir()}/all-themes`;
 const romsDir = process.argv[3] ?? path.join(process.env.HOME, 'code/cliemu/roms-real');
 
 function stats(canvas) {
@@ -46,7 +47,7 @@ console.log('-'.repeat(w + 56));
 const fmt = (s) => `${String(s.colors).padStart(4)}c ${((1 - s.dominance) * 100).toFixed(1).padStart(5)}%`;
 
 for (const name of names) {
-  // withApp disposes on every path, including the throw this catch handles —
+  // withApp disposes on every path, including the throw this catch handles --
   // a leak here is what took the machine down, since the loop builds 64 Apps.
   try {
     await withApp({ romsDir, headless: true }, async (app) => {
@@ -93,7 +94,7 @@ for (const name of names) {
 
 console.log('');
 if (failures) {
-  console.log(`RENDER SWEEP — ${failures} of ${rows.length} themes have problems`);
+  console.log(`RENDER SWEEP -- ${failures} of ${rows.length} themes have problems`);
   process.exit(1);
 }
-console.log(`RENDER SWEEP OK — ${rows.length} themes render in both views`);
+console.log(`RENDER SWEEP OK -- ${rows.length} themes render in both views`);

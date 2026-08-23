@@ -6,7 +6,7 @@
 // is wasteful, subsetting needs a toolchain romdeck doesn't have, and adding
 // fontkit/opentype.js to the app's dependencies to do work that happens ONCE
 // at build time is the wrong trade. This reads glyf/loca/cmap directly, is
-// used only by scripts/make-shelf-logos.mjs, and ships nothing at runtime —
+// used only by scripts/make-shelf-logos.mjs, and ships nothing at runtime --
 // the logos come out as plain SVG paths.
 //
 // Scope is deliberately narrow: simple (non-composite) glyphs, quadratic

@@ -1,13 +1,16 @@
 # romdeck
 
-A beautiful, zero-config, cross-platform retro game library. Point it at a
-folder of ROMs and get box art, save states, controller remapping, cheats,
-themes and a 10-foot mode — with **every game running in its own
-crash-isolated window**.
+A zero-config, cross-platform retro game library. Point it at a folder of
+ROMs and get box art, save states, controller remapping, cheats, themes and
+a 10-foot mode, with **every game running in its own crash-isolated
+window**.
 
 ```bash
 npx romdeck ~/ROMs
 ```
+
+Optional ROM-specific widescreen WASM enhancements are described in
+[docs/ACTIVE_BEZELS.md](docs/ACTIVE_BEZELS.md).
 
 No installer, no bundled runtime, no browser. romdeck is a Node process that
 opens an SDL window and draws its UI with skia. Native code arrives as
@@ -22,7 +25,7 @@ frontend) · **romdeck** (desktop frontend).
 
 ## Why it exists
 
-OpenEmu had the best library UX in emulation and is now effectively dead —
+OpenEmu had the best library UX in emulation and is now effectively dead:
 last release Dec 2023, Intel-only under a Rosetta 2 that Apple is sunsetting,
 RetroAchievements marked *wontfix*, netplay never shipped. Its structural
 flaw was hand-maintained forks of every emulator, with core updates gated on
@@ -41,11 +44,11 @@ cross-platform, on cores that update independently of the app.
 ## What it does
 
 ### Library
-- **Drop in ROMs** — recursive scan, ~25 systems, zip-aware. System is
+- **Drop in ROMs**: recursive scan, ~25 systems, zip-aware. System is
   derived from the containing folder (`roms/nes/…`, matching ES-DE,
   RetroDECK and Batocera) with the file extension as a fallback, so zipped
   collections classify correctly.
-- **CRC identification** — header-stripped (iNES/A78/LNX) CRC32 matched
+- **CRC identification**: header-stripped (iNES/A78/LNX) CRC32 matched
   against [libretro-database](https://github.com/libretro/libretro-database)
   DATs (No-Intro / Redump lineage, CC-BY-SA). Verified games get a ✓ badge
   and their canonical name. This rescues badly-named files:
@@ -53,11 +56,11 @@ cross-platform, on cores that update independently of the app.
 - **Box art** from [libretro-thumbnails](https://thumbnails.libretro.com),
   matched by the verified DAT name first. Stored in the **ES-DE media
   layout**, so external scrapers (Skraper, Skyscraper) interoperate.
-- **Metadata in `gamelist.xml`** — romdeck *reads* Batocera/RetroPie
+- **Metadata in `gamelist.xml`**: romdeck *reads* Batocera/RetroPie
   gamelists sitting next to your ROMs and *writes* its own ES-DE-dialect
   layer in userData. **Your files are never modified.**
 - Search, ★ favorites, play counts, last-played.
-- **BIOS checker** — 18 known firmware files with documented MD5s; reports
+- **BIOS checker**: 18 known firmware files with documented MD5s; reports
   present / wrong-hash / missing, and which are actually required.
 
 ### Playing
@@ -66,15 +69,15 @@ cross-platform, on cores that update independently of the app.
 - **Save states** as self-describing bundles (`info.json` + `screenshot.png`
   + `state.bin`), with thumbnails, plus **auto-save on exit and resume on
   next launch**.
-- Pause, fast-forward, **rewind**, screenshots, fullscreen — from the
+- Pause, fast-forward, **rewind**, screenshots, fullscreen, from the
   library panel or the in-game overlay (Start+Select / ESC).
-- **Cheats** — Game Genie, GameShark/PAR, or raw `address:value`. The core
+- **Cheats**: Game Genie, GameShark/PAR, or raw `address:value`. The core
   decodes them (`retro_cheat_set`), so any format it supports works;
   RetroArch `.cht` files import directly.
-- **CRT video filters** — none / sharp / scanlines / crt.
+- **CRT video filters**: none / sharp / scanlines / crt.
 
 ### Controllers
-- SDL gamepads via [gamepad-node](https://github.com/monteslu/gamepad-node) —
+- SDL gamepads via [gamepad-node](https://github.com/monteslu/gamepad-node):
   hotplug, 2100+ mappings, no browser Gamepad API limitations.
 - **Visual remapping** with a live pad view: click a button, press yours.
   Bindings key on **device GUID**, so a controller keeps its layout across
@@ -83,12 +86,12 @@ cross-platform, on cores that update independently of the app.
 - Unplugging a pad **pauses every running game** (the tripped-cable case).
 
 ### Themes & the ES view
-- **EmulationStation / ES-DE XML themes**, reimplemented in browser tech —
+- **EmulationStation / ES-DE XML themes**, reimplemented in browser tech,
   including real community themes like Art Book Next, Modern and Slate,
   verified by a conformance harness on every change.
 - **Themes are downloaded, not bundled.** On first run romdeck installs
-  **Slate** (~20 MB) — the theme ES-DE ships as its desktop default, with real
-  artwork, logos and controller diagrams for ~150 systems — so the first
+  **Slate** (~20 MB), the theme ES-DE ships as its desktop default, with real
+  artwork, logos and controller diagrams for ~150 systems, so the first
   screen is a game library, not a wireframe. More are one click away in the
   picker, which shows each one's author, licence and size first. Nothing is
   shipped inside the package: community themes are CC-BY-NC-SA and up to
@@ -100,22 +103,22 @@ cross-platform, on cores that update independently of the app.
   ES-DE theme restyles the desktop with no romdeck-specific markup.
 - See [docs/Themes.md](docs/Themes.md).
 
-### Remote play — "a very long couch"
-- Host a game, get a share code, a friend joins as **player 2** — they need
+### Remote play: "a very long couch"
+- Host a game, get a share code, a friend joins as **player 2**. They need
   no ROM and no core, because your machine is doing the emulating.
 - P2P over WebRTC (hsync signals, then gets out of the way): changed-rows
   video, ADPCM audio (~6 KB/s), 7-byte input packets at 60 Hz.
-- Spectator mode. The emulator never learns it's networked — a remote guest
+- Spectator mode. The emulator never learns it's networked; a remote guest
   is just another controller.
 - See [docs/RemotePlay.md](docs/RemotePlay.md).
 
 ### Extras
-- **Developer mode** — a live hex viewer over the running game, with
+- **Developer mode**: a live hex viewer over the running game, with
   changed-byte highlighting and a "find changed bytes" scan. No other
   frontend ships a debugger pointed at the game you're playing.
-- **Homebrew feed** — freely distributable games, one click to install,
+- **Homebrew feed**: freely distributable games, one click to install,
   covering all three cart types romdeck plays (ROM / wasmcart / jsgame).
-- **Core updates** — installed `romdev-core-*` versions vs npm, because
+- **Core updates**: installed `romdev-core-*` versions vs npm, because
   cores version independently of the app.
 - **RetroAchievements** (read-only: login, hash lookup, achievement list).
 
@@ -131,7 +134,7 @@ npm start -- ~/ROMs
 ```
 
 Requires Node ≥ 22. Cores, toolchains and the emulator all arrive as npm
-packages — **nothing is installed system-wide**.
+packages; **nothing is installed system-wide**.
 
 The h264 decoder used for video snaps is built from ffmpeg to WASM and is
 optional; without it, snaps fall back to the static image:
@@ -143,21 +146,21 @@ npm run build:video
 ## Controls
 
 romdeck is gamepad-first. **Unplug the keyboard and the mouse and every
-feature is still reachable** — that is an acceptance test (`--padonly`), not an
-aspiration.
+feature is still reachable**. That is an acceptance test (`--padonly`), not
+an aspiration.
 
 | Input | Action |
 |---|---|
 | Arrows / d-pad / left stick | Move the focus ring |
 | Enter / Ⓐ | Select |
 | Backspace / Ⓑ / ESC | Back |
-| **Start** / Tab | Main menu — settings, controllers, themes, everything |
-| **Select** or Ⓧ / Space | Game menu — states, cheats, favorite, invite |
+| **Start** / Tab | Main menu: settings, controllers, themes, everything |
+| **Select** or Ⓧ / Space | Game menu: states, cheats, favorite, invite |
 | `[` `]` / LB RB | Switch system |
 | **F11** | Fullscreen (a toggle, not a mode) |
 | Start+Select or ESC *(in game)* | Overlay menu |
 
-Text entry — search, cheat codes, share codes — uses an on-screen keyboard, so
+Text entry (search, cheat codes, share codes) uses an on-screen keyboard, so
 a pad is enough for those too. Dropdowns and sliders adjust with left/right
 rather than trapping the ring.
 
@@ -175,7 +178,7 @@ rather than trapping the ring.
 ├── saves/                         SRAM / battery saves, shared by all sessions
 ├── dats/*.json                    compiled identification indexes
 ├── bios/                          firmware (also reads <romsDir>/bios)
-├── themes/<name>/                 user themes (bundled ones ship with the app)
+├── themes/<name>/                 downloaded themes (nothing is bundled)
 └── screenshots/
 ```
 
@@ -195,7 +198,7 @@ outside this repo in `internal-romdeck/` (not shipped with the app).
 
 ## Self-checks
 
-The app can verify itself headlessly — used in development instead of
+The app can verify itself headlessly, used in development instead of
 clicking around:
 
 ```bash
@@ -221,7 +224,7 @@ they run the same in CI as on a desk.
 romdeck is **GPL-3.0**. The app is free and will stay free: several bundled
 cores (Snes9x, Genesis Plus GX, PicoDrive) are non-commercially licensed, and
 ScreenScraper's API terms require a free application. Data and assets keep
-their own licenses — libretro-database is CC-BY-SA, SDL_GameControllerDB is
+their own licenses: libretro-database is CC-BY-SA, SDL_GameControllerDB is
 zlib, the bundled UI fonts are DejaVu Sans (Bitstream Vera) and GNU FreeSans
 (GPL-3.0-or-later with the font exception, attributed in
 [assets/fonts/CREDITS.md](assets/fonts/CREDITS.md)), and community

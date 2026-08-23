@@ -7,7 +7,7 @@
 // Deliberately NOT a general unzipper. It extracts a single named member for
 // the homebrew feed, because several homebrew releases ship the ROM inside a
 // zip alongside a LICENSE and a README. No directory traversal, no writing to
-// disk, no multi-file extraction — it returns a Buffer to the caller.
+// disk, no multi-file extraction -- it returns a Buffer to the caller.
 import { inflateRawSync } from 'node:zlib';
 
 const EOCD_SIG = 0x06054b50;
@@ -81,7 +81,7 @@ export function readZipEntry(buf, name, accept = () => true) {
     entry = matches[0];
   }
 
-  // Local header again for its OWN name/extra lengths — they can differ from
+  // Local header again for its OWN name/extra lengths -- they can differ from
   // the central directory's, and the data starts right after them.
   const lho = entry.offset;
   if (buf.readUInt32LE(lho) !== LFH_SIG) throw new Error(`bad local header for ${entry.name}`);

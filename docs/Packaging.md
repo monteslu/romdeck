@@ -16,7 +16,7 @@ way.
 
 | Piece | Size | How it gets there |
 |---|---|---|
-| romdeck itself | 2.4 MB tarball, 5.0 MB unpacked | 92 files: JS, four bundled fonts, the default themes |
+| romdeck itself | 2.9 MB tarball, 6.4 MB unpacked | 67 files: JS, four bundled fonts. Themes are downloaded on first run, never bundled |
 | dependency tree | ~50 MB installed | npm, current platform only |
 | retroemu + cores | ~185 MB installed | npm, WASM, platform-independent |
 
@@ -91,13 +91,13 @@ Both historical blockers are cleared.
 
 1. `dependencies.retroemu` was `file:../retroemu`, which cannot ship, because
    the published `0.4.8` predated the `--control` session contract.
-   **`retroemu@0.5.0` fixed that** — the dependency is a real semver range and
+   **`retroemu@0.5.0` fixed that** -- the dependency is a real semver range and
    every session flag romdeck passes (`--control`, `--input-map`, `--cheats`,
    `--ff-speed`, `--no-rewind`) is in the published player.
 2. `0.5.0` could not load a zipped ROM larger than roughly 80 KB: yauzl's
    inflate pipeline stalled part-way through the entry on Node 24 and the
    promise never settled, so the player exited 13 and the session never became
-   ready — a launch that simply went quiet. **`retroemu@0.5.1` fixed that** and
+   ready -- a launch that simply went quiet. **`retroemu@0.5.1` fixed that** and
    is published; romdeck requires `^0.5.1`.
 
 There is nothing left blocking a publish.
@@ -129,7 +129,7 @@ they are easy to end up without. When they are missing:
 
 | Missing | Breaks |
 |---|---|
-| `hsync` + `node-datachannel` | **Remote play** — signalling and the WebRTC transport |
+| `hsync` + `node-datachannel` | **Remote play** -- signalling and the WebRTC transport |
 | `romdev-core-fake08` | **PICO-8** carts (`.p8`, `.p8.png`) |
 
 Both failures are silent until someone tries the feature. Fix it in retroemu:

@@ -36,7 +36,7 @@ export class CheatStore {
    * Carry a game's cheats from an old key to a new one.
    *
    * Cheats key on the same gameKey as save states, so when identification
-   * upgrades a game to its CRC identity its cheats have to follow — otherwise
+   * upgrades a game to its CRC identity its cheats have to follow -- otherwise
    * they silently detach from the game they were written for.
    */
   migrate(fromKey, toKey) {

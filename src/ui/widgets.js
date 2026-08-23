@@ -1,6 +1,6 @@
 // Canvas widgets: the surface FocusManager consumes.
 //
-// A widget is `{ rect(), visible(), draw(ctx), activate() }` — deliberately
+// A widget is `{ rect(), visible(), draw(ctx), activate() }` -- deliberately
 // the exact shape the DOM focusables had, so the focus ring, its stack, the
 // geometric navigation and the adjustable-control semantics all port from
 // focus.js without being rewritten. The ring was the risky part of M7; it is
@@ -53,7 +53,7 @@ export class Widget {
 /**
  * A value control: a select cycling options, or a boolean toggle.
  *
- * left/right adjust it in place rather than moving the ring off it — the
+ * left/right adjust it in place rather than moving the ring off it -- the
  * behaviour console UIs use, and the only way a d-pad can set one. A native
  * dropdown could not be driven by a pad at all, which is why the DOM version
  * needed the same special case.
@@ -116,7 +116,7 @@ export class Panel {
     // Keep a margin of rows visible either side of the cursor instead of
     // scrolling only once it hits the very edge. Clamping alone meant the
     // list sat still, then jumped a whole row exactly at the boundary, with
-    // the cursor pinned to the last line and no sight of what came next —
+    // the cursor pinned to the last line and no sight of what came next --
     // which is what makes long lists feel like they scroll badly. With a
     // margin the list starts moving before the cursor is trapped, and you can
     // always see where you are going.

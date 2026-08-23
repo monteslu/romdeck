@@ -1,11 +1,11 @@
-// FocusManager — one focus ring, ported from the DOM renderer.
+// FocusManager -- one focus ring, ported from the DOM renderer.
 //
 // The logic is M7's, essentially unchanged: named groups on a stack, so a
 // dialog pushes and `back` pops with focus restored; geometric navigation so a
 // grid and a toolbar row each behave the way they look; adjustable controls
 // that take left/right instead of moving the ring off themselves.
 //
-// It ports this cleanly because it never really touched the DOM — it needed a
+// It ports this cleanly because it never really touched the DOM -- it needed a
 // bounding box, a visibility test and a way to paint a ring. Canvas widgets
 // provide the first two and the third is a stroke.
 class FocusGroup {
@@ -30,7 +30,7 @@ class FocusGroup {
    *
    * `visible()` means "on screen right now", which for a scrolling panel is
    * only the current page. The ring must still be able to REACH a row that is
-   * scrolled off — otherwise a menu longer than its panel silently loses its
+   * scrolled off -- otherwise a menu longer than its panel silently loses its
    * last entries, which is how Quit and Fullscreen became unreachable. So
    * scrollable groups navigate over every item and let the panel follow the
    * focus, rather than the focus being limited to the panel.
@@ -107,7 +107,7 @@ export class FocusManager {
     g.index = Math.max(0, Math.min(i, live.length - 1));
   }
 
-  /** Focus a widget by predicate — how the checks aim the ring. */
+  /** Focus a widget by predicate -- how the checks aim the ring. */
   focusWhere(pred) {
     const g = this.active();
     if (!g) return false;
@@ -220,7 +220,7 @@ export class FocusManager {
     if (w) this.stats.visited.add(`${this.activeName()}:${w.label || w.kind}`);
   }
 
-  /** Everything reachable right now — what --padonly asserts against. */
+  /** Everything reachable right now -- what --padonly asserts against. */
   inventory() {
     return (this.active()?.live() ?? []).map((w) => w.label || w.kind);
   }

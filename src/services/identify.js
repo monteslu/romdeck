@@ -1,6 +1,6 @@
 // ROM identification: header-strip → CRC32 → DAT lookup.
 //
-// DATs come from libretro-database (CC-BY-SA-4.0 — the clean redistribution
+// DATs come from libretro-database (CC-BY-SA-4.0 -- the clean redistribution
 // of No-Intro/Redump/TOSEC), fetched per system on demand from
 //   https://raw.githubusercontent.com/libretro/libretro-database/master/dat/<System>.dat
 // and compiled into a JSON index { crc32hex: { name, size } } cached in
@@ -95,7 +95,7 @@ function parseLogiqxDat(text) {
  *
  * Deliberately a scan rather than an ISO9660 directory walk: SYSTEM.CNF lives
  * in the first few MB, the line is unmistakable, and this stays correct for
- * raw 2352-byte sectors, 2048-byte sectors and .bin/.iso alike — where a
+ * raw 2352-byte sectors, 2048-byte sectors and .bin/.iso alike -- where a
  * proper filesystem parse would need a different path for each.
  */
 function readDiscSerial(file) {
@@ -194,7 +194,7 @@ export class Identifier {
   /**
    * CRCs of a ROM: full file AND container-header-stripped (identical when
    * there's no header). libretro-database hashes some systems headered
-   * (NES), No-Intro proper hashes headerless — matching either is correct.
+   * (NES), No-Intro proper hashes headerless -- matching either is correct.
    * Cached by path+size+mtime.
    */
   crcsOf(rom) {
@@ -223,7 +223,7 @@ export class Identifier {
   }
 
   /**
-   * MD5 of the header-stripped ROM — what RetroAchievements hashes for the
+   * MD5 of the header-stripped ROM -- what RetroAchievements hashes for the
    * systems whose rule is "MD5 of the raw ROM". Cached like the CRCs.
    */
   md5Of(rom) {

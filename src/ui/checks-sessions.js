@@ -35,7 +35,7 @@ export async function autoplay({ romsDir, dev = false }) {
   const { sessions, stateStore } = app.svc;
 
   const roms = app.svc.library().roms;
-  if (!roms.length) { console.error(`${label} FAIL — no roms`); return 1; }
+  if (!roms.length) { console.error(`${label} FAIL -- no roms`); return 1; }
   const rom = roms[0];
   console.log(`${label} launching: ${rom.name} (${rom.system})`);
 
@@ -76,7 +76,7 @@ export async function autoplay({ romsDir, dev = false }) {
     if (!caps.achievements) {
       console.log('SKIP: achievement evaluator not built (retroemu/scripts/build-rcheevos.sh)');
     } else {
-      // rcheevos requires a TRANSITION into the true state — a condition
+      // rcheevos requires a TRANSITION into the true state -- a condition
       // already true when armed never fires, which is correct (the player has
       // to DO something). So arm on a value the RAM does not currently hold,
       // then write it.
@@ -95,7 +95,7 @@ export async function autoplay({ romsDir, dev = false }) {
       const onCheevo = (ev) => { if (ev.type === 'achievement') fired.push(ev.achievementId); };
       sessions.on('update', onCheevo);
 
-      // The GAME owns this RAM and rewrites it constantly — a single write is
+      // The GAME owns this RAM and rewrites it constantly -- a single write is
       // zeroed within ~100ms, so whether an evaluated frame ever observed the
       // magic value was a race. Hold it across frames instead.
       const b64 = Buffer.from([MAGIC]).toString('base64');
@@ -184,7 +184,7 @@ export async function cartcheck({ romsDir }) {
   r.check('library has all three cart types', hasCarts && hasRom,
     hasCarts && hasRom
       ? [...byKind.keys()].join(', ')
-      : `${[...byKind.keys()].join(', ') || 'empty'} — needs a library with a ROM, a .wasc and a .jsgame (try roms-demo)`);
+      : `${[...byKind.keys()].join(', ') || 'empty'} -- needs a library with a ROM, a .wasc and a .jsgame (try roms-demo)`);
 
   for (const [system, rom] of byKind) {
     const { id, error } = sessions.launch(rom, { resume: false });
@@ -225,7 +225,7 @@ export async function cartcheck({ romsDir }) {
  * Remote play, end to end, with no human in the loop.
  *
  * This used to require a share code typed in by hand from a host someone
- * started on another machine — so P2P co-op was the ONE feature verified only
+ * started on another machine -- so P2P co-op was the ONE feature verified only
  * by a person remembering to test it, and it depends on WebRTC, an hsync
  * signalling server, and two optional deps (`hsync`, `node-datachannel`) that
  * fail SILENTLY when absent. The failure mode is a launch that connects to
@@ -237,11 +237,11 @@ export async function cartcheck({ romsDir }) {
  * for testing against a real remote host on another machine.
  *
  * Needs the network. It says so and skips rather than failing when the
- * signalling server cannot be reached — a check that goes red on a train is a
+ * signalling server cannot be reached -- a check that goes red on a train is a
  * check people learn to ignore.
  */
 export async function joincheck({ romsDir, argAfter }) {
-  // `--joincheck <roms>` passes the LIBRARY, not a code — argAfter cannot tell
+  // `--joincheck <roms>` passes the LIBRARY, not a code -- argAfter cannot tell
   // them apart and handed back "../roms-real", which was then dialled as a
   // share code and timed out. A code is base24 XXX-XXX-XXX and never a path,
   // so require the shape rather than trusting position.
@@ -257,7 +257,7 @@ export async function joincheck({ romsDir, argAfter }) {
     let ok = true;
     try { req.resolve(mod, { paths: [retroemuDir(), process.cwd()] }); } catch { ok = false; }
     if (!r.check(`${mod} resolvable (${why})`, ok)) {
-      console.log('SKIP: remote play cannot work without it — install it in retroemu');
+      console.log('SKIP: remote play cannot work without it -- install it in retroemu');
       return r.done('');
     }
   }
@@ -290,7 +290,7 @@ export async function joincheck({ romsDir, argAfter }) {
       } catch (err) {
         // Reaching the signalling server is the network-dependent part.
         r.check('hosting started', false, err.message);
-        console.log('SKIP: could not reach the signalling server — is this machine online?');
+        console.log('SKIP: could not reach the signalling server -- is this machine online?');
         await sessions.stop(hostId).catch(() => {});
         return r.done('');
       }
@@ -321,7 +321,7 @@ export async function joincheck({ romsDir, argAfter }) {
         r.check('guest still alive after streaming', !!sessions.get(res.id));
 
         // "Connected" is not "working". A data channel can come up and carry
-        // nothing, which looks identical from the guest side — so ask the HOST
+        // nothing, which looks identical from the guest side -- so ask the HOST
         // whether it saw the peer and actually pushed frames down the wire.
         // Sampling status before the guest arrives (as the earlier assertion
         // does) always reads guests:0 framesSent:0, and would pass forever.
@@ -344,7 +344,7 @@ export async function joincheck({ romsDir, argAfter }) {
 
     // ── teardown ─────────────────────────────────────────────────────
     if (hostId) {
-      // Hosting must be stoppable without killing the game — the host goes
+      // Hosting must be stoppable without killing the game -- the host goes
       // back to playing alone.
       const stopped = await sessions.rpc(hostId, 'remoteStop', {}).catch((e) => ({ error: e.message }));
       r.check('hosting stops cleanly', !stopped?.error, stopped?.error ?? '');

@@ -1,4 +1,4 @@
-// Core update manager — romdeck's structural answer to what killed OpenEmu.
+// Core update manager -- romdeck's structural answer to what killed OpenEmu.
 //
 // OpenEmu hand-maintained a fork of every emulator and shipped core updates
 // only with app releases; its Mednafen fork sat three years stale and the fix

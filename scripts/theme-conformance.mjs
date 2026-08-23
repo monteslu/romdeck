@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Theme conformance harness — the check that would have caught §16f on day one.
+// Theme conformance harness -- the check that would have caught §16f on day one.
 //
 // PLAN §16f: romdeck shipped a theme engine validated ONLY against a theme
 // written in its own flattened dialect. A real community theme produced zero
-// elements — a blank screen — and nothing noticed, because both sides of every
+// elements -- a blank screen -- and nothing noticed, because both sides of every
 // test were written by the same hand.
 //
 // This loads REAL themes through the REAL ThemeStore and fails when a view
@@ -12,6 +12,7 @@
 // Usage:
 //   node scripts/theme-conformance.mjs [themesDir]
 //   THEME_REPOS=1 node scripts/theme-conformance.mjs   # clone the list first
+import { tmpdir } from 'node:os';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -27,7 +28,7 @@ const THEME_REPOS = [
   ['slate-es-de', 'https://gitlab.com/es-de/themes/slate-es-de.git'],
 ];
 
-const themesDir = process.argv[2] ?? '/tmp/es-themes';
+const themesDir = process.argv[2] ?? `${tmpdir()}/es-themes`;
 
 function ensureThemes() {
   mkdirSync(themesDir, { recursive: true });
@@ -46,7 +47,7 @@ function ensureThemes() {
 if (process.env.THEME_REPOS) ensureThemes();
 
 if (!existsSync(themesDir)) {
-  console.error(`no themes at ${themesDir} — run with THEME_REPOS=1 to clone them`);
+  console.error(`no themes at ${themesDir} -- run with THEME_REPOS=1 to clone them`);
   process.exit(1);
 }
 
@@ -124,7 +125,7 @@ for (const r of rows) {
 
 console.log('');
 if (failures) {
-  console.log(`CONFORMANCE FAIL — ${failures} of ${rows.length} combinations produced an empty view`);
+  console.log(`CONFORMANCE FAIL -- ${failures} of ${rows.length} combinations produced an empty view`);
   process.exit(1);
 }
-console.log(`CONFORMANCE OK — ${rows.length} combinations across ${discovered.length} themes, every view populated`);
+console.log(`CONFORMANCE OK -- ${rows.length} combinations across ${discovered.length} themes, every view populated`);

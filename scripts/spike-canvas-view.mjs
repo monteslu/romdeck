@@ -4,18 +4,19 @@
 // The question this answers: what is Chromium actually buying romdeck?
 //
 // The theme engine's layout model is normalized 0-1 coordinates on a fixed
-// stage — that is a projection, not a CSS layout — so the DOM was never doing
+// stage -- that is a projection, not a CSS layout -- so the DOM was never doing
 // the hard part. The hard parts were assumed to be text shaping, image decode
 // and video. Two of those are solved by @napi-rs/canvas (GlobalFonts +
 // loadImage, both already in jsgamelauncher's stack). Video snaps are
 // deferred (PLAN 16b) and no theme requires them, so they are out of scope
 // here rather than blocking the answer.
 //
-// This deliberately reuses the REAL ThemeStore — the same parser that renders
-// four community themes in Electron — so the comparison is honest: same model
+// This deliberately reuses the REAL ThemeStore -- the same parser that renders
+// four community themes in Electron -- so the comparison is honest: same model
 // in, different renderer out.
 //
 //   node scripts/spike-canvas-view.mjs [--headless] [theme] [variant]
+import { tmpdir } from 'node:os';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -55,7 +56,7 @@ let sysIndex = 2;
 
 // ── fonts ────────────────────────────────────────────────────────────
 // BUNDLED, not borrowed from the host. Canvas does no automatic fallback, so
-// a glyph the named family lacks is silently dropped — that is how the help
+// a glyph the named family lacks is silently dropped -- that is how the help
 // line lost its Ⓐ/Ⓑ/⛶ in the first run of this spike. Naming a system symbol
 // font only works on machines that happen to have one, which is not a fix.
 // Shipping the faces makes the UI identical everywhere.
@@ -71,7 +72,7 @@ for (const [family, file] of BUNDLED) {
 }
 
 // A theme may also ship its OWN faces via <fontPath>; those layer on top.
-// Same call, which is the whole point — jsgamelauncher's fontface.js does
+// Same call, which is the whole point -- jsgamelauncher's fontface.js does
 // exactly this and needs no FreeType binding.
 const fonts = new Set();
 for (const el of theme.views.system) {
@@ -176,7 +177,7 @@ async function drawSystemView(ctx) {
         : p.horizontalAlignment === 'right' ? 'right' : 'left';
       ctx.textAlign = align;
       // Text elements usually declare no <size>, so their box has zero width
-      // and pos IS the anchor — the same thing the DOM does with left/top plus
+      // and pos IS the anchor -- the same thing the DOM does with left/top plus
       // a translate. Using b.x + b.w/2 unconditionally collapsed centred text
       // to the left edge.
       const tx = b.w
@@ -236,7 +237,7 @@ async function drawCarousel(ctx, el, b) {
       ctx.stroke();
     }
 
-    // Logos: staticImage with ${system.theme}, tinted per selection — the
+    // Logos: staticImage with ${system.theme}, tinted per selection -- the
     // CSS-mask trick becomes a composite operation, and is simpler for it.
     const tpl = p.staticImage ?? p.imagePath;
     const img = tpl ? await image(String(tpl).replace(/\$\{system\.theme\}/g, sys.short)) : null;
@@ -256,7 +257,7 @@ async function drawCarousel(ctx, el, b) {
  * Draw a monochrome logo in a theme colour.
  *
  * In the DOM this needed a CSS mask because an <img> cannot inherit
- * currentColor. On a canvas it is source-in compositing on a scratch buffer —
+ * currentColor. On a canvas it is source-in compositing on a scratch buffer --
  * fewer moving parts than the browser version.
  */
 function drawTinted(ctx, img, b, tint) {
@@ -302,7 +303,7 @@ const perFrame = (Date.now() - t1) / N;
 sysIndex = 2;
 await drawSystemView(ctx);
 
-writeFileSync('/tmp/romdeck-spike-canvas.png', canvas.toBuffer('image/png'));
+writeFileSync(`${tmpdir()}/romdeck-spike-canvas.png`, canvas.toBuffer('image/png'));
 console.log(`  first frame: ${firstFrame}ms   steady state: ${perFrame.toFixed(1)}ms/frame`);
 console.log('  wrote /tmp/romdeck-spike-canvas.png');
 

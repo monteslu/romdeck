@@ -6,7 +6,7 @@
 // That is a projection, and a projection does not need a browser.
 //
 // Element semantics follow ES-DE's own source (internal-romdeck/reference/
-// es-de/es-core/src/ThemeData.cpp), not inference from reading themes — the
+// es-de/es-core/src/ThemeData.cpp), not inference from reading themes -- the
 // latter is how five theme bugs got in.
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 import { existsSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { appDir } from './paths.js';
 
 // ── fonts ────────────────────────────────────────────────────────────
 // Bundled, not borrowed. Canvas does no automatic fallback, so a glyph the
-// named family lacks is dropped SILENTLY — that is how the help line lost its
+// named family lacks is dropped SILENTLY -- that is how the help line lost its
 // pad symbols the first time this ran. Shipping the faces makes the UI
 // identical on every machine instead of dependent on what the host installed.
 // Two faces for text (DejaVu) and two for symbols (GNU FreeSans).
@@ -29,7 +29,7 @@ import { appDir } from './paths.js';
 // certainly lacks. FreeSans draws them for real.
 //
 // Both weights are registered because canvas does not substitute across
-// weights the way a browser does — a `700 ...` string never falls through to
+// weights the way a browser does -- a `700 ...` string never falls through to
 // a 400-only family.
 const BUNDLED_FONTS = [
   ['romdeck-ui', 'romdeck-ui.ttf'],
@@ -43,7 +43,7 @@ export function initFonts() {
   if (fontsReady) return;
   // assets/, not inside a theme: these four faces are UI CHROME (menus, the
   // help bar, the on-screen keyboard) and must exist no matter which theme is
-  // loaded — or whether any theme is installed at all.
+  // loaded -- or whether any theme is installed at all.
   const dir = path.join(appDir(), 'assets', 'fonts');
   for (const [family, file] of BUNDLED_FONTS) {
     const p = path.join(dir, file);
@@ -298,7 +298,7 @@ export const INERT_PROPS = {
  * The themed view.
  *
  * Owns the theme model, the current selection, and how to paint it. Knows
- * nothing about windows, input or presenters — those drive it from outside,
+ * nothing about windows, input or presenters -- those drive it from outside,
  * which is what makes the same object usable headless in a self-check.
  */
 export class Stage {
@@ -568,7 +568,7 @@ export class Stage {
   /**
    * Load every image the current view can reference, once.
    *
-   * Drawing is synchronous — a paint cannot await — so anything that might be
+   * Drawing is synchronous -- a paint cannot await -- so anything that might be
    * drawn has to be resident first. Themes reference a bounded set (per-system
    * art plus the selected game's), so this stays small.
    */
@@ -793,7 +793,7 @@ export class Stage {
         this.drawElement(ctx, el);
       } catch (err) {
         this.drawErrors = this.drawErrors ?? [];
-        this.drawErrors.push(`${el.type}${el.name ? `:${el.name}` : ''} — ${err.message}`);
+        this.drawErrors.push(`${el.type}${el.name ? `:${el.name}` : ''} -- ${err.message}`);
       }
       ctx.restore();
     }
@@ -805,8 +805,8 @@ export class Stage {
    * First run has no ROMs folder, so every themed element resolves to nothing
    * and the app paints a BLACK VOID with a help bar. That is what a new user
    * sees on `node bin/romdeck.js`: no library, no error, no instruction, no
-   * evidence the thing even works. The one control that fixes it — "Choose
-   * ROMs folder" — is inside a menu you can only reach by already knowing to
+   * evidence the thing even works. The one control that fixes it -- "Choose
+   * ROMs folder" -- is inside a menu you can only reach by already knowing to
    * press Start.
    *
    * Themes cannot solve this: a theme describes how to lay out a library, and
@@ -825,7 +825,7 @@ export class Stage {
           'connection and git for that. Press Start › Themes to retry.'].filter(Boolean));
       return;
     }
-    // allRoms is the field setLibrary() writes — NOT `library`, which does not
+    // allRoms is the field setLibrary() writes -- NOT `library`, which does not
     // exist on Stage. Reading the wrong name made this always-true, so the
     // welcome text stayed on screen over a fully populated library.
     if (this.allRoms?.length) return;
@@ -1095,7 +1095,7 @@ export class Stage {
     const align = p.horizontalAlignment === 'center' ? 'center'
       : p.horizontalAlignment === 'right' ? 'right' : 'left';
     ctx.textAlign = align;
-    // Text elements usually declare no <size>, so pos IS the anchor — the
+    // Text elements usually declare no <size>, so pos IS the anchor -- the
     // same thing the DOM did with left/top plus a translate. Treating an
     // empty box as a real one collapsed centred text to the left edge.
     const tx = b.w
@@ -1192,7 +1192,7 @@ export class Stage {
     // theme uses for backgrounds and separator rules. Drawing it as an image
     // paints the whole stage its own colour.
     //
-    // But <color> on a REAL image means TINT, not fill — modern-es-de's
+    // But <color> on a REAL image means TINT, not fill -- modern-es-de's
     // selectionBox is a shaped PNG with a colour, and filling its box painted
     // a cyan slab over the carousel. The fill idiom is specifically box.png
     // (or a tiled 1x1); anything else keeps its shape.
@@ -2010,7 +2010,7 @@ export class Stage {
       }
     }
     // A decoded snap frame if one is ready, otherwise the game's static
-    // image — which is exactly what ES-DE shows before a snap starts, so the
+    // image -- which is exactly what ES-DE shows before a snap starts, so the
     // fallback is correct rather than merely safe.
     // <iterationCount> stops the snap after N loops (0 = forever, clamped to
     // 10), and <onIterationsDone> says what to show afterwards: "nothing"
@@ -2131,7 +2131,7 @@ function applyCase(text, letterCase) {
  *
  * Tinting replaces the DOM version's CSS mask: an <img> could not inherit
  * currentColor, so the browser needed a mask over a fill. On a canvas it is
- * source-in compositing on a scratch buffer — fewer moving parts.
+ * source-in compositing on a scratch buffer -- fewer moving parts.
  */
 /**
  * Scale to COVER the box and clip the overflow.

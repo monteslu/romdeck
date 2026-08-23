@@ -5,8 +5,8 @@
 // rather than a browser's capturePage(). That removes the entire
 // DISPLAY/Xauthority class of environment failure from CI.
 //
-// House rule, unchanged: every check drives the REAL thing — real services,
-// a real theme, a real core — and asserts observable behaviour. Anything
+// House rule, unchanged: every check drives the REAL thing -- real services,
+// a real theme, a real core -- and asserts observable behaviour. Anything
 // visual also gets written to /tmp for eyeballing, because five bugs in this
 // project were invisible to green assertions and obvious in a screenshot.
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -33,7 +33,7 @@ export function makeReporter(label) {
     return cond;
   };
   const done = (okMsg) => {
-    console.log(failures === 0 ? `${label} OK — ${okMsg}` : `${label} ${failures} FAILURES`);
+    console.log(failures === 0 ? `${label} OK -- ${okMsg}` : `${label} ${failures} FAILURES`);
     return failures === 0 ? 0 : 1;
   };
   return { check, done, get failures() { return failures; } };
@@ -145,7 +145,7 @@ async function smoke({ romsDir }) {
   r.check('theme catalog', app.svc.themes.catalog().length > 0);
 
   // Picture cascade: shader and CPU filter share one question and must not
-  // both apply. The layered override is the whole point — RetroArch's
+  // both apply. The layered override is the whole point -- RetroArch's
   // global/core/game hierarchy, but with provenance the UI can show.
   {
     const st = app.svc.settings;
@@ -315,13 +315,13 @@ async function pathcheck() {
   r.check('userData matches Electron', dir === expected, dir);
   r.check('userData exists', existsSync(dir));
 
-  // If a real profile is there, its stores must still be found — this is the
+  // If a real profile is there, its stores must still be found -- this is the
   // assertion that catches "the new frontend silently lost your saves".
   if (existsSync(dir)) {
     const entries = readdirSync(dir);
     const svc = new Services({});
     for (const [label, present, probe] of [
-      // The prefs STORE must be readable — not "a theme key exists". romdeck
+      // The prefs STORE must be readable -- not "a theme key exists". romdeck
       // no longer writes a theme preference until the user picks one
       // (defaultTheme() supplies it at runtime), so asserting on that key
       // failed on any profile that had never chosen a theme. Read the file
@@ -364,7 +364,7 @@ async function pathcheck() {
   //
   // Both are asserted against the LIVE server with deliberately invalid
   // credentials: a well-formed rejection proves the shape is right without
-  // needing anyone's account. Network failures SKIP — a check that goes red
+  // needing anyone's account. Network failures SKIP -- a check that goes red
   // on a train is a check people learn to ignore.
   try {
     const probe = await fetch('https://retroachievements.org/dorequest.php', {
@@ -392,9 +392,11 @@ async function pathcheck() {
   // this ever changes, submissions start being rejected server-side and
   // nothing local would otherwise notice.
   const { createHash } = await import('node:crypto');
-  const sig = createHash('md5').update('12345monteslu0', 'utf8').digest('hex');
+  // Vector is {achievementId}{username}{hardcore} with a placeholder user;
+  // expected hash recomputed with rcheevos' own algorithm for that input.
+  const sig = createHash('md5').update('12345player0', 'utf8').digest('hex');
   r.check('RA unlock signature matches rcheevos',
-    sig === 'b13f11635dbbd81b8bec7d99cef2bdcc', sig);
+    sig === 'd9b7a8bad1379821e952ad181bd5a5bd', sig);
 
   return r.done(`userData is ${dir}`);
 }
@@ -420,7 +422,7 @@ async function realtheme({ romsDir, argAfter }) {
   // while showing Shelf. Assert on the theme that actually loaded.
   const loaded = app.stage.theme?.name;
   r.check(`${name} loads`, !res.error && loaded === name,
-    res.error ?? (res.fellBackFrom ? `NOT INSTALLED — fell back to ${loaded}` : app.stage.theme.displayName));
+    res.error ?? (res.fellBackFrom ? `NOT INSTALLED -- fell back to ${loaded}` : app.stage.theme.displayName));
   if (res.error || loaded !== name) return r.done('');
   await app.stage.preload();
 
@@ -572,7 +574,8 @@ export async function shots({ romsDir, argAfter }) {
   // folder -- that one is also a bare argument, and swallowing it here would
   // silently scatter PNGs into the user's library.
   const next = argAfter('shots');
-  const outDir = next && next !== romsDir ? next : '/tmp/romdeck-shots';
+  const outDir = next && next !== romsDir
+    ? next : path.join(tmpdir(), 'romdeck-shots');
   mkdirSync(outDir, { recursive: true });
 
   return withApp({ romsDir, headless: true }, async (app) => {
@@ -710,7 +713,7 @@ export async function shots({ romsDir, argAfter }) {
   {
     // Sample the INTERIOR of the selected card. The selector border is drawn
     // in the accent colour and is bright by definition, so a rect that
-    // includes it reports high contrast no matter how invisible the logo is —
+    // includes it reports high contrast no matter how invisible the logo is --
     // that is exactly how a first cut of this check passed a black-on-black
     // carousel. Inset well inside the border and measure only the art.
     const b = {
@@ -734,7 +737,7 @@ export async function shots({ romsDir, argAfter }) {
   for (let i = 0; i < 2; i++) app.dispatch('down');
   // Art loads lazily on a cache MISS, so the first paint after moving the
   // selection has no cover yet. Capturing straight away photographed an empty
-  // plate and shipped it as the reference screenshot of the gamelist — the
+  // plate and shipped it as the reference screenshot of the gamelist -- the
   // view looked like a library with no art at all. Start the fetch, let it
   // land, then shoot. (The dedicated cover assertion below already did this;
   // the headline screenshot did not.)
@@ -1225,7 +1228,7 @@ export async function snapcheck({ argAfter }) {
 
   if (!decoderAvailable()) {
     console.log('SKIP: decoder not built (scripts/build-video-decoder.sh)');
-    console.log('SNAPCHECK OK — absent decoder degrades to the static image');
+    console.log('SNAPCHECK OK -- absent decoder degrades to the static image');
     return 0;
   }
   if (!files.length) {

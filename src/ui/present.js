@@ -63,8 +63,8 @@ class BasePresenter {
 /**
  * CPU presenter: skia buffer straight into the SDL window.
  *
- * This is jsgamelauncher's shipping path — window.render() with an rgba32
- * buffer — so it is proven on desktops and on knulli handhelds.
+ * This is jsgamelauncher's shipping path -- window.render() with an rgba32
+ * buffer -- so it is proven on desktops and on knulli handhelds.
  */
 export class CpuPresenter extends BasePresenter {
   constructor(window) {

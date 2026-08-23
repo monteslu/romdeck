@@ -2,7 +2,7 @@
 //
 // Video snaps are the one thing Electron was genuinely buying (<video> and
 // its decoder). Replacing it does NOT mean porting ffmpeg: a snap is a
-// container holding H.264 samples, and demuxing is pure structure — boxes,
+// container holding H.264 samples, and demuxing is pure structure -- boxes,
 // offsets, sizes. No native code belongs at this layer, so there is none.
 //
 // Scope follows ES-DE's own list (FileData.h: .mp4 first) and the reality

@@ -1,13 +1,13 @@
 // Gamepad navigation for the library UI. SDL gamepads (via gamepad-node) polled
-// in the main process — the whole reason romdeck exists instead of trusting the
+// in the main process -- the whole reason romdeck exists instead of trusting the
 // browser Gamepad API. Emits discrete nav events with edge detection + repeat.
 //
 // Player processes do their own SDL input; this poller is UI-nav only.
 export class PadNav {
   constructor(onEvent, { onDevices = null, onRaw = null } = {}) {
     this.onEvent = onEvent;
-    this.onDevices = onDevices; // (pads[]) => void  — hotplug notifications
-    this.onRaw = onRaw; // (snapshot) => void — live view while binding
+    this.onDevices = onDevices; // (pads[]) => void  -- hotplug notifications
+    this.onRaw = onRaw; // (snapshot) => void -- live view while binding
     this.timer = null;
     this.prev = new Map(); // gamepad index -> pressed-set
     this.repeat = new Map(); // action -> next repeat time
@@ -103,7 +103,7 @@ export class PadNav {
       if (b[4]?.pressed) held.add('prevSystem'); // LB
       if (b[5]?.pressed) held.add('nextSystem'); // RB
       // Start opens the main menu (the ES model) and Select/West opens the
-      // per-game options menu — the two chords that make every feature
+      // per-game options menu -- the two chords that make every feature
       // reachable without a pointer.
       if (b[9]?.pressed) held.add('menu');    // start
       if (b[8]?.pressed) held.add('options'); // select/back

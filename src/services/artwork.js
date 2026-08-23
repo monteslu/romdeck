@@ -36,7 +36,7 @@ export class ArtworkStore {
    * Video snap path, in the ES-DE media layout.
    *
    * romdeck doesn't scrape these (libretro-thumbnails has no videos), but
-   * ES-DE, Skraper and Skyscraper all write here — so a user who scraped
+   * ES-DE, Skraper and Skyscraper all write here -- so a user who scraped
    * with any of those gets working snaps for free, which is the whole point
    * of following the layout rather than inventing one.
    */
@@ -62,7 +62,7 @@ export class ArtworkStore {
 
     const candidates = [];
     const base = path.basename(rom.path).replace(/\.p8\.png$/i, '').replace(/\.[^.]+$/, '');
-    if (rom.datName) candidates.push(rom.datName); // CRC-verified DAT name — exact repo match
+    if (rom.datName) candidates.push(rom.datName); // CRC-verified DAT name -- exact repo match
     candidates.push(base);
     if (rom.name && rom.name !== base) candidates.push(rom.name);
 
@@ -84,7 +84,7 @@ export class ArtworkStore {
         writeFileSync(file, buf);
         return 'ok';
       } catch {
-        // network error/timeout — try next candidate
+        // network error/timeout -- try next candidate
       }
     }
     return 'nomatch';

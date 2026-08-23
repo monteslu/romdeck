@@ -1,4 +1,4 @@
-// ScreenScraper.fr client — hash-matched metadata + art, the richest source.
+// ScreenScraper.fr client -- hash-matched metadata + art, the richest source.
 // Requires a per-app dev ID (register on their forum) and benefits from a
 // per-user account (thread quota). Until credentials are configured in prefs
 // ({ ss: { devid, devpassword, ssid, sspassword } }) every call reports

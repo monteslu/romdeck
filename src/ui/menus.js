@@ -1,7 +1,7 @@
 // In-view menus, the on-screen keyboard, and the file browser.
 //
 // ES's answer to "how do I configure this from a couch" is a menu opened with
-// a button, and that model is unchanged from M7 — only the drawing is. These
+// a button, and that model is unchanged from M7 -- only the drawing is. These
 // are first-party fixed layouts consuming theme TOKENS (§16e decision 2)
 // rather than theme-defined layouts, which is also what ES-DE does for its
 // own menus.
@@ -76,7 +76,7 @@ export class MenuStack {
     // explicit exit rather than a dead end.
     //
     // It goes FIRST, not last: a long read-only list scrolls, and an exit
-    // appended after 18 disabled rows lands off the visible page — which is
+    // appended after 18 disabled rows lands off the visible page -- which is
     // an empty ring by another name.
     if (!focus.groups.get(name).items.length) {
       const w2 = new Widget({ x: 0, y: 0, w, h: 60, label: '‹ Back', onActivate: () => this.close() });
@@ -87,7 +87,7 @@ export class MenuStack {
     this.stack.push({ name, panel, onClose: spec.onClose ?? null });
     // Lay out BEFORE pushing the ring. Widgets start invisible (they have no
     // position until the panel places them), so a group queried before the
-    // first paint reports an empty ring — which reads as an unreachable
+    // first paint reports an empty ring -- which reads as an unreachable
     // surface to --padonly and, worse, to a user pressing a direction and
     // getting nothing.
     panel.layout(0);
@@ -349,7 +349,7 @@ export class FileBrowser {
     // scrollable, like MenuStack: without it live() filters the ring down to
     // the widgets currently ON SCREEN, so `down` walked to the bottom of the
     // first page and wrapped straight back to the top. Every entry past the
-    // first ~10 was unreachable — which in a FOLDER PICKER means the user
+    // first ~10 was unreachable -- which in a FOLDER PICKER means the user
     // cannot reach their ROMs at all.
     focus.group(this.name, { onBack: () => this.close(), scrollable: true });
 

@@ -5,7 +5,7 @@
 // doctrine, and §13's M8.4 says record the numbers here. This does that
 // rather than asserting one is faster.
 //
-// What is measured is PRESENT ONLY — the stage paint is identical either way
+// What is measured is PRESENT ONLY -- the stage paint is identical either way
 // (skia, ~5 ms) and is subtracted out by painting once and presenting many
 // times. That is also realistic: the UI repaints on events, so a scroll
 // re-presents an unchanged stage far more often than it repaints one.
@@ -91,7 +91,7 @@ if (!glRan) {
   console.log('  see the ratios above.');
 }
 console.log(`  CPU worst case ${worstCpu.toFixed(2)} ms/present`
-  + ` — ${worstCpu < 8 ? 'comfortably under a 120 Hz frame' : worstCpu < 16 ? 'under a 60 Hz frame' : 'ABOVE a 60 Hz frame budget'}`);
+  + ` -- ${worstCpu < 8 ? 'comfortably under a 120 Hz frame' : worstCpu < 16 ? 'under a 60 Hz frame' : 'ABOVE a 60 Hz frame budget'}`);
 console.log('  Repaint is event-driven, so this cost is paid on interaction, not continuously.');
 
 app.dispose();

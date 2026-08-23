@@ -40,7 +40,7 @@ OpenEmu proved the model (theirs used XPC helper processes), and multiple
 concurrent games fall out for free.
 
 **The cost** we accept: an in-game overlay can't be HTML (it's drawn into the
-SDL framebuffer instead — see `retroemu/src/control/Overlay.js`), and the
+SDL framebuffer instead -- see `retroemu/src/control/Overlay.js`), and the
 frontend talks to a game over a control channel rather than calling functions.
 
 Note what is *not* in that diagram: a second process for the UI, and an IPC
@@ -60,11 +60,11 @@ not a process boundary: services never import from `ui/`.
 
 **`src/ui/`**
 
-- `main.js` — argument parsing, self-check dispatch, app start.
-- `app.js` — the SDL window, the event loop, and input dispatch. Repaint is
+- `main.js` -- argument parsing, self-check dispatch, app start.
+- `app.js` -- the SDL window, the event loop, and input dispatch. Repaint is
   **event-driven**: there is no render loop, so an idle library costs no CPU.
   This matters most on the handhelds this is meant to run on.
-- `present.js` — the present seam. `GlPresenter` (webgl-node) is the default,
+- `present.js` -- the present seam. `GlPresenter` (webgl-node) is the default,
   `CpuPresenter` (SDL blit) the fallback, `HeadlessPresenter` the one every
   self-check uses. The stage paint is identical for all three.
 
@@ -85,20 +85,20 @@ not a process boundary: services never import from `ui/`.
   60fps** (`GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT`) while a CPU
   readback of the same content still shows a perfect picture, since the
   readback reads the source FBO and the window presents by a separate blit.
-- `stage.js` — theme model → skia canvas via `@napi-rs/canvas`. Fonts are
+- `stage.js` -- theme model → skia canvas via `@napi-rs/canvas`. Fonts are
   bundled, so text renders identically on a bare handheld and a dev machine.
-- `focus.js` — the **focus ring**: named groups on a stack, geometric
+- `focus.js` -- the **focus ring**: named groups on a stack, geometric
   navigation, one visible style. Pad, keyboard and mouse all drive it, and
   hover *sets* focus rather than bypassing it, so the pointer and the pad can
   never disagree about what is selected. Every interactive surface registers
   here; that is what makes the app usable without a pointer.
-- `widgets.js` / `menus.js` / `app-menus.js` — canvas widgets, the menu stack,
+- `widgets.js` / `menus.js` / `app-menus.js` -- canvas widgets, the menu stack,
   the on-screen keyboard (text / hex / base24), the file browser.
-- `services.js` — constructs the services once and exposes `resolveUrl()` for
+- `services.js` -- constructs the services once and exposes `resolveUrl()` for
   `romdeck-theme://` and `romdeck-media://`. These were Electron custom
   protocols; they are now path-jailed resolution to a real file, which is what
   they always were underneath.
-- `video/` — snap playback: a pure-JS ISO-BMFF demuxer feeding an h264
+- `video/` -- snap playback: a pure-JS ISO-BMFF demuxer feeding an h264
   decoder built from ffmpeg to WASM. See `scripts/build-video-decoder.sh`.
 
 Self-check flags (`--smoke`, `--pathcheck`, `--padonly`, `--viewcheck`,
@@ -118,7 +118,7 @@ retroemu <rom> --video sdl --control
 ```
 
 A **remote-play guest** is also a player process, but a degenerate one: no
-ROM, no core, no control channel — it renders someone else's stream.
+ROM, no core, no control channel -- it renders someone else's stream.
 
 ---
 
@@ -129,7 +129,7 @@ what let the frontend be replaced without touching any of them.
 
 | Module | Responsibility |
 |---|---|
-| `sessions.js` | **GameSessionManager** — spawn, monitor, RPC, crash reporting, remote join |
+| `sessions.js` | **GameSessionManager** -- spawn, monitor, RPC, crash reporting, remote join |
 | `scanner.js` | recursive ROM scan; folder-first system detection; Genesis header sniff |
 | `systems.js` | display name ↔ ES-DE shortname ↔ libretro system name |
 | `identify.js` | header strip → CRC32/MD5 → DAT lookup; DAT download + index compile |
@@ -172,20 +172,20 @@ what let the frontend be replaced without touching any of them.
 
 Order matters; each step is cheaper or more certain than the next.
 
-1. **Strip container headers** before hashing — iNES (16 B), A78 (128 B),
+1. **Strip container headers** before hashing -- iNES (16 B), A78 (128 B),
    Lynx (64 B). Not doing this is *the* classic ROM-identification bug.
 2. **CRC32 of both** the raw file and the stripped payload. libretro's DATs
    hash some systems headered and some headerless; matching either is correct.
 3. **Look up** in a per-system JSON index compiled from libretro-database
    (tried in `metadat/no-intro/`, `metadat/redump/`, then `dat/`). The files
-   are **clrmamepro** format, not Logiqx XML — both parsers exist, clrmamepro
+   are **clrmamepro** format, not Logiqx XML -- both parsers exist, clrmamepro
    is the one that actually gets used.
 4. **Cache** by `path|size|mtime`, so rescans cost nothing.
 5. **MD5** (header-stripped) is computed separately for RetroAchievements,
    which hashes differently from identification.
 
 A verified game's DAT name becomes its display name *and* the first candidate
-for art scraping — which is why identification materially improves art hit
+for art scraping -- which is why identification materially improves art hit
 rates rather than being cosmetic.
 
 ---
@@ -198,7 +198,7 @@ Layers, least → most specific:
 default  →  global  →  platform:<short>  →  game:<gameKey>
 ```
 
-`resolve(key, ctx)` returns **`{ value, source, layer }`** — never a bare
+`resolve(key, ctx)` returns **`{ value, source, layer }`** -- never a bare
 value. The UI renders that provenance as a badge next to every setting, with a
 ↺ to clear that layer and inherit again.
 
@@ -229,7 +229,7 @@ model is a rasteriser's model, so there is no layout engine in between.
 Parsing is a **recursive walk**: real themes nest their views inside
 `<variant>` / `<aspectRatio>` / `<fontSize>` / `<colorScheme>` wrappers and
 reach them through `<include>` at every depth. Reading only the top level of
-`<theme>` — as romdeck originally did — yields zero elements against a real
+`<theme>` -- as romdeck originally did -- yields zero elements against a real
 theme while reporting its capabilities correctly, which is exactly why the
 conformance harness (`scripts/theme-conformance.mjs`) gates this now.
 
@@ -253,7 +253,7 @@ Context isolation and the allowlists existed to contain *that*.
 **What replaced it:** there is no engine and no script execution. A theme is
 XML that resolves to elements and images, and images are decoded by skia. A
 malicious theme's reach is what a parser and an image decoder give it, which
-is a far smaller surface than a browser, but is not zero — image decoders have
+is a far smaller surface than a browser, but is not zero -- image decoders have
 their own CVE history. Themes remain untrusted input.
 
 - `resolveUrl()` normalizes and jails every `romdeck-theme://` and
@@ -273,8 +273,8 @@ their own CVE history. Themes remain untrusted input.
 
 ## Testing philosophy
 
-Every milestone ships a headless self-check that drives the real thing —
-a real core, a real window, a real network — and asserts observable behavior.
+Every milestone ships a headless self-check that drives the real thing --
+a real core, a real window, a real network -- and asserts observable behavior.
 Screenshots are captured and inspected for anything visual, because "the code
 looks right" has repeatedly not matched what rendered. Several real bugs were
 caught only this way: theme conditionals leaking, carousel duplication, zipped
@@ -289,7 +289,7 @@ Two different subsystems behind one question.
 |---|---|---|
 | flag | `--video-filter` | `--shader` |
 | what | softfilter over the RGBA frame | multi-pass `.glslp` preset chain |
-| stackable | no, one at a time | yes — that IS what a preset is |
+| stackable | no, one at a time | yes -- that IS what a preset is |
 | needs GL | no | yes (falls back if absent) |
 
 They are **mutually exclusive**, which is also how RetroArch treats them. The
@@ -311,7 +311,7 @@ defers to RetroArch's hierarchy entirely.
 Two deliberate differences:
 
 - **No content-directory scope.** The platform layer already means "all Game
-  Boy games", and a directory scope would collide with it — a ROM can sit in a
+  Boy games", and a directory scope would collide with it -- a ROM can sit in a
   folder that is not its platform.
 - **Game scope is keyed by ROM identity, not by core.** RetroArch's game
   presets are core-specific; romdeck's are not, so a game run under two cores
@@ -323,7 +323,7 @@ That is the direct answer to RetroArch's config-scope trap, and the reason
 
 ### Presets are not bundled
 
-`libretro/glsl-shaders` is 61 MB and CC-BY-NC-SA — the same reason themes are
+`libretro/glsl-shaders` is 61 MB and CC-BY-NC-SA -- the same reason themes are
 downloaded. Drop the repo in `<userData>/shaders/`, or point
 `ROMDECK_SHADER_DIR` at a system-wide copy. Stored values are paths RELATIVE
 to that root so a profile survives being moved between machines, and a preset

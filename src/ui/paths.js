@@ -1,4 +1,4 @@
-// Where romdeck keeps its data — without Electron.
+// Where romdeck keeps its data -- without Electron.
 //
 // This reproduces `app.getPath('userData')` EXACTLY, per platform. It has to:
 // people have save states, cheats, gamelists, downloaded themes and scraped

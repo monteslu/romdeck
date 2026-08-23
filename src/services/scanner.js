@@ -1,4 +1,4 @@
-// ROM directory scanner — the launcher contract shared with retroterm's
+// ROM directory scanner -- the launcher contract shared with retroterm's
 // RomScanner (system detection by extension, recursive walk). Kept dependency-
 // free; zip archives are passed straight through (retroemu introspects them).
 import { readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
@@ -32,8 +32,8 @@ const SYSTEM_BY_EXT = {
 };
 
 // Extensions that are NOT tied to one system, and so can never name one on
-// their own. Disc containers (.cue/.chd/.iso/…) are the obvious case — PSX,
-// Saturn, Dreamcast, Sega CD and PC Engine CD all ship as exactly these — but
+// their own. Disc containers (.cue/.chd/.iso/…) are the obvious case -- PSX,
+// Saturn, Dreamcast, Sega CD and PC Engine CD all ship as exactly these -- but
 // cartridge formats collide too: ES-DE lists .rom under MSX, NES and others,
 // .bin under Genesis, Atari and every CD system, .dsk under MSX and Amstrad.
 //
@@ -127,19 +127,19 @@ function systemOf(file, fullPath, romsDir) {
   // FOLDER FIRST, always. A file sitting in <roms>/nes/ is a NES game whatever
   // it is called, and that is the rule every frontend follows. Extension-first
   // got `nes/game.rom` wrong (.rom is mapped to MSX) and `amstradcpc/disk.dsk`
-  // wrong (.dsk is mapped to MSX) — the folder said exactly which system it was
+  // wrong (.dsk is mapped to MSX) -- the folder said exactly which system it was
   // and the lookup table overruled it.
   const byFolder = folderSystem(fullPath, romsDir);
   if (byFolder) return byFolder;
 
-  // No system folder anywhere above the file — a loose ROM, a flat library, or
+  // No system folder anywhere above the file -- a loose ROM, a flat library, or
   // a folder name we do not know. Now the extension is the only signal there
   // is, and for the unambiguous ones it is a good one.
   const byExt = SYSTEM_BY_EXT[ext];
   if (byExt && byExt !== 'Archive' && !AMBIGUOUS_EXTS.has(ext)) return byExt;
 
   // .bin that passed isRom() is a verified Genesis dump (looksLikeGenesis),
-  // not just any binary — content beat the ambiguity where the folder could not.
+  // not just any binary -- content beat the ambiguity where the folder could not.
   if (ext === '.bin' || ext === '.md') return 'Genesis';
 
   return byExt ?? 'Unknown';
