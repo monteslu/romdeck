@@ -52,7 +52,7 @@ cross-platform, on cores that update independently of the app.
   against [libretro-database](https://github.com/libretro/libretro-database)
   DATs (No-Intro / Redump lineage, CC-BY-SA). Verified games get a ✓ badge
   and their canonical name. This rescues badly-named files:
-  `05. Mega Man Zero 2 (USA).gba` → `Mega Man Zero 2 (USA)`.
+  `05. some_dump-final2.gba` gets back its canonical No-Intro name.
 - **Box art** from [libretro-thumbnails](https://thumbnails.libretro.com),
   matched by the verified DAT name first. Stored in the **ES-DE media
   layout**, so external scrapers (Skraper, Skyscraper) interoperate.
