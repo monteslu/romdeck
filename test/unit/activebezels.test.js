@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { ActiveBezelStore } from '../../src/services/activebezels.js';
 
 function storedZip(name, data) {
@@ -39,8 +39,12 @@ test('installs, auto-matches, associates and persists Active Bezel config', asyn
 
   // Reuse the real package and packer, adding this fixture's exact ROM hash.
   const packagePath = path.join(root, 'diagnostic.ab');
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const retroemu = path.resolve(here, '../../../retroemu');
+  // Resolve retroemu the way Node does, not by guessing at a sibling
+  // checkout: on a developer machine node_modules/retroemu may be a symlink
+  // to the local tree, on CI it is the registry install, and the published
+  // package ships both bin/active-bezel.js and the diagnostic example.
+  const retroemu = path.dirname(
+    createRequire(import.meta.url).resolve('retroemu/package.json'));
   const packageSource = path.join(root, 'diagnostic');
   await fsp.cp(path.join(retroemu, 'examples/active-bezel/diagnostic'), packageSource, { recursive: true });
   const manifestPath = path.join(packageSource, 'manifest.json');
