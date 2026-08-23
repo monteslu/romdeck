@@ -1,14 +1,14 @@
-# Feed candidates — researched 2026-07-27
+# Feed candidates -- researched 2026-07-27
 
 Licence checked at the source for each entry, ROM downloaded, hashed, and
-booted in fceumm. **Nothing here is in the catalog yet** — adding a game to
+booted in fceumm. **Nothing here is in the catalog yet** -- adding a game to
 `homebrew.json` is a curation decision (see docs/Feed.md), so this is the
 evidence, not the shipping list.
 
 ## ADDED to homebrew.json on 2026-07-27 (3)
 
 All three: MIT, permanent GitHub release URLs, verified boot + real title
-screen rendered. MIT grants redistribution, so these could be bundled — but
+screen rendered. MIT grants redistribution, so these could be bundled -- but
 they are listed as `url` anyway, since linking to the author's release costs
 nothing and keeps attribution pointing at them.
 
@@ -52,11 +52,11 @@ the scanner picked all three up as NES out of `homebrew/nes/`.
 }
 ```
 
-## ADDED 2026-07-27 — were blocked on the .zip gap, now unblocked (2)
+## ADDED 2026-07-27 -- were blocked on the .zip gap, now unblocked (2)
 
 The `archive` field landed (docs/Feed.md → Archives), so both of these now
 install: the zip is downloaded, hash-checked, and the named member extracted
-into the library. Both were then booted in their real cores and looked at —
+into the library. Both were then booted in their real cores and looked at --
 Speedrun Tower's own splash screen states "Licensed under CC BY-SA 4.0", which
 corroborates the licence research from the ROM itself.
 
@@ -77,7 +77,7 @@ itself, which most "free" homebrew never says either way.
 
 ---
 
-# Round 2 — the other 23 systems (2026-07-27)
+# Round 2 -- the other 23 systems (2026-07-27)
 
 ## ADDED (1)
 
@@ -89,7 +89,7 @@ Booted in genesis_plus_gx at 256x192 and looked at: real title screen, "MADE
 FOR THE SMS POWER! COMPETITION 2026 / PRESS BUTTON 1 OR 2 TO START". Installs
 through the real feed path, scanner reads it as Master System.
 
-## ADDED — MSX was broken on our side, now fixed (2)
+## ADDED -- MSX was broken on our side, now fixed (2)
 
 | Game | System | Licence | Bytes |
 |---|---|---|---|
@@ -103,14 +103,14 @@ That was never these ROMs. `GET_SYSTEM_DIRECTORY` was answering with a HOST
 path, which does not exist inside a wasm core's MEMFS, so fmsx `chdir`ed
 somewhere imaginary and never found MSX.ROM. Fixed in retroemu (892cc28) by
 mirroring the system directory into MEMFS at `/system`, plus a `--bios-dir`
-flag so the directory can actually be set — nothing passed `systemDir` at all
+flag so the directory can actually be set -- nothing passed `systemDir` at all
 before, so it defaulted to the game's own folder.
 
 Now 3909 and 4742 lit pixels, both rendering real title screens
 ("CorridorRunner / PUSH SPACE OR TRIGGER / (c)ABURI GAMES 2022").
 
 URLs are pinned to a commit SHA, since these are `dist/*.rom` files in-tree
-rather than release assets — a branch URL would change under the hash.
+rather than release assets -- a branch URL would change under the hash.
 
 **Users must supply their own `MSX.ROM`** in `<userData>/bios`; it is not
 redistributable. Both entries say so in their description.
@@ -118,15 +118,15 @@ redistributable. Both entries say so in their description.
 **This is why the screenshots get opened.** Both reported `BOOT OK` with sane
 geometry and were completely black.
 
-## Licence UNRESOLVED — needs a human call (1)
+## Licence UNRESOLVED -- needs a human call (1)
 
-**Desolate** (ZX Spectrum, nzeemin/spectrum-desolate) — a port of tr1p1ea's
+**Desolate** (ZX Spectrum, nzeemin/spectrum-desolate) -- a port of tr1p1ea's
 TI-83 game. The evidence contradicts itself:
 
 - The README credits the original author but records **no permission**:
   "Thanks a lot to tr1p1ea for the original game!" and nothing more.
 - The LICENSE file says **"Copyright (c) 2020-2021 Nikita Zimin, Patrick
-  Prendergast"** — naming the original author as a joint MIT copyright holder,
+  Prendergast"** -- naming the original author as a joint MIT copyright holder,
   which would be consent.
 
 But Prendergast has **zero commits** (nzeemin: 58, sole contributor), so that
@@ -146,37 +146,37 @@ colecovision, vectrex, psx, gametank.
 The pattern, which is the useful finding: for most retro platforms the
 homebrew scene distributes **built ROMs on forums and itch.io, and source on
 GitHub with no release binaries**. Searching GitHub by licence finds engines,
-toolchains and emulators far more often than games — devkitSMS (314★), PSGlib,
+toolchains and emulators far more often than games -- devkitSMS (314★), PSGlib,
 picotool all rank above any actual game. Several promising repos (gbjam8,
 exolon, KobutaRescue) are MIT with no built ROM anywhere.
 
 So the bottleneck is not licences, it is **downloadable builds with a stable
 URL**. The remaining sources worth mining are per-platform archives
 (SMS Power!, PDRoms, itch.io) rather than GitHub search, and those mostly need
-per-game permission — the same wall Tobu Tobu Girl hit.
+per-game permission -- the same wall Tobu Tobu Girl hit.
 
 ## Rejected, with reasons
 
-**`retrobrews/nes-games`** (52★, ~100 ROMs) — the obvious bulk source, and it
+**`retrobrews/nes-games`** (52★, ~100 ROMs) -- the obvious bulk source, and it
 fails the rights test. The repo has **no licence**, and the per-game `.txt`
 files are descriptions and YouTube links with **no licence statement of any
 kind**. That is `license: unknown`, which docs/Feed.md makes ineligible. Same
 for `retrobrews/md-games`. These are almost certainly freeware-by-permission,
 but "almost certainly" is exactly what the rule exists to exclude.
 
-**Nova the Squirrel** (NES, well-regarded) — GPLv3 code but assets are
+**Nova the Squirrel** (NES, well-regarded) -- GPLv3 code but assets are
 **CC BY-NC-SA 4.0**, and the author states the game "may not be sold without
 permission". Non-commercial. Eligible only as a link, never bundled, and the
 NC term needs a decision about whether romdeck's catalog should carry NC
 content at all.
 
-**Tobu Tobu Girl** (Game Boy, 303★, MIT + CC BY 4.0) — licence is fine and it
+**Tobu Tobu Girl** (Game Boy, 303★, MIT + CC BY 4.0) -- licence is fine and it
 is genuinely one of the best homebrew Game Boy games. Blocked on delivery: the
 ROM is only on itch.io behind a "name your own price" download flow, with no
 stable direct URL to hash. Would need the author's permission to mirror, which
 is an email, not a code change.
 
-**Batocera's bundled set** — the original prompt for this. Not copyable as a
+**Batocera's bundled set** -- the original prompt for this. Not copyable as a
 list: the games are individually licensed and span every row of the table in
 docs/Feed.md, so each still needs its own check. Several are the same freeware
 case as retrobrews.
@@ -184,7 +184,7 @@ case as retrobrews.
 ## Method, so this is repeatable
 
 1. Licence read at the source repo (`gh api repos/<r>/license`), not from a
-   search-result summary, and the **asset** licence checked separately — code
+   search-result summary, and the **asset** licence checked separately -- code
    and art routinely differ, and the ROM is the art.
 2. ROM downloaded from a permanent release URL and sha256'd.
 3. Booted in fceumm for 200 frames, then the framebuffer written to PNG and

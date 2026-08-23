@@ -126,7 +126,22 @@ cross-platform, on cores that update independently of the app.
 
 ## Install & run
 
-From a checkout:
+### Release bundle (no Node required)
+
+Grab the archive for your platform from
+[Releases](https://github.com/monteslu/romdeck/releases), extract it, and run
+the launcher. The bundle carries its own Node.js runtime, the app, and every
+dependency; nothing else to install.
+
+```bash
+tar xzf romdeck-linux-x86_64.tar.gz
+./romdeck-linux-x86_64/romdeck ~/ROMs
+```
+
+On Windows, extract the zip and run `romdeck.cmd`. Each release ships a
+`SHA256SUMS.txt` for the archives.
+
+### From a checkout
 
 ```bash
 npm install

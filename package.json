@@ -11,6 +11,7 @@
     "bin/",
     "src/",
     "assets/",
+    "feed/",
     "docs/",
     "scripts/",
     "README.md",

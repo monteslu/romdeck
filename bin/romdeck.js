@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// npx romdeck — launch the app.
+// npx romdeck: launch the app.
 //
 // A plain Node entry point. There was an Electron dance here (resolve the
 // binary, spawn it, explain yourself when it was missing) because Electron

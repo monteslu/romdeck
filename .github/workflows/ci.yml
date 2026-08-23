@@ -87,6 +87,15 @@ jobs:
             node --check "$f"
           done
       - run: npm pack
+      - name: tarball carries what the app reads at runtime
+        shell: bash
+        run: |
+          set -e
+          tar tzf romdeck-*.tgz > contents.txt
+          for f in package/src/ui/main.js package/feed/homebrew.json package/bin/romdeck.js; do
+            grep -qx "$f" contents.txt || { echo "MISSING from tarball: $f"; exit 1; }
+          done
+          echo "tarball contents OK"
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest'
         with:

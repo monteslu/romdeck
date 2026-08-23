@@ -1,0 +1,98 @@
+name: release bundles
+
+# Tag push builds self-contained bundles (Node runtime + production
+# node_modules + app + launcher) per platform and attaches them to a
+# GitHub Release. Each bundle is smoke-tested through its own launcher,
+# with the runner's Node removed from PATH, before it ships.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: linux-aarch64
+          - os: macos-15-intel
+            target: macos-x86_64
+          - os: macos-15
+            target: macos-aarch64
+          - os: windows-latest
+            target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build bundle
+        run: node scripts/make-bundle.mjs
+      - name: Fixture ROMs
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/roms/nes" "$RUNNER_TEMP/roms/gb"
+          printf 'NES\x1a1234' > "$RUNNER_TEMP/roms/nes/alpha.nes"
+          printf 'NES\x1a5678' > "$RUNNER_TEMP/roms/nes/beta.nes"
+          printf 'GBROM0001' > "$RUNNER_TEMP/roms/gb/gamma.gb"
+          printf 'GBROM0002' > "$RUNNER_TEMP/roms/gb/delta.gb"
+      - name: Smoke the bundle through its own launcher
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export ROMDECK_ROMS="$RUNNER_TEMP/roms"
+          # strip node from PATH so only the bundled runtime can answer
+          export PATH=/usr/bin:/bin
+          ./dist/romdeck-${{ matrix.target }}/romdeck --pathcheck
+          ./dist/romdeck-${{ matrix.target }}/romdeck --smoke
+      - name: Smoke the bundle through its own launcher (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          set ROMDECK_ROMS=%RUNNER_TEMP%\roms
+          set PATH=C:\Windows\System32;C:\Windows
+          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --pathcheck
+          if errorlevel 1 exit /b 1
+          call dist\romdeck-${{ matrix.target }}\romdeck.cmd --smoke
+          if errorlevel 1 exit /b 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: romdeck-${{ matrix.target }}
+          path: |
+            dist/romdeck-*.tar.gz
+            dist/romdeck-*.zip
+
+  release:
+    needs: [bundle]
+    runs-on: ubuntu-latest
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: artifacts
+      - name: Checksums
+        run: |
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+            | xargs -0 sha256sum | sed 's|artifacts/[^/]*/||' | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            Self-contained romdeck bundles: a Node.js runtime, the app, and all
+            dependencies in one archive. Extract and run `romdeck` (or
+            `romdeck.cmd` on Windows). No Node, no npm, no install step.
+          files: |
+            artifacts/*/romdeck-*.tar.gz
+            artifacts/*/romdeck-*.zip
+            SHA256SUMS.txt
