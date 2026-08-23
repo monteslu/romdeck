@@ -6,8 +6,8 @@
 // so there is nothing to sandbox and nothing to marshal: the UI imports this
 // and calls functions.
 //
-// The services themselves are unchanged. That was the bet in PLAN §20 — the
-// app is UI-agnostic below the renderer — and this file is where it pays off:
+// The services themselves are unchanged. That was the bet in PLAN §20 -- the
+// app is UI-agnostic below the renderer -- and this file is where it pays off:
 // scanner, identify, artwork, gamelist, statestore, settings, cheats,
 // inputmap, themes, bios, coreupdates, feed, retroachievements and prefs all
 // move across untouched.
@@ -34,6 +34,7 @@ import { MetadataStore } from '../services/metadata.js';
 import { CollectionStore } from '../services/collections.js';
 import { deviceStatus } from '../services/devicestatus.js';
 import { Prefs } from '../services/prefs.js';
+import { ActiveBezelStore } from '../services/activebezels.js';
 import { userDataDir, ensureUserData, appVersion } from './paths.js';
 
 export { BUTTONS, SETTINGS, shortnameOf, libretroNameOf };
@@ -55,6 +56,7 @@ export class Services {
     this.settings = new SettingsStore(ud);
     this.cheats = new CheatStore(ud);
     this.shaders = new ShaderStore(ud);
+    this.activeBezels = new ActiveBezelStore(ud, (rom) => this.stateStore.gameKey(rom));
     this.coreUpdates = new CoreUpdates();
     this.feed = new HomebrewFeed(ud, this.prefs);
     this.ra = new RetroAchievements(this.prefs);
@@ -70,6 +72,7 @@ export class Services {
       settings: this.settings,
       cheats: this.cheats,
       shaders: this.shaders,
+      activeBezels: this.activeBezels,
     });
 
     this._cliRomsDir = romsDir;
@@ -101,7 +104,7 @@ export class Services {
    * makes a library sort itself. A user who has never seen that layout has no
    * way to guess it, and the empty state already tells them to build it.
    *
-   * Read-only on purpose — the caller decides whether to create anything.
+   * Read-only on purpose -- the caller decides whether to create anything.
    */
   missingSystemDirs(dir = this.romsDir()) {
     if (!dir || !existsSync(dir)) return [];
@@ -127,7 +130,7 @@ export class Services {
    *
    * NEVER automatic. Picking a folder is a read; this writes to the user's
    * files, and 30 empty directories appearing unbidden in someone's library
-   * is a surprise — worse if they picked the wrong folder by mistake.
+   * is a surprise -- worse if they picked the wrong folder by mistake.
    */
   createSystemDirs(dir = this.romsDir()) {
     const missing = this.missingSystemDirs(dir);
@@ -143,7 +146,7 @@ export class Services {
           (exts.length ? `Extensions:  ${exts.join(' ')}\n` : '') +
           '\nromdeck reads the FOLDER to decide which system a game belongs to,\n' +
           'so a disc image (.cue/.chd/.iso) only works if it sits in the right\n' +
-          'one — those extensions are shared by several consoles.\n' +
+          'one -- those extensions are shared by several consoles.\n' +
           '\nThis file is not needed. Delete it if you like.\n');
         made.push(s);
       } catch { /* a folder we cannot create is reported by staying missing */ }
@@ -155,7 +158,7 @@ export class Services {
   /**
    * The library, cached.
    *
-   * Under Electron this ran on every findRom() — twelve IPC handlers each
+   * Under Electron this ran on every findRom() -- twelve IPC handlers each
    * re-walking the ROM tree. Caching here is the same fix, made obvious by
    * the services being plain objects: invalidate on the events that change
    * the library, not on every read.
@@ -234,6 +237,9 @@ export class Services {
     return this.stateStore.gameKey(rom);
   }
 
+  installActiveBezel(file) { return this.activeBezels.install(file); }
+  activeBezelMatch(rom) { return this.activeBezels.match(rom); }
+
   // ── launching ──────────────────────────────────────────────────────
   launch(rom, opts = {}) {
     if (!rom) return { error: 'no such game' };
@@ -258,13 +264,12 @@ export class Services {
   /**
    * Which theme to use when the user has never chosen one.
    *
-   * Slate (DEFAULT_THEME) is romdeck's default, matching ES-DE, which ships it
-   * as the desktop default. It is real per-system artwork for ~150 systems in
-   * about 20 MB, so first run looks like a game library rather than a
-   * wireframe. There is no longer a no-art bundled theme to fall back to: the
+   * Art Book Next (DEFAULT_THEME) is romdeck's default: cover-art-forward,
+   * real per-system artwork, so first run looks like a game library rather
+   * than a wireframe. There is no longer a no-art bundled theme to fall back to: the
    * old 'romdeck-default' (Shelf) was typographic wordmarks and is deleted.
    *
-   * It is FETCHED, not bundled — Slate is CC-BY-NC-SA and its own CREDITS note
+   * It is FETCHED, not bundled -- Slate is CC-BY-NC-SA and its own CREDITS note
    * the console logos belong to their respective owners, so romdeck installs
    * it on the user's behalf rather than redistributing it inside a GPL-3.0 npm
    * package. See ensureDefaultTheme().
@@ -290,10 +295,10 @@ export class Services {
    * Make sure SOME theme is on disk before the first paint.
    *
    * romdeck bundles no theme at all now, so a first run with an empty themes
-   * folder has literally nothing to render — the failure mode is the black
+   * folder has literally nothing to render -- the failure mode is the black
    * void the app used to open with. Fetch Slate once, then get out of the way.
    *
-   * Resolves to { installed, name } or { error } — it never throws, because a
+   * Resolves to { installed, name } or { error } -- it never throws, because a
    * missing network must not stop the app from starting. The caller decides
    * what to say; being offline on first run is a real situation and the user
    * needs a sentence about it, not a stack trace.
@@ -313,7 +318,7 @@ export class Services {
         ? wanted
         : DEFAULT_THEME;
       if (installed.has(target)) return { installed: false, name: target };
-      // Something else is already on disk — usable, so do not block the boot
+      // Something else is already on disk -- usable, so do not block the boot
       // on a download the user did not ask for. defaultTheme() will pick it.
       if (installed.size && target !== wanted) return { installed: false, name: null };
       const res = await this.themes.install(target, onProgress);
@@ -455,7 +460,7 @@ export class Services {
   /**
    * Stop the child player processes. That is ALL this does.
    *
-   * It was called shutdown(), which reads as "release everything" — so fifteen
+   * It was called shutdown(), which reads as "release everything" -- so fifteen
    * headless call sites used it as an App teardown and leaked every App they
    * built. Services holds no OS handles of its own; the timers, window and GL
    * context belong to the App, so App.dispose() is the thing that releases
@@ -465,7 +470,7 @@ export class Services {
     this.sessions.stopAll();
   }
 
-  /** @deprecated Misleading name — use stopSessions(), or App.dispose(). */
+  /** @deprecated Misleading name -- use stopSessions(), or App.dispose(). */
   shutdown() {
     this.stopSessions();
   }
