@@ -1,0 +1,45 @@
+# Flatpak manifest. The payload is a prebuilt romdeck bundle staged at
+# dist/flatpak-src by scripts/make-flatpak.mjs; one manifest serves both
+# x86_64 and aarch64 because flatpak-builder targets the host arch.
+app-id: io.github.monteslu.romdeck
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: romdeck
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network        # theme downloads, RetroAchievements, remote play
+  - --device=dri
+  - --device=all           # gamepads arrive as evdev/hidraw devices
+  - --filesystem=home      # ROM libraries live anywhere under home
+modules:
+  - name: romdeck
+    buildsystem: simple
+    build-commands:
+      - cp -r bundle /app/romdeck
+      - install -Dm755 romdeck-wrapper /app/bin/romdeck
+      - install -Dm644 romdeck.desktop /app/share/applications/io.github.monteslu.romdeck.desktop
+      - desktop-file-edit --set-icon=io.github.monteslu.romdeck /app/share/applications/io.github.monteslu.romdeck.desktop
+      - install -Dm644 romdeck-256.png /app/share/icons/hicolor/256x256/apps/io.github.monteslu.romdeck.png
+      - install -Dm644 romdeck-512.png /app/share/icons/hicolor/512x512/apps/io.github.monteslu.romdeck.png
+      - install -Dm644 io.github.monteslu.romdeck.metainfo.xml /app/share/metainfo/io.github.monteslu.romdeck.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../dist/flatpak-src
+        dest: bundle
+      - type: script
+        dest-filename: romdeck-wrapper
+        commands:
+          - exec /app/romdeck/romdeck "$@"
+      - type: file
+        path: romdeck.desktop.in
+        dest-filename: romdeck.desktop
+      - type: file
+        path: ../../assets/icon/romdeck-256.png
+      - type: file
+        path: ../../assets/icon/romdeck-512.png
+      - type: file
+        path: ../linux/io.github.monteslu.romdeck.metainfo.xml

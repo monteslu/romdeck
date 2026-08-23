@@ -19,7 +19,10 @@
 // Anything unrecognized is ignored rather than fatal -- an unsupported theme
 // renders partially instead of blowing up.
 import { readFileSync, existsSync, readdirSync, statSync, rmSync, mkdirSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { XMLParser } from 'fast-xml-parser';
@@ -57,6 +60,7 @@ export const THEME_CATALOG = [
     author: 'Anthony Caccese',
     license: 'CC-BY-NC-SA 2.0',
     url: 'https://github.com/anthonycaccese/art-book-next-es-de.git',
+    archive: 'https://github.com/anthonycaccese/art-book-next-es-de/archive/HEAD.tar.gz',
     description: 'Cover-art-forward, in the style of a coffee table book. 20 variants, 31 colour schemes.',
     size: '~220 MB',
     recommended: true,
@@ -67,6 +71,7 @@ export const THEME_CATALOG = [
     author: 'Sophia Hadash',
     license: 'CC-BY-NC-SA',
     url: 'https://gitlab.com/es-de/themes/modern-es-de.git',
+    archive: 'https://gitlab.com/es-de/themes/modern-es-de/-/archive/master/modern-es-de-master.tar.gz',
     description: 'Clean and image-driven, based on the Nintendo Switch UI.',
     size: '~60 MB',
   },
@@ -76,6 +81,7 @@ export const THEME_CATALOG = [
     author: 'ES-DE',
     license: 'CC-BY-NC-SA',
     url: 'https://gitlab.com/es-de/themes/slate-es-de.git',
+    archive: 'https://gitlab.com/es-de/themes/slate-es-de/-/archive/master/slate-es-de-master.tar.gz',
     description: "ES-DE's own default theme.",
     size: '~20 MB',
   },
@@ -266,16 +272,37 @@ export class ThemeStore {
    * @param {string} name catalog entry name
    * @param {(line:string)=>void} [onProgress] git's stderr, line by line
    */
-  install(name, onProgress = null) {
+  async install(name, onProgress = null) {
     const entry = THEME_CATALOG.find((t) => t.name === name);
-    if (!entry) return Promise.reject(new Error(`unknown theme: ${name}`));
-    if (this.find(name)) return Promise.resolve({ name, alreadyInstalled: true });
+    if (!entry) throw new Error(`unknown theme: ${name}`);
+    if (this.find(name)) return { name, alreadyInstalled: true };
 
     mkdirSync(this.userThemesDir, { recursive: true });
     const dest = path.join(this.userThemesDir, entry.name);
     // A previous attempt may have left a partial clone behind.
     rmSync(dest, { recursive: true, force: true });
 
+    try {
+      await this._cloneWithGit(entry, dest, onProgress);
+    } catch (err) {
+      // No git on the machine (flatpak's runtime has none; plenty of Windows
+      // boxes have none). Every catalog entry also names the forge's
+      // snapshot tarball, so fall back to fetching that.
+      if (!err.gitMissing || !entry.archive) throw err;
+      await this._fetchArchive(entry, dest, onProgress);
+    }
+
+    // A download that lands without a theme.xml is not a theme, and leaving
+    // it would put a broken entry in the picker.
+    if (!existsSync(path.join(dest, 'theme.xml'))) {
+      rmSync(dest, { recursive: true, force: true });
+      throw new Error('downloaded, but it contains no theme.xml');
+    }
+    return { name: entry.name, displayName: entry.displayName };
+  }
+
+  /** Shallow git clone of a catalog entry into dest. */
+  _cloneWithGit(entry, dest, onProgress) {
     return new Promise((resolve, reject) => {
       const child = spawn('git', [
         'clone', '--depth', '1', '--progress', entry.url, dest,
@@ -292,9 +319,11 @@ export class ThemeStore {
 
       child.on('error', (err) => {
         rmSync(dest, { recursive: true, force: true });
-        reject(new Error(err.code === 'ENOENT'
-          ? 'git is not installed -- themes are fetched with git'
-          : err.message));
+        const wrapped = new Error(err.code === 'ENOENT'
+          ? 'git is not installed'
+          : err.message);
+        wrapped.gitMissing = err.code === 'ENOENT';
+        reject(wrapped);
       });
 
       child.on('exit', (code) => {
@@ -303,18 +332,94 @@ export class ThemeStore {
           reject(new Error(`download failed: ${tail.trim() || `git exited ${code}`}`));
           return;
         }
-        // A clone that lands without a theme.xml is not a theme, and leaving
-        // it would put a broken entry in the picker.
-        if (!existsSync(path.join(dest, 'theme.xml'))) {
-          rmSync(dest, { recursive: true, force: true });
-          reject(new Error('downloaded, but it contains no theme.xml'));
-          return;
-        }
         // Drop the git metadata -- it is dead weight once cloned.
         rmSync(path.join(dest, '.git'), { recursive: true, force: true });
-        resolve({ name: entry.name, displayName: entry.displayName });
+        resolve();
       });
     });
+  }
+
+  /**
+   * git-less install: fetch the forge's snapshot tarball and unpack it with
+   * the system tar (present in the flatpak runtime and on Windows 10+).
+   * Archives wrap everything in one top-level directory; strip it.
+   *
+   * The download itself prefers the system curl over node's fetch: GitLab's
+   * WAF fingerprints clients below the header layer and intermittently 406s
+   * node/undici no matter what headers it sends, while curl sails through.
+   * curl ships with the flatpak runtime, Windows 10+, and macOS, so on the
+   * platforms most likely to lack git it is the reliable engine; fetch stays
+   * as the last resort for machines with neither.
+   */
+  async _fetchArchive(entry, dest, onProgress) {
+    const tmp = path.join(this.userThemesDir, `.${entry.name}.download.tar.gz`);
+    rmSync(tmp, { force: true });
+    try {
+      try {
+        await this._downloadWithCurl(entry.archive, tmp, onProgress);
+      } catch (err) {
+        if (!err.curlMissing) throw err;
+        await this._downloadWithFetch(entry.archive, tmp, onProgress);
+      }
+      mkdirSync(dest, { recursive: true });
+      const r = spawnSync('tar', ['-xzf', tmp, '-C', dest, '--strip-components=1']);
+      if (r.error || r.status !== 0) {
+        throw new Error(`could not unpack theme archive: ${r.error?.message ?? `tar exited ${r.status}`}`);
+      }
+    } catch (err) {
+      rmSync(dest, { recursive: true, force: true });
+      throw err;
+    } finally {
+      rmSync(tmp, { force: true });
+    }
+  }
+
+  /** Download url to file with the system curl. Rejects with .curlMissing when there is no curl. */
+  _downloadWithCurl(url, file, onProgress) {
+    return new Promise((resolve, reject) => {
+      const child = spawn('curl', [
+        '--fail', '--location', '--silent', '--show-error',
+        '--retry', '3', '--retry-delay', '2', '--retry-all-errors',
+        '--output', file, url,
+      ], { stdio: ['ignore', 'ignore', 'pipe'] });
+      if (onProgress) onProgress('downloading');
+      let tail = '';
+      child.stderr.on('data', (buf) => { tail = String(buf).slice(-300); });
+      child.on('error', (err) => {
+        const wrapped = new Error(err.code === 'ENOENT' ? 'curl is not installed' : err.message);
+        wrapped.curlMissing = err.code === 'ENOENT';
+        reject(wrapped);
+      });
+      child.on('exit', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`download failed: ${tail.trim() || `curl exited ${code}`}`));
+      });
+    });
+  }
+
+  /** Download url to file with node's fetch. Last resort; some WAFs block it. */
+  async _downloadWithFetch(url, file, onProgress) {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'accept-encoding': 'identity' },
+    });
+    if (!res.ok) throw new Error(`download failed: HTTP ${res.status} for ${url}`);
+    let bytes = 0;
+    let lastReported = 0;
+    await pipeline(
+      Readable.fromWeb(res.body),
+      async function* (source) {
+        for await (const chunk of source) {
+          bytes += chunk.length;
+          if (onProgress && bytes - lastReported > 4_000_000) {
+            lastReported = bytes;
+            onProgress(`downloading: ${(bytes / 1048576).toFixed(0)} MB`);
+          }
+          yield chunk;
+        }
+      },
+      createWriteStream(file),
+    );
   }
 
   /** Remove an installed user theme. Bundled themes are never removable. */

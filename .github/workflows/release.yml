@@ -62,12 +62,33 @@ jobs:
           if errorlevel 1 exit /b 1
           call dist\romdeck-${{ matrix.target }}\romdeck.cmd --smoke "%RUNNER_TEMP%\roms"
           if errorlevel 1 exit /b 1
+      - name: AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          A="${{ matrix.target }}"; A="${A#linux-}"
+          curl -sLo appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${A}.AppImage"
+          chmod +x appimagetool
+          APPIMAGETOOL="$PWD/appimagetool" node scripts/make-appimage.mjs
+          PATH=/usr/bin:/bin ./dist/romdeck-${{ matrix.target }}.AppImage --appimage-extract-and-run --smoke "$RUNNER_TEMP/roms"
+      - name: Flatpak
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          node scripts/make-flatpak.mjs
+          flatpak install --user -y --noninteractive ./dist/romdeck-${{ matrix.target }}.flatpak
+          flatpak run io.github.monteslu.romdeck --smoke "$RUNNER_TEMP/roms"
+          flatpak run io.github.monteslu.romdeck --pathcheck "$RUNNER_TEMP/roms"
       - uses: actions/upload-artifact@v4
         with:
           name: romdeck-${{ matrix.target }}
           path: |
             dist/romdeck-*.tar.gz
             dist/romdeck-*.zip
+            dist/romdeck-*.AppImage
+            dist/romdeck-*.flatpak
 
   release:
     needs: [bundle]
@@ -82,17 +103,22 @@ jobs:
           path: artifacts
       - name: Checksums
         run: |
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.flatpak' \) -print0 \
             | xargs -0 sha256sum | sed 's|artifacts/[^/]*/||' | sort -k2 > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body: |
-            Self-contained romdeck bundles: a Node.js runtime, the app, and all
-            dependencies in one archive. Extract and run `romdeck` (or
-            `romdeck.cmd` on Windows). No Node, no npm, no install step.
+            Self-contained romdeck builds: a Node.js runtime, the app, and all
+            dependencies in one file. No Node, no npm.
+
+            - **tar.gz / zip**: extract and run `romdeck` (`romdeck.cmd` on Windows)
+            - **AppImage** (Linux): `chmod +x` and run
+            - **flatpak** (Linux): `flatpak install romdeck-<arch>.flatpak`
           files: |
             artifacts/*/romdeck-*.tar.gz
             artifacts/*/romdeck-*.zip
+            artifacts/*/romdeck-*.AppImage
+            artifacts/*/romdeck-*.flatpak
             SHA256SUMS.txt

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=romdeck
+Comment=Zero-config cross-platform retro game library
+Exec=romdeck
+Icon=romdeck
+Terminal=false
+Categories=Game;Emulator;
+Keywords=retro;emulator;libretro;games;

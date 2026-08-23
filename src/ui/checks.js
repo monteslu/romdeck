@@ -307,7 +307,13 @@ async function pathcheck() {
   if (saved) process.env.ROMDECK_USERDATA = saved;
 
   const expected = {
-    linux: path.join(process.env.HOME ?? '', '.config', 'romdeck'),
+    // Inside flatpak, XDG_CONFIG_HOME points at ~/.var/app/<id>/config and
+    // that redirect IS the correct per-app path (an Electron build in the
+    // same sandbox resolves identically). Everywhere else the Electron
+    // baseline stays ~/.config/romdeck regardless of XDG overrides.
+    linux: process.env.FLATPAK_ID && process.env.XDG_CONFIG_HOME
+      ? path.join(process.env.XDG_CONFIG_HOME, 'romdeck')
+      : path.join(process.env.HOME ?? '', '.config', 'romdeck'),
     darwin: path.join(process.env.HOME ?? '', 'Library', 'Application Support', 'romdeck'),
     win32: path.join(process.env.APPDATA ?? '', 'romdeck'),
   }[process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux'];

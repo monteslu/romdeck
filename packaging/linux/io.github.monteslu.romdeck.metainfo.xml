@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.monteslu.romdeck</id>
+  <name>romdeck</name>
+  <summary>Zero-config cross-platform retro game library</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>
+      A retro game library frontend. Point it at your ROM folders and every
+      game runs in its own crash-isolated player window, powered by
+      retroemu's libretro WASM cores. ES-DE theme support, gamepad-first
+      navigation, achievements, and a freely distributable homebrew feed.
+    </p>
+  </description>
+  <developer id="io.github.monteslu"><name>Luis Montes</name></developer>
+  <launchable type="desktop-id">io.github.monteslu.romdeck.desktop</launchable>
+  <url type="homepage">https://github.com/monteslu/romdeck</url>
+  <url type="bugtracker">https://github.com/monteslu/romdeck/issues</url>
+  <supports>
+    <control>gamepad</control>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

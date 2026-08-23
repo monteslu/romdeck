@@ -138,8 +138,21 @@ tar xzf romdeck-linux-x86_64.tar.gz
 ./romdeck-linux-x86_64/romdeck ~/ROMs
 ```
 
-On Windows, extract the zip and run `romdeck.cmd`. Each release ships a
-`SHA256SUMS.txt` for the archives.
+On Windows, extract the zip and run `romdeck.cmd`.
+
+Linux releases also ship two one-file formats:
+
+```bash
+# AppImage
+chmod +x romdeck-linux-x86_64.AppImage
+./romdeck-linux-x86_64.AppImage ~/ROMs
+
+# Flatpak (sandboxed; config lands in ~/.var/app/io.github.monteslu.romdeck)
+flatpak install romdeck-linux-x86_64.flatpak
+flatpak run io.github.monteslu.romdeck
+```
+
+Each release ships a `SHA256SUMS.txt` for every file.
 
 ### From a checkout
 
