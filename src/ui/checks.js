@@ -313,6 +313,11 @@ async function pathcheck() {
   }[process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux'];
 
   r.check('userData matches Electron', dir === expected, dir);
+  // Create it if this is a fresh machine, exactly as the app's first run
+  // would. The assertion then means "the resolved path is real and
+  // writable" everywhere, instead of failing on any machine (or CI runner)
+  // the app has never run on.
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   r.check('userData exists', existsSync(dir));
 
   // If a real profile is there, its stores must still be found -- this is the
@@ -1220,10 +1225,10 @@ export async function snapcheck({ argAfter }) {
   // "fail" on a directory it was never asked about.
   const next = argAfter('snapcheck');
   const explicit = next && /\.(mp4|m4v)$/i.test(next) ? next : null;
-  const candidates = explicit ? [explicit] : [
-    path.join(process.env.HOME ?? '', 'code/cliemu/node-sdl/examples/09-ffmpeg-video/assets/video.mp4'),
-    path.join(process.env.HOME ?? '', 'code/cliemu/three.js/examples/textures/pano.mp4'),
-  ];
+  // No guessing at files on the developer's machine: a sample video is
+  // passed explicitly or the check reports SKIP. Hardcoded personal paths
+  // in a shipped check are a bug, not a convenience.
+  const candidates = explicit ? [explicit] : [];
   const files = candidates.filter((f) => existsSync(f));
 
   if (!decoderAvailable()) {

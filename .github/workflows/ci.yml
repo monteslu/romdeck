@@ -1,0 +1,110 @@
+# romdeck CI: tests on every push and PR, plus a manual decoder build.
+#
+# Every check here runs headless by design (the stage paints to an offscreen
+# canvas; no window is opened), and the whole recipe was proven against a
+# pristine HOME with no display before this file was written: the fixture
+# shape below is the minimum the checks need (padonly wants at least two
+# systems with two games to have somewhere to move focus), and pathcheck
+# creates userData the way the app's first run would.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    # Full self-check suite. Linux is the verified baseline; macOS runs the
+    # same steps on its own prebuilts.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: syntax sweep
+        shell: bash
+        run: |
+          set -e
+          for f in $(find src scripts -name '*.js' -o -name '*.mjs'); do
+            node --check "$f"
+          done
+
+      - run: npm test
+
+      - name: fixture ROMs
+        # Junk bytes with the right extensions: the scanner classifies by
+        # folder and extension, so nothing copyrighted is needed. Two systems
+        # with two games each, because padonly moves focus between them.
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/roms/nes" "$RUNNER_TEMP/roms/gb"
+          for n in alpha beta; do
+            printf 'NES\x1a' > "$RUNNER_TEMP/roms/nes/$n.nes"
+            head -c 64 /dev/zero > "$RUNNER_TEMP/roms/gb/$n.gb"
+          done
+
+      - name: self-checks
+        shell: bash
+        run: |
+          set -e
+          node src/ui/main.js --smoke     "$RUNNER_TEMP/roms"
+          node src/ui/main.js --pathcheck "$RUNNER_TEMP/roms"
+          node src/ui/main.js --padonly   "$RUNNER_TEMP/roms"
+          node src/ui/main.js --snapcheck
+
+  package:
+    # The build product is the npm tarball. Windows joins here: it proves the
+    # per-platform prebuilts resolve and the sources parse, without promoting
+    # the interactive checks until a Windows run has actually been watched.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: syntax sweep
+        shell: bash
+        run: |
+          set -e
+          for f in $(find src scripts -name '*.js' -o -name '*.mjs'); do
+            node --check "$f"
+          done
+      - run: npm pack
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: romdeck-tarball
+          path: romdeck-*.tgz
+
+  decoder:
+    # The WASM h264 snap decoder, built from ffmpeg sources. Manual because it
+    # needs an emsdk toolchain and the decoder is optional at runtime (absent
+    # decoder degrades to the static image).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: ./scripts/build-video-decoder.sh
+      - run: test -s src/ui/video/wasm/h264.wasm && test -s src/ui/video/wasm/h264.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: h264-decoder-wasm
+          path: src/ui/video/wasm/h264.*

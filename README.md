@@ -217,7 +217,11 @@ THEME_REPOS=1 node scripts/theme-conformance.mjs   # real themes, every combinat
 ```
 
 None of these need a display: the stage paints to an offscreen canvas, so
-they run the same in CI as on a desk.
+they run the same in CI as on a desk. CI
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the unit tests,
+a syntax sweep, `--smoke`, `--pathcheck`, `--padonly` and `--snapcheck`
+against generated fixture ROMs on Linux and macOS, packs the npm tarball on
+Linux and Windows, and has a manual job that builds the WASM snap decoder.
 
 ## Licensing
 
